@@ -1,0 +1,29 @@
+{
+  "name": "effort-workbook-auditor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "audit": "tsx src/cli.ts run",
+    "build:addin": "node scripts/build-taskpane.mjs",
+    "create-cert": "powershell -ExecutionPolicy Bypass -File scripts/create-dev-cert.ps1",
+    "server": "npm run build:addin && tsx src/server.ts",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^5.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "esbuild": "^0.25.11",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

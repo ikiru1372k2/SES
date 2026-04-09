@@ -1,0 +1,110 @@
+{
+  "processes": [
+    {
+      "id": "may-2026-1775733280114",
+      "name": "may_2026",
+      "description": "",
+      "sourceType": "currentWorkbook",
+      "workbookName": "Excel Workbook",
+      "detectedSheets": [
+        {
+          "name": "Effort Data",
+          "auditable": true,
+          "duplicate": false,
+          "rowCount": 30
+        },
+        {
+          "name": "e2",
+          "auditable": true,
+          "duplicate": false,
+          "rowCount": 32
+        }
+      ],
+      "sheetScope": "all",
+      "selectedSheetNames": [
+        "Effort Data",
+        "e2"
+      ],
+      "files": [],
+      "latestAuditStatus": {
+        "flaggedRows": 29,
+        "issueCount": 29,
+        "updatedAt": "2026-04-09T11:17:59.811Z"
+      },
+      "notificationTemplate": {
+        "greeting": "Hi {{projectManager}},",
+        "intro": "As part of the ongoing effort audit, we identified discrepancies in the project effort data listed below.",
+        "actionLine": "Please review the below records and update the project data in the relevant tracking system.",
+        "deadlineText": "Please complete the update by {{deadline}}.",
+        "closing": "If any item is already correct, please reply with the justification so the QGC team can review and close it.",
+        "signatureLine1": "QGC Team",
+        "signatureLine2": "MSG Global Solutions"
+      },
+      "notificationTracking": {
+        "Wilson, Mark||m.wilson@company.com": {
+          "key": "Wilson, Mark||m.wilson@company.com",
+          "recipientEmail": "m.wilson@company.com",
+          "projectManager": "Wilson, Mark",
+          "outlookCount": 2,
+          "teamsCount": 0,
+          "history": [
+            {
+              "channel": "outlook",
+              "stage": "reminder1",
+              "sentAt": "2026-04-09T11:15:30.990Z"
+            },
+            {
+              "channel": "outlook",
+              "stage": "reminder2",
+              "sentAt": "2026-04-09T11:15:41.934Z"
+            }
+          ],
+          "lastChannel": "outlook",
+          "lastStage": "reminder2",
+          "lastSentAt": "2026-04-09T11:15:41.934Z"
+        },
+        "Wagner, Anna||a.wagner@company.com": {
+          "key": "Wagner, Anna||a.wagner@company.com",
+          "recipientEmail": "a.wagner@company.com",
+          "projectManager": "Wagner, Anna",
+          "outlookCount": 2,
+          "teamsCount": 0,
+          "history": [
+            {
+              "channel": "outlook",
+              "stage": "reminder1",
+              "sentAt": "2026-04-09T11:18:04.568Z"
+            },
+            {
+              "channel": "outlook",
+              "stage": "reminder2",
+              "sentAt": "2026-04-09T11:18:16.728Z"
+            }
+          ],
+          "lastChannel": "outlook",
+          "lastStage": "reminder2",
+          "lastSentAt": "2026-04-09T11:18:16.728Z"
+        },
+        "Fischer, Tom||t.fischer@company.com": {
+          "key": "Fischer, Tom||t.fischer@company.com",
+          "recipientEmail": "t.fischer@company.com",
+          "projectManager": "Fischer, Tom",
+          "outlookCount": 1,
+          "teamsCount": 0,
+          "history": [
+            {
+              "channel": "outlook",
+              "stage": "reminder1",
+              "sentAt": "2026-04-09T11:20:16.707Z"
+            }
+          ],
+          "lastChannel": "outlook",
+          "lastStage": "reminder1",
+          "lastSentAt": "2026-04-09T11:20:16.707Z"
+        }
+      },
+      "createdAt": "2026-04-09T11:14:40.114Z",
+      "updatedAt": "2026-04-09T11:20:16.741Z"
+    }
+  ]
+}
