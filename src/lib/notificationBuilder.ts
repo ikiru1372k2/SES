@@ -13,7 +13,7 @@ export function escapeHtml(value: unknown): string {
 }
 
 export function sanitizeHeader(value: string): string {
-  return value.split(/[\r\n]/)[0].replace(controlChars, ' ').replace(/\s+/g, ' ').trim();
+  return (value.split(/[\r\n]/)[0] ?? '').replace(controlChars, ' ').replace(/\s+/g, ' ').trim();
 }
 
 export function isValidEmail(value: string | null | undefined): value is string {

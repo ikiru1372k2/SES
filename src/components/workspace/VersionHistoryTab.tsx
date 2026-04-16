@@ -6,7 +6,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
 
-export function VersionHistoryTab({ process, file }: { process: AuditProcess; file?: WorkbookFile }) {
+export function VersionHistoryTab({ process, file }: { process: AuditProcess; file?: WorkbookFile | undefined }) {
   const loadVersion = useAppStore((state) => state.loadVersion);
   const [fromId, setFromId] = useState(process.versions[1]?.versionId ?? process.versions[0]?.versionId ?? '');
   const [toId, setToId] = useState(process.versions[0]?.versionId ?? '');
@@ -62,7 +62,7 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
               <MetricCard label="Unchanged" value={comparison.unchangedIssues.length} />
             </div>
             <div className="mt-4 flex gap-2">
-              {(['newIssues', 'resolvedIssues', 'changedIssues'] as const).map((tab) => <button key={tab} onClick={() => setActiveTab(tab)} className={`border-b-2 px-3 py-2 text-sm ${activeTab === tab ? 'border-[#b00020] text-[#b00020]' : 'border-transparent text-gray-500'}`}>{tab}</button>)}
+              {(['newIssues', 'resolvedIssues', 'changedIssues'] as const).map((tab) => <button key={tab} onClick={() => setActiveTab(tab)} className={`border-b-2 px-3 py-2 text-sm ${activeTab === tab ? 'border-brand text-brand' : 'border-transparent text-gray-500'}`}>{tab}</button>)}
               <button onClick={() => exportIssuesCsv('version-comparison.csv', rows)} className="ml-auto rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Export CSV</button>
             </div>
             <div className="mt-3 divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-gray-700 dark:border-gray-700">

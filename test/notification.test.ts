@@ -29,6 +29,7 @@ test('notification HTML escapes workbook and template values', () => {
     signature1: 'Team "A"',
     signature2: "Owner's Desk",
   });
+  assert.ok(draft);
 
   assert.ok(draft.htmlBody.includes('&lt;script&gt;'));
   assert.ok(draft.htmlBody.includes('&lt;b&gt;review&lt;/b&gt;'));

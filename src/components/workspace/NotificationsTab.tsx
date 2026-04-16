@@ -5,6 +5,16 @@ import type { AuditProcess, AuditResult, NotificationDraft } from '../../lib/typ
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 
+const templateLabels = {
+  greeting: 'Greeting',
+  intro: 'Introduction',
+  actionLine: 'Action request',
+  deadlineLine: 'Deadline phrase',
+  closing: 'Closing',
+  signature1: 'Signature line 1',
+  signature2: 'Signature line 2',
+};
+
 export function NotificationsTab({ process, result }: { process: AuditProcess; result: AuditResult | null }) {
   const recordTrackingEvent = useAppStore((state) => state.recordTrackingEvent);
   const [theme, setTheme] = useState<NotificationDraft['theme']>('Company Reminder');
@@ -73,7 +83,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
       <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-semibold">Notification Drafts ({drafts.length} managers)</h2>
-          <button onClick={sendAll} disabled={!drafts.length} className="rounded-lg bg-[#b00020] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#8f001a] disabled:opacity-40">Send All</button>
+          <button onClick={sendAll} disabled={!drafts.length} className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover disabled:opacity-40">Send All</button>
         </div>
         <label className="block text-xs font-medium text-gray-500">Theme</label>
         <select value={theme} onChange={(event) => setTheme(event.target.value as NotificationDraft['theme'])} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900">
@@ -85,7 +95,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
           <summary className="cursor-pointer text-sm font-medium">Edit Template</summary>
           {Object.keys(template).map((key) => (
             <label key={key} className="mt-3 block text-xs text-gray-500">
-              {key}
+              {templateLabels[key as keyof typeof template]}
               <input value={template[key as keyof typeof template]} onChange={(event) => setTemplate((state) => ({ ...state, [key]: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
             </label>
           ))}

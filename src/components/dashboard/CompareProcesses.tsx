@@ -42,7 +42,7 @@ export function CompareProcesses() {
         <div className="self-end pb-2 text-gray-400">-&gt;</div>
         <Selector label="To" processes={processes} processId={toProcessId} versionId={toVersionId} onProcess={(id) => { setToProcessId(id); selectVersion(processes.find((p) => p.id === id)?.versions ?? [], '', setToVersionId); }} onVersion={setToVersionId} versions={versionOptions.to} />
         <div className="md:col-span-3">
-          <button onClick={compare} className="rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white hover:bg-[#8f001a]">Compare Selected Versions</button>
+          <button onClick={compare} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">Compare Selected Versions</button>
         </div>
       </div>
       {result ? (
@@ -55,7 +55,7 @@ export function CompareProcesses() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {(['newIssues', 'resolvedIssues', 'changedIssues', 'managerChanges', 'effortChanges'] as const).map((item) => (
-              <button key={item} onClick={() => setTab(item)} className={`border-b-2 px-3 py-2 text-sm font-medium ${tab === item ? 'border-[#b00020] text-[#b00020]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{item.replace(/([A-Z])/g, ' $1')}</button>
+              <button key={item} onClick={() => setTab(item)} className={`border-b-2 px-3 py-2 text-sm font-medium ${tab === item ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{item.replace(/([A-Z])/g, ' $1')}</button>
             ))}
             <button onClick={() => exportIssuesCsv('process-comparison.csv', rows)} className="ml-auto rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Export CSV</button>
             <button onClick={() => downloadJson(result)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Export JSON</button>

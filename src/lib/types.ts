@@ -14,6 +14,7 @@ export interface AuditPolicy {
   missingEffortEnabled: boolean;
   missingManagerEnabled: boolean;
   inPlanningEffortEnabled: boolean;
+  onHoldEffortEnabled: boolean;
   onHoldEffortThreshold: number;
   updatedAt: string;
 }
@@ -30,6 +31,7 @@ export interface AuditProcess {
   latestAuditResult?: AuditResult;
   auditPolicy: AuditPolicy;
   notificationTracking: Record<string, TrackingEntry>;
+  comments: Record<string, IssueComment[]>;
 }
 
 export interface WorkbookFile {
@@ -82,6 +84,15 @@ export interface AuditIssue {
   reason?: string;
   thresholdLabel?: string;
   recommendedAction?: string;
+}
+
+export interface IssueComment {
+  id: string;
+  issueKey: string;
+  processId: string;
+  author: string;
+  body: string;
+  createdAt: string;
 }
 
 export interface SheetAuditResult {

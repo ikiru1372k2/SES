@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { createDefaultAuditPolicy, policySummary } from '../src/lib/auditPolicy.js';
+import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../src/lib/auditPolicy.js';
 import { compareResults, runAudit } from '../src/lib/auditEngine.js';
 import { MAX_WORKBOOK_FILE_SIZE_BYTES, parseWorkbook } from '../src/lib/excelParser.js';
 import type { AuditIssue, AuditResult, WorkbookFile } from '../src/lib/types.js';
@@ -89,7 +89,7 @@ test('duplicate canonical headers do not overwrite the first mapped project numb
 
 test('QGC audit focuses on overplanning and missing planning', async () => {
   const file = await loadSample();
-  file.rawData['Effort Data'].push(['100', 'Digital Transformation', 'Synthetic Customer', '99999999', 'Synthetic Missing Effort', 'Authorised', 'Manager, Test', 'test.manager@company.com', '']);
+  file.rawData['Effort Data']!.push(['100', 'Digital Transformation', 'Synthetic Customer', '99999999', 'Synthetic Missing Effort', 'Authorised', 'Manager, Test', 'test.manager@company.com', '']);
   const defaultPolicy = createDefaultAuditPolicy();
   const result = runAudit(file, { ...defaultPolicy, highEffortThreshold: 800 });
   const issueKeys = result.issues.map((issue) => `${issue.ruleName}|${issue.category}`);
@@ -136,6 +136,22 @@ test('comparison distinguishes duplicate project numbers on different rows', () 
   const comparison = compareResults(from, to);
 
   assert.equal(comparison.resolvedIssues.length, 1);
-  assert.equal(comparison.resolvedIssues[0].rowIndex, 1);
+  assert.equal(comparison.resolvedIssues[0]?.rowIndex, 1);
   assert.equal(comparison.unchangedIssues.length, 1);
+});
+
+test('on-hold effort rule can be disabled by policy', async () => {
+  const file = await loadSample();
+  const result = runAudit(file, { ...createDefaultAuditPolicy(), onHoldEffortEnabled: false, highEffortThreshold: 900 });
+
+  assert.ok(!result.issues.some((issue) => issue.ruleId === 'ON_HOLD_HIGH_EFFORT'));
+});
+
+test('policy change detection ignores timestamp-only saves', () => {
+  const snapshot = createDefaultAuditPolicy('2026-04-16T00:00:00.000Z');
+  const timestampOnly = { ...snapshot, updatedAt: '2026-04-16T01:00:00.000Z' };
+  const changedValue = { ...timestampOnly, highEffortThreshold: snapshot.highEffortThreshold + 1 };
+
+  assert.equal(isPolicyChanged(timestampOnly, snapshot), false);
+  assert.equal(isPolicyChanged(changedValue, snapshot), true);
 });

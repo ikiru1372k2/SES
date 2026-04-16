@@ -30,7 +30,7 @@ export function FilesSidebar({ process }: { process: AuditProcess }) {
       <section className="p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Files</h2>
-          <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-[#b00020] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#8f001a]">
+          <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover">
             <Upload size={14} />
             Upload
             <input type="file" multiple accept=".xlsx,.xlsm" onChange={(event) => upload(event.target.files)} className="hidden" />

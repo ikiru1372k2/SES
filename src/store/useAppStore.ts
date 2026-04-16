@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
 import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../lib/auditPolicy';
-import { runAudit as executeAudit } from '../lib/auditEngine';
+import { runAuditAsync } from '../lib/auditRunner';
+import { deleteWorkbookRawData, putWorkbookRawData } from '../lib/blobStore';
 import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
 import { DATA_KEY, loadProcesses, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
-import type { AuditPolicy, AuditProcess, AuditResult, TrackingChannel, TrackingEntry, WorkbookFile, WorkspaceTab } from '../lib/types';
+import type { AuditPolicy, AuditProcess, AuditResult, IssueComment, TrackingChannel, TrackingEntry, WorkbookFile, WorkspaceTab } from '../lib/types';
 
 type UploadState = {
   fileName: string;
@@ -42,6 +43,8 @@ type AppStore = {
   recordTrackingEvent: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, channel: TrackingChannel, note: string) => void;
   markTrackingResolved: (processId: string, managerEmail: string) => void;
   reopenTracking: (processId: string, managerEmail: string) => void;
+  addIssueComment: (processId: string, issueKey: string, body: string, author?: string) => void;
+  deleteIssueComment: (processId: string, issueKey: string, commentId: string) => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
 };
 
@@ -97,9 +100,9 @@ export const useAppStore = create<AppStore>()(
           files: [],
           activeFileId: null,
           versions: [],
-          latestAuditResult: undefined,
           auditPolicy: createDefaultAuditPolicy(),
           notificationTracking: {},
+          comments: {},
         };
         set((state) => ({ processes: [process, ...state.processes], activeProcessId: process.id, activeWorkspaceTab: 'preview', currentAuditResult: null }));
         rememberActiveProcess(process.id);
@@ -131,6 +134,7 @@ export const useAppStore = create<AppStore>()(
         set((state) => ({ uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 20, status: 'uploading' } } }));
         try {
           const workbookFile = await parseWorkbook(file);
+          await putWorkbookRawData(workbookFile.id, workbookFile.rawData);
           set((state) => ({
             uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 100, status: 'complete' } },
             processes: patchProcess(state.processes, processId, (process) => ({
@@ -160,6 +164,7 @@ export const useAppStore = create<AppStore>()(
       },
 
       deleteFile: (processId, fileId) => {
+        void deleteWorkbookRawData(fileId);
         set((state) => ({
           currentAuditResult: state.currentAuditResult?.fileId === fileId ? null : state.currentAuditResult,
           processes: patchProcess(state.processes, processId, (process) => {
@@ -215,8 +220,7 @@ export const useAppStore = create<AppStore>()(
         const selected = file.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected);
         if (!selected.length) return;
         set({ isAuditRunning: true, auditProgressText: `Auditing sheet 1 of ${selected.length}...` });
-        await new Promise((resolve) => window.setTimeout(resolve, 150));
-        const result = executeAudit(file, process.auditPolicy);
+        const result = await runAuditAsync(file, process.auditPolicy);
         set((state) => ({
           isAuditRunning: false,
           auditProgressText: '',
@@ -379,6 +383,44 @@ export const useAppStore = create<AppStore>()(
               updatedAt: now,
             };
           }),
+        }));
+      },
+
+      addIssueComment: (processId, issueKey, body, author = 'Auditor') => {
+        const trimmed = body.trim();
+        if (!trimmed) return;
+        const now = new Date().toISOString();
+        const comment: IssueComment = {
+          id: createId('comment'),
+          issueKey,
+          processId,
+          author: author.trim() || 'Auditor',
+          body: trimmed,
+          createdAt: now,
+        };
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => ({
+            ...process,
+            comments: {
+              ...(process.comments ?? {}),
+              [issueKey]: [...(process.comments?.[issueKey] ?? []), comment],
+            },
+            updatedAt: now,
+          })),
+        }));
+      },
+
+      deleteIssueComment: (processId, issueKey, commentId) => {
+        const now = new Date().toISOString();
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => ({
+            ...process,
+            comments: {
+              ...(process.comments ?? {}),
+              [issueKey]: (process.comments?.[issueKey] ?? []).filter((comment) => comment.id !== commentId),
+            },
+            updatedAt: now,
+          })),
         }));
       },
 

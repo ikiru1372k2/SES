@@ -67,7 +67,7 @@ function detectHeader(rows: unknown[][]): HeaderCandidate | null {
   let best: HeaderCandidate | null = null;
   const scanLength = Math.min(rows.length, HEADER_SCAN_LIMIT);
   for (let index = 0; index < scanLength; index += 1) {
-    const row = rows[index];
+    const row = rows[index] ?? [];
     const candidate = rowHeaderScore(row);
     if (!best || candidate.score > best.score) best = { ...candidate, headerRowIndex: index };
   }
@@ -177,16 +177,19 @@ export function detectWorkbookSheets(rawData: Record<string, unknown[][]>): Shee
       skipReason = rows.length < 5 ? 'Too few rows for audit' : 'Template headers not recognized in first 20 rows';
     }
 
-    return {
+    const info: SheetInfo = {
       name,
       status,
       rowCount: header ? auditableRowCount(rows, header.headerRowIndex) : Math.max(0, rows.filter(hasContent).length - 1),
       isSelected: status === 'valid',
-      skipReason,
-      headerRowIndex: header?.headerRowIndex,
-      originalHeaders: header?.originalHeaders,
-      normalizedHeaders: header?.normalizedHeaders,
     };
+    if (skipReason) info.skipReason = skipReason;
+    if (header) {
+      info.headerRowIndex = header.headerRowIndex;
+      info.originalHeaders = header.originalHeaders;
+      info.normalizedHeaders = header.normalizedHeaders;
+    }
+    return info;
   });
 }
 
@@ -200,12 +203,12 @@ export async function downloadAuditedWorkbook(file: WorkbookFile, result: AuditR
     const headerRowIndex = sheet?.headerRowIndex ?? 0;
     const output = rows.map((row) => [...row]);
     if (auditedSheets.has(sheetName) && output.length > headerRowIndex) {
-      output[headerRowIndex] = [...output[headerRowIndex], 'Audit Severity', 'Audit Notes'];
+      output[headerRowIndex] = [...(output[headerRowIndex] ?? []), 'Audit Severity', 'Audit Notes'];
       const issuesByRow = new Map<number, AuditIssue>();
       result.issues.filter((issue) => issue.sheetName === sheetName).forEach((issue) => issuesByRow.set(issue.rowIndex, issue));
       for (let index = headerRowIndex + 1; index < output.length; index += 1) {
         const issue = issuesByRow.get(index);
-        output[index] = [...output[index], issue?.severity ?? '', issue?.notes ?? ''];
+        output[index] = [...(output[index] ?? []), issue?.severity ?? '', issue?.notes ?? ''];
       }
     }
     const worksheet = workbook.addWorksheet(uniqueSheetName(sheetName, usedSheetNames));

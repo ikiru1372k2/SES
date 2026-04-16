@@ -12,6 +12,7 @@ export function createDefaultAuditPolicy(now = new Date().toISOString()): AuditP
     missingEffortEnabled: true,
     missingManagerEnabled: true,
     inPlanningEffortEnabled: true,
+    onHoldEffortEnabled: true,
     onHoldEffortThreshold: 200,
     updatedAt: now,
   };
@@ -34,5 +35,5 @@ export function policySummary(policy: AuditPolicy): string {
 
 export function isPolicyChanged(current: AuditPolicy, snapshot?: AuditPolicy): boolean {
   if (!snapshot) return false;
-  return current.updatedAt !== snapshot.updatedAt;
+  return (Object.keys(current) as Array<keyof AuditPolicy>).some((key) => key !== 'updatedAt' && current[key] !== snapshot[key]);
 }

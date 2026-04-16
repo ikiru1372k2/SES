@@ -129,7 +129,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
 
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard label="Total users" value={entries.length} />
-        <SummaryCard label="Not contacted" value={groupCount(entries, 'notContacted')} tone="text-[#b00020]" />
+        <SummaryCard label="Not contacted" value={groupCount(entries, 'notContacted')} tone="text-brand" />
         <SummaryCard label="In progress" value={inProgress} tone="text-amber-700" />
         <SummaryCard label="Resolved" value={groupCount(entries, 'resolved')} tone="text-green-700" />
       </div>
@@ -152,7 +152,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
           <button
             key={key}
             onClick={() => setFilter(key)}
-            className={`rounded-lg border px-4 py-2 text-sm font-medium ${filter === key ? 'border-[#b00020] bg-red-50 text-[#b00020] dark:bg-red-950/30' : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800'}`}
+            className={`rounded-lg border px-4 py-2 text-sm font-medium ${filter === key ? 'border-brand bg-brand-subtle text-brand dark:bg-red-950/30' : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800'}`}
           >
             {label}
           </button>
@@ -187,8 +187,8 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => openOutlook(selected, selectedDraft)} disabled={!selectedDraft?.email} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-[#b00020] hover:text-[#b00020] disabled:opacity-40 dark:border-gray-700">Open Outlook</button>
-              <button onClick={() => openTeams(selected, selectedDraft)} disabled={!selectedDraft?.email} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-[#b00020] hover:text-[#b00020] disabled:opacity-40 dark:border-gray-700">Teams</button>
+              <button onClick={() => openOutlook(selected, selectedDraft)} disabled={!selectedDraft?.email} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-brand hover:text-brand disabled:opacity-40 dark:border-gray-700">Open Outlook</button>
+              <button onClick={() => openTeams(selected, selectedDraft)} disabled={!selectedDraft?.email} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-brand hover:text-brand disabled:opacity-40 dark:border-gray-700">Teams</button>
               {selected.resolved ? (
                 <button onClick={() => reopenTracking(process.id, selected.managerEmail)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Reopen</button>
               ) : (
@@ -222,7 +222,7 @@ function TrackingCard({ entry, active, onClick }: { entry: TrackingEntry; active
   return (
     <button
       onClick={onClick}
-      className={`w-full rounded-lg border p-3 text-left transition hover:border-[#b00020]/50 hover:shadow-sm ${active ? 'border-[#b00020] bg-red-50 dark:bg-red-950/20' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}
+      className={`w-full rounded-lg border p-3 text-left transition hover:border-brand/50 hover:shadow-sm ${active ? 'border-brand bg-brand-subtle dark:bg-red-950/20' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}
     >
       <div className="font-semibold leading-tight">{entry.managerName}</div>
       <div className={missingEmail ? 'truncate text-xs font-medium text-red-600' : 'truncate text-xs text-gray-500'}>{missingEmail ? 'Missing manager email' : entry.managerEmail}</div>
@@ -232,7 +232,7 @@ function TrackingCard({ entry, active, onClick }: { entry: TrackingEntry; active
         {entry.teamsCount ? <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-800">T {entry.teamsCount}</span> : null}
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-        <div className={entry.resolved ? 'h-full rounded-full bg-green-600' : entry.teamsCount ? 'h-full rounded-full bg-amber-600' : 'h-full rounded-full bg-[#b00020]'} style={{ width: `${percent}%` }} />
+        <div className={entry.resolved ? 'h-full rounded-full bg-green-600' : entry.teamsCount ? 'h-full rounded-full bg-amber-600' : 'h-full rounded-full bg-brand'} style={{ width: `${percent}%` }} />
       </div>
       <div className="mt-1 text-right text-xs text-gray-500">{percent}%</div>
     </button>

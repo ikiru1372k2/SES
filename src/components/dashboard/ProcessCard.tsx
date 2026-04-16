@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { displayName } from '../../lib/storage';
 import type { AuditProcess } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
+import { Button } from '../shared/Button';
 
 function severityCounts(process: AuditProcess) {
   const latest = process.latestAuditResult ?? process.versions[0]?.result;
@@ -31,7 +32,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   }
 
   return (
-    <article className="relative rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-[#b00020]/40 hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
+    <article className="relative rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-brand/40 hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-semibold text-gray-950 dark:text-white">{displayName(process.name)}</h2>
@@ -45,7 +46,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
                 <Edit2 size={14} />
                 Edit process
               </button>
-              <button onClick={confirmDelete} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[#b00020] hover:bg-red-50 dark:hover:bg-red-950/30">
+              <button onClick={confirmDelete} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-brand hover:bg-red-50 dark:hover:bg-red-950/30">
                 <Trash2 size={14} />
                 Delete process
               </button>
@@ -61,14 +62,14 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
         <div><div className="text-gray-500">Issues</div><div className="text-xl font-bold">{latest?.issues.length ?? 0}</div></div>
       </div>
       <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-        <div className="bg-[#b00020]" style={{ width: `${(counts.High / total) * 100}%` }} />
+        <div className="bg-brand" style={{ width: `${(counts.High / total) * 100}%` }} />
         <div className="bg-amber-500" style={{ width: `${(counts.Medium / total) * 100}%` }} />
         <div className="bg-blue-500" style={{ width: `${(counts.Low / total) * 100}%` }} />
       </div>
       <div className="mt-2 text-xs text-gray-500">High {counts.High} - Med {counts.Medium} - Low {counts.Low}</div>
       <div className="mt-5 flex gap-2">
-        <Link to={`/workspace/${process.id}`} className="rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white hover:bg-[#8f001a]">Open Workspace</Link>
-        <Link to="/compare" className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:border-[#b00020] hover:text-[#b00020] dark:border-gray-700 dark:hover:bg-gray-800">Compare</Link>
+        <Link to={`/workspace/${process.id}`} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">Open Workspace</Link>
+        <Link to="/compare" className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700 dark:hover:bg-gray-800">Compare</Link>
       </div>
       {editOpen ? <EditProcessModal process={process} onClose={() => setEditOpen(false)} /> : null}
     </article>
@@ -100,8 +101,8 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
         <label className="mt-4 block text-sm font-medium">Description</label>
         <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="mt-2 h-24 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Cancel</button>
-          <button type="submit" className="rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white hover:bg-[#8f001a]">Save Changes</button>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit">Save Changes</Button>
         </div>
       </form>
     </div>

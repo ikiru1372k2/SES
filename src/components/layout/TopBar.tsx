@@ -7,8 +7,9 @@ import { displayName } from '../../lib/storage';
 import type { AuditProcess } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { BrandMark } from '../shared/BrandMark';
+import { Button } from '../shared/Button';
 
-export function TopBar({ process }: { process?: AuditProcess }) {
+export function TopBar({ process }: { process?: AuditProcess | undefined }) {
   const currentAuditResult = useAppStore((state) => state.currentAuditResult);
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const runAudit = useAppStore((state) => state.runAudit);
@@ -39,7 +40,7 @@ export function TopBar({ process }: { process?: AuditProcess }) {
         <Link to="/" className="min-w-0">
           <BrandMark />
         </Link>
-        <Link to="/compare" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:border-[#b00020] hover:text-[#b00020] dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900">Compare Processes</Link>
+        <Link to="/compare" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900">Compare Processes</Link>
       </header>
     );
   }
@@ -58,35 +59,34 @@ export function TopBar({ process }: { process?: AuditProcess }) {
       </div>
       <div className="flex items-center gap-2">
         <div className="text-right">
-          <button
+          <Button
             title={!activeFile ? 'Upload a file first' : selectedSheets === 0 ? 'Select at least one valid sheet' : ''}
             disabled={!canRun}
             onClick={onRunAudit}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white hover:bg-[#8f001a] disabled:cursor-not-allowed disabled:opacity-40"
+            leading={isAuditRunning ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
           >
-            {isAuditRunning ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
             {activeFile?.isAudited ? 'Re-run Audit' : 'Run Audit'}
-          </button>
+          </Button>
           {activeFile?.lastAuditedAt ? <div className="mt-0.5 text-[11px] text-gray-500">Last run: {new Date(activeFile.lastAuditedAt).toLocaleString()}</div> : null}
         </div>
-        <button
+        <Button
           title={!currentAuditResult ? 'Run an audit first to save a version.' : ''}
           disabled={!canSave}
           onClick={() => setVersionModalOpen(true)}
-          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:border-[#b00020] hover:text-[#b00020] disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900"
+          variant="secondary"
+          leading={<Save size={15} />}
         >
-          <Save size={15} />
           Save Version
-        </button>
-        <button
+        </Button>
+        <Button
           title={!hasSavedVersion ? 'Save a version first to download audited workbook.' : ''}
           disabled={!canDownload}
           onClick={onDownload}
-          className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium hover:border-[#b00020] hover:text-[#b00020] disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900"
+          variant="secondary"
+          leading={<ArrowDownToLine size={15} />}
         >
-          <ArrowDownToLine size={15} />
           Download
-        </button>
+        </Button>
       </div>
       {versionModalOpen && process && currentAuditResult ? <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} /> : null}
     </header>
@@ -119,8 +119,8 @@ function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose
           Version ID will be {process.id}-v{nextVersion}.
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Cancel</button>
-          <button type="submit" className="rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white hover:bg-[#8f001a]">Save Version</button>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit">Save Version</Button>
         </div>
       </form>
     </div>

@@ -2,10 +2,11 @@ import { Settings, X } from 'lucide-react';
 import { FormEvent, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/auditPolicy';
-import { exportIssuesCsv } from '../../lib/auditEngine';
-import type { AuditPolicy, AuditProcess, AuditIssue, IssueCategory, WorkbookFile } from '../../lib/types';
+import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
+import type { AuditPolicy, AuditProcess, AuditIssue, IssueCategory, IssueComment, WorkbookFile } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { Badge } from '../shared/Badge';
+import { Button } from '../shared/Button';
 import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
 import { StatusBadge } from '../shared/StatusBadge';
@@ -25,9 +26,11 @@ const issueHeaders: Array<{ key: SortKey; label: string }> = [
   { key: 'reason', label: 'Reason' },
 ];
 
-export function AuditResultsTab({ process, file }: { process: AuditProcess; file?: WorkbookFile }) {
+export function AuditResultsTab({ process, file }: { process: AuditProcess; file?: WorkbookFile | undefined }) {
   const result = useAppStore((state) => state.currentAuditResult);
   const runAudit = useAppStore((state) => state.runAudit);
+  const addIssueComment = useAppStore((state) => state.addIssueComment);
+  const deleteIssueComment = useAppStore((state) => state.deleteIssueComment);
   const [severity, setSeverity] = useState('');
   const [sheet, setSheet] = useState('');
   const [status, setStatus] = useState('');
@@ -98,7 +101,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
             <div>3 Run audit with the QGC policy</div>
             <div>4 Save a version for traceability</div>
           </div>
-          {file ? <button onClick={() => runAudit(process.id, file.id)} disabled={!hasSelected} className="rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Run Audit</button> : null}
+          {file ? <button onClick={() => runAudit(process.id, file.id)} disabled={!hasSelected} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Run Audit</button> : null}
         </EmptyState>
       ) : (
         <>
@@ -164,6 +167,11 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                             <Detail label="Threshold" value={issue.thresholdLabel ?? '-'} />
                             <Detail label="Recommended action" value={issue.recommendedAction ?? 'Review this project with the owner.'} />
                           </div>
+                          <IssueComments
+                            comments={process.comments?.[auditIssueKey(issue)] ?? []}
+                            onAdd={(body) => addIssueComment(process.id, auditIssueKey(issue), body)}
+                            onDelete={(commentId) => deleteIssueComment(process.id, auditIssueKey(issue), commentId)}
+                          />
                         </td>
                       </tr>
                     ) : null}
@@ -178,6 +186,43 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
 
       {settingsOpen ? <QgcSettingsDrawer process={process} onClose={() => setSettingsOpen(false)} /> : null}
     </div>
+  );
+}
+
+function IssueComments({ comments, onAdd, onDelete }: { comments: IssueComment[]; onAdd: (body: string) => void; onDelete: (commentId: string) => void }) {
+  const [body, setBody] = useState('');
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onAdd(body);
+    setBody('');
+  }
+
+  return (
+    <section className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="font-semibold">Audit trail</h4>
+        <span className="text-xs text-gray-500">{comments.length} comment{comments.length === 1 ? '' : 's'}</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {comments.map((comment) => (
+          <div key={comment.id} className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold text-gray-500">{comment.author} - {new Date(comment.createdAt).toLocaleString()}</div>
+                <p className="mt-1 text-sm text-gray-900 dark:text-gray-100">{comment.body}</p>
+              </div>
+              <button type="button" onClick={() => onDelete(comment.id)} className="text-xs text-gray-400 hover:text-red-600">Delete</button>
+            </div>
+          </div>
+        ))}
+        {!comments.length ? <div className="text-sm text-gray-500">No notes yet. Capture PM feedback, approval context, or follow-up details here.</div> : null}
+      </div>
+      <form onSubmit={submit} className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input value={body} onChange={(event) => setBody(event.target.value)} placeholder="Add audit note..." className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+        <Button type="submit" size="sm" disabled={!body.trim()}>Add note</Button>
+      </form>
+    </section>
   );
 }
 
@@ -242,12 +287,13 @@ function QgcSettingsDrawer({ process, onClose }: { process: AuditProcess; onClos
           <div className="mt-3 space-y-3">
             <Toggle label="Flag missing manager" checked={draft.missingManagerEnabled} onChange={(checked) => setFlag('missingManagerEnabled', checked)} />
             <Toggle label="Flag In Planning with effort" checked={draft.inPlanningEffortEnabled} onChange={(checked) => setFlag('inPlanningEffortEnabled', checked)} />
+            <Toggle label="Flag On Hold with effort" checked={draft.onHoldEffortEnabled} onChange={(checked) => setFlag('onHoldEffortEnabled', checked)} />
             <NumberField label="Flag On Hold when effort is greater than" value={draft.onHoldEffortThreshold} suffix="hours" onChange={(value) => setNumber('onHoldEffortThreshold', value)} />
           </div>
         </details>
 
         <div className="sticky bottom-0 mt-6 flex gap-2 border-t border-gray-200 bg-white pt-4 dark:border-gray-700 dark:bg-gray-900">
-          <button type="submit" className="rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white hover:bg-[#8f001a]">Save Settings</button>
+          <button type="submit" className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">Save Settings</button>
           <button type="button" onClick={reset} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Reset Defaults</button>
           <button type="button" onClick={onClose} className="ml-auto rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Cancel</button>
         </div>

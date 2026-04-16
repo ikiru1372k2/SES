@@ -1,4 +1,5 @@
 import type { AuditProcess, TrackingEntry } from './types';
+import { getWorkbookRawData } from './blobStore';
 import { detectWorkbookSheets } from './excelParser';
 import { createId } from './id';
 import { normalizeAuditPolicy } from './auditPolicy';
@@ -19,7 +20,7 @@ export function loadProcesses(): AuditProcess[] {
 }
 
 export function saveProcesses(processes: AuditProcess[]): void {
-  localStorage.setItem(DATA_KEY, JSON.stringify({ processes, version: 1 }));
+  localStorage.setItem(DATA_KEY, JSON.stringify({ processes: stripRawDataFromProcesses(processes), version: 1 }));
 }
 
 export async function loadProcessesFromLocalDb(): Promise<AuditProcess[]> {
@@ -28,9 +29,9 @@ export async function loadProcessesFromLocalDb(): Promise<AuditProcess[]> {
     if (!response.ok) return loadProcesses();
     const parsed = await response.json();
     const processes = parsed.processes ?? [];
-    return sanitizeProcesses(processes);
+    return hydrateWorkbookRawData(sanitizeProcesses(processes));
   } catch {
-    return loadProcesses();
+    return hydrateWorkbookRawData(loadProcesses());
   }
 }
 
@@ -40,7 +41,7 @@ export async function saveProcessesToLocalDb(processes: AuditProcess[]): Promise
     await fetch('/api/local-db', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ processes, version: 1 }),
+      body: JSON.stringify({ processes: stripRawDataFromProcesses(processes), version: 1 }),
     });
   } catch {
     // Browser storage remains the fallback when the local file API is unavailable.
@@ -53,6 +54,23 @@ export function displayName(name: string): string {
 
 export function sanitizeProcesses(value: unknown): AuditProcess[] {
   return Array.isArray(value) ? value.map(sanitizeProcess).filter(Boolean) as AuditProcess[] : [];
+}
+
+export async function hydrateWorkbookRawData(processes: AuditProcess[]): Promise<AuditProcess[]> {
+  return Promise.all(processes.map(async (process) => ({
+    ...process,
+    files: await Promise.all(process.files.map(async (file) => ({
+      ...file,
+      rawData: Object.keys(file.rawData).length ? file.rawData : await getWorkbookRawData(file.id) ?? {},
+    }))),
+  })));
+}
+
+function stripRawDataFromProcesses(processes: AuditProcess[]): AuditProcess[] {
+  return processes.map((process) => ({
+    ...process,
+    files: process.files.map((file) => ({ ...file, rawData: {} })),
+  }));
 }
 
 export function rememberActiveProcess(id: string | null): void {
@@ -75,8 +93,10 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
   const processId = String(item.id);
   const versions = Array.isArray(item.versions)
     ? item.versions.filter((version) => version?.result).map((version, index) => {
-        const versionNumber = Number(version.versionNumber ?? item.versions!.length - index) || index + 1;
+        const versionNumber = Number(version.versionNumber ?? ((item.versions?.length ?? 0) - index)) || index + 1;
         const versionId = String(version.versionId ?? version.id ?? `${processId}-v${versionNumber}`);
+        const auditPolicy = version.auditPolicy ? normalizeAuditPolicy(version.auditPolicy) : version.result.policySnapshot ? normalizeAuditPolicy(version.result.policySnapshot) : undefined;
+        const policySnapshot = version.result.policySnapshot ? normalizeAuditPolicy(version.result.policySnapshot) : version.auditPolicy ? normalizeAuditPolicy(version.auditPolicy) : undefined;
         return {
           ...version,
           id: versionId,
@@ -84,15 +104,21 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
           versionNumber,
           versionName: String(version.versionName ?? version.label ?? `Version ${versionNumber}`),
           notes: String(version.notes ?? ''),
-          auditPolicy: version.auditPolicy ? normalizeAuditPolicy(version.auditPolicy) : version.result.policySnapshot ? normalizeAuditPolicy(version.result.policySnapshot) : undefined,
+          ...(auditPolicy ? { auditPolicy } : {}),
           result: {
             ...version.result,
-            policySnapshot: version.result.policySnapshot ? normalizeAuditPolicy(version.result.policySnapshot) : version.auditPolicy ? normalizeAuditPolicy(version.auditPolicy) : undefined,
+            ...(policySnapshot ? { policySnapshot } : {}),
           },
         };
       })
     : [];
   const tracking = sanitizeTracking(item.notificationTracking, processId);
+
+  const latestPolicySnapshot = item.latestAuditResult?.policySnapshot ? normalizeAuditPolicy(item.latestAuditResult.policySnapshot) : undefined;
+  const latestAuditResult = item.latestAuditResult ? {
+    ...item.latestAuditResult,
+    ...(latestPolicySnapshot ? { policySnapshot: latestPolicySnapshot } : {}),
+  } : versions[0]?.result;
 
   return {
     id: processId,
@@ -119,13 +145,31 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
       : [],
     activeFileId: item.activeFileId ? String(item.activeFileId) : null,
     versions,
-    latestAuditResult: item.latestAuditResult ? {
-      ...item.latestAuditResult,
-      policySnapshot: item.latestAuditResult.policySnapshot ? normalizeAuditPolicy(item.latestAuditResult.policySnapshot) : undefined,
-    } : versions[0]?.result,
+    ...(latestAuditResult ? { latestAuditResult } : {}),
     auditPolicy: normalizeAuditPolicy(item.auditPolicy),
     notificationTracking: tracking,
+    comments: sanitizeComments(item.comments, processId),
   };
+}
+
+function sanitizeComments(value: unknown, processId: string): AuditProcess['comments'] {
+  if (!value || typeof value !== 'object') return {};
+  const comments: AuditProcess['comments'] = {};
+  Object.entries(value as Record<string, unknown>).forEach(([issueKey, entries]) => {
+    if (!Array.isArray(entries)) return;
+    comments[issueKey] = entries
+      .filter((entry): entry is Partial<AuditProcess['comments'][string][number]> => Boolean(entry && typeof entry === 'object'))
+      .map((entry) => ({
+        id: String(entry.id ?? createId('comment')),
+        issueKey: String(entry.issueKey ?? issueKey),
+        processId,
+        author: String(entry.author ?? 'Auditor'),
+        body: String(entry.body ?? ''),
+        createdAt: String(entry.createdAt ?? new Date().toISOString()),
+      }))
+      .filter((entry) => entry.body.trim());
+  });
+  return comments;
 }
 
 function sanitizeTracking(value: unknown, processId: string): Record<string, TrackingEntry> {

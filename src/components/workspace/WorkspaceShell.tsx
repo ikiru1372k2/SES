@@ -18,7 +18,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     <div className="flex h-full flex-col">
       <nav className="flex shrink-0 gap-1 border-b border-gray-200 bg-white px-5 dark:border-gray-800 dark:bg-gray-950">
         {tabs.map((tab) => (
-          <button key={tab.id} onClick={() => setTab(tab.id)} className={`border-b-2 px-3 py-3 text-sm font-medium ${active === tab.id ? 'border-[#b00020] text-[#b00020]' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'}`}>
+          <button key={tab.id} onClick={() => setTab(tab.id)} className={`border-b-2 px-3 py-3 text-sm font-medium ${active === tab.id ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'}`}>
             {tab.label}
           </button>
         ))}

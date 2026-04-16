@@ -95,16 +95,18 @@ export function buildAuditRules(policy: AuditPolicy): AuditRule[] {
     });
   }
 
-  rules.push({
-    id: 'ON_HOLD_HIGH_EFFORT',
-    name: 'On Hold with effort',
-    category: 'Other',
-    severity: 'High',
-    check: (row) => text(row, STATE_FIELDS).toLowerCase() === 'on hold' && num(row, EFFORT_FIELDS) > policy.onHoldEffortThreshold,
-    reason: (row) => `Project is On Hold but has ${num(row, EFFORT_FIELDS)}h effort logged.`,
-    thresholdLabel: `On Hold >${policy.onHoldEffortThreshold}h`,
-    recommendedAction: 'Confirm whether work should continue while the project is On Hold.',
-  });
+  if (policy.onHoldEffortEnabled) {
+    rules.push({
+      id: 'ON_HOLD_HIGH_EFFORT',
+      name: 'On Hold with effort',
+      category: 'Other',
+      severity: 'High',
+      check: (row) => text(row, STATE_FIELDS).toLowerCase() === 'on hold' && num(row, EFFORT_FIELDS) > policy.onHoldEffortThreshold,
+      reason: (row) => `Project is On Hold but has ${num(row, EFFORT_FIELDS)}h effort logged.`,
+      thresholdLabel: `On Hold >${policy.onHoldEffortThreshold}h`,
+      recommendedAction: 'Confirm whether work should continue while the project is On Hold.',
+    });
+  }
 
   if (policy.inPlanningEffortEnabled) {
     rules.push({
@@ -121,8 +123,6 @@ export function buildAuditRules(policy: AuditPolicy): AuditRule[] {
 
   return rules;
 }
-
-export const AUDIT_RULES: AuditRule[] = buildAuditRules(createDefaultAuditPolicy());
 
 const severityRank: Record<Severity, number> = { High: 3, Medium: 2, Low: 1 };
 
@@ -168,7 +168,7 @@ export function runAudit(file: WorkbookFile, auditPolicy?: AuditPolicy): AuditRe
         const matches = rules.filter((rule) => rule.check(row)).sort((a, b) => severityRank[b.severity] - severityRank[a.severity]);
         if (!matches.length) return;
         flaggedCount += 1;
-        const primary = matches[0];
+        const primary = matches[0]!;
         const notes = matches.map((rule) => rule.reason(row)).join('; ');
         const manager = text(row, MANAGER_FIELDS) || 'Unassigned';
         issues.push({
@@ -206,7 +206,9 @@ export function runAudit(file: WorkbookFile, auditPolicy?: AuditPolicy): AuditRe
   };
 }
 
-const keyFor = (issue: AuditIssue) => `${issue.projectNo}|${issue.sheetName}|${issue.rowIndex}`;
+export const auditIssueKey = (issue: Pick<AuditIssue, 'projectNo' | 'sheetName' | 'rowIndex'>) => `${issue.projectNo}|${issue.sheetName}|${issue.rowIndex}`;
+
+const keyFor = auditIssueKey;
 
 export function compareResults(from: AuditResult, to: AuditResult): ComparisonResult {
   const fromMap = new Map(from.issues.map((issue) => [keyFor(issue), issue]));

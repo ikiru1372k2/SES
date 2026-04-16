@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../../store/useAppStore';
+import { Button } from '../shared/Button';
 
 export function CreateProcessModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
@@ -31,8 +32,8 @@ export function CreateProcessModal({ onClose }: { onClose: () => void }) {
         <label className="mt-4 block text-sm font-medium">Description</label>
         <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional context for this audit cycle" className="mt-2 h-24 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
         <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Cancel</button>
-          <button type="submit" className="rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white hover:bg-[#8f001a]">Create Process</button>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit">Create Process</Button>
         </div>
       </form>
     </div>

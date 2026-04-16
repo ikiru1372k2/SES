@@ -3,7 +3,7 @@ import type { AuditProcess, AuditResult, WorkbookFile } from '../../lib/types';
 import { EmptyState } from '../shared/EmptyState';
 import { StatusBadge } from '../shared/StatusBadge';
 
-export function PreviewTab({ process, file, result }: { process: AuditProcess; file?: WorkbookFile; result: AuditResult | null }) {
+export function PreviewTab({ process, file, result }: { process: AuditProcess; file?: WorkbookFile | undefined; result: AuditResult | null }) {
   const [sheetName, setSheetName] = useState(file?.sheets[0]?.name ?? '');
   const activeSheet = useMemo(() => file?.sheets.find((sheet) => sheet.name === sheetName) ?? file?.sheets[0], [file, sheetName]);
   const rows = activeSheet ? (file?.rawData[activeSheet.name] ?? []) : [];
@@ -21,7 +21,7 @@ export function PreviewTab({ process, file, result }: { process: AuditProcess; f
   const blankRows = rows.slice(headerRowIndex + 1, headerRowIndex + 101).filter((row) => row.every((cell) => String(cell ?? '').trim() === '')).length;
 
   if (!file) {
-    return <EmptyState title="Upload a workbook to preview your data"><button className="rounded-lg bg-[#b00020] px-4 py-2 text-sm font-medium text-white">Use the sidebar upload</button></EmptyState>;
+    return <EmptyState title="Upload a workbook to preview your data"><button className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">Use the sidebar upload</button></EmptyState>;
   }
 
   return (
@@ -32,7 +32,7 @@ export function PreviewTab({ process, file, result }: { process: AuditProcess; f
       </div>
       <div className="flex flex-wrap gap-2">
         {file.sheets.map((sheet) => (
-          <button key={sheet.name} onClick={() => setSheetName(sheet.name)} className={`rounded-lg border px-3 py-2 text-sm ${activeSheet?.name === sheet.name ? 'border-[#b00020] bg-red-50 text-[#b00020] dark:bg-red-950/30' : 'border-gray-300 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800'}`}>
+          <button key={sheet.name} onClick={() => setSheetName(sheet.name)} className={`rounded-lg border px-3 py-2 text-sm ${activeSheet?.name === sheet.name ? 'border-brand bg-brand-subtle text-brand dark:bg-red-950/30' : 'border-gray-300 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800'}`}>
             {sheet.name} {sheet.status !== 'valid' ? <span className="ml-1 text-xs text-gray-500">({sheet.status})</span> : null}
           </button>
         ))}

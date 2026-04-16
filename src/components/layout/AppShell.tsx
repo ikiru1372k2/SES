@@ -4,7 +4,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { ProgressBar } from '../shared/ProgressBar';
 import { TopBar } from './TopBar';
 
-export function AppShell({ process, sidebar, children }: { process?: AuditProcess; sidebar?: ReactNode; children: ReactNode }) {
+export function AppShell({ process, sidebar, children }: { process?: AuditProcess | undefined; sidebar?: ReactNode; children: ReactNode }) {
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const progressText = useAppStore((state) => state.auditProgressText);
   return (
