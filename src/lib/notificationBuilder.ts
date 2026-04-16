@@ -30,11 +30,14 @@ export function isValidEmail(value: string | null | undefined): value is string 
   return Boolean(value && EMAIL_RE.test(sanitizeHeader(value)));
 }
 
-export function recipientKeyFor(name: string, email?: string | null): string {
+export function managerKey(name: string, email?: string | null): string {
   if (isValidEmail(email)) return sanitizeHeader(email).toLowerCase();
   const clean = sanitizeHeader(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return `missing-email:${clean || 'unassigned'}`;
 }
+
+/** @deprecated Use managerKey instead. Kept only for migration. */
+export const recipientKeyFor = managerKey;
 
 export function defaultTemplateForTheme(theme: NotificationTheme): Omit<NotificationTemplate, 'greeting' | 'deadlineLine'> {
   switch (theme) {
@@ -98,15 +101,32 @@ export function defaultTemplateForTheme(theme: NotificationTheme): Omit<Notifica
   }
 }
 
-export function buildNotificationDrafts(
-  issues: AuditIssue[],
-  theme: NotificationDraft['theme'],
-  deadline: string,
-  template = defaultTemplateForTheme(theme),
-  corrections: Record<string, IssueCorrection> = {},
-  comments: Record<string, IssueComment[]> = {},
-  acknowledgments: Record<string, IssueAcknowledgment> = {},
-): NotificationDraft[] {
+export interface BuildNotificationDraftsOptions {
+  issues: AuditIssue[];
+  theme: NotificationTheme;
+  deadline: string;
+  template?: NotificationTemplate;
+  corrections?: Record<string, IssueCorrection>;
+  comments?: Record<string, IssueComment[]>;
+  acknowledgments?: Record<string, IssueAcknowledgment>;
+}
+
+export function buildNotificationDrafts(options: BuildNotificationDraftsOptions): NotificationDraft[] {
+  const {
+    issues,
+    theme,
+    deadline,
+    template: templateOverride,
+    corrections = {},
+    comments = {},
+    acknowledgments = {},
+  } = options;
+  const template: NotificationTemplate = {
+    greeting: 'Dear',
+    deadlineLine: 'by',
+    ...defaultTemplateForTheme(theme),
+    ...templateOverride,
+  };
   const byManager = new Map<string, AuditIssue[]>();
   issues.forEach((issue) => byManager.set(issue.projectManager, [...(byManager.get(issue.projectManager) ?? []), issue]));
   return [...byManager.entries()].map(([pmName, projects]) => {
@@ -196,7 +216,7 @@ ${escapeHtml(template.signature2)}
     return {
       pmName,
       email,
-      recipientKey: recipientKeyFor(pmName, email),
+      recipientKey: managerKey(pmName, email),
       hasValidRecipient: Boolean(email),
       issueCount: projects.length,
       projects,
@@ -233,25 +253,6 @@ export function openTeamsMessage(email: string, message: string): void {
   const recipient = sanitizeHeader(email);
   if (!isValidEmail(recipient)) return;
   window.open(`https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(recipient)}&message=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
-}
-
-export function buildGeneralNotification(drafts: NotificationDraft[]): { recipients: string[]; subject: string; body: string } {
-  const recipients = [...new Set(drafts.map((draft) => draft.email).filter(isValidEmail))];
-  const managerSummary = drafts
-    .map((draft) => `${draft.pmName} (${draft.email ?? 'missing email'}) - ${draft.issueCount} flagged project(s)`)
-    .join('\n');
-  const projects = drafts
-    .flatMap((draft) => draft.projects.map((issue) => {
-      const correction = draft.corrections[auditIssueKey(issue)];
-      const correctionText = correction ? ` | proposed effort ${issue.effort} -> ${correction.effort ?? issue.effort}` : '';
-      return `- ${draft.pmName}: ${issue.projectNo} | ${issue.projectName} | ${issue.severity} | ${issue.reason ?? issue.notes}${correctionText}`;
-    }))
-    .join('\n');
-  return {
-    recipients,
-    subject: `General QGC escalation summary: ${drafts.reduce((sum, draft) => sum + draft.issueCount, 0)} flagged project(s)`,
-    body: `Dear Project Managers,\n\nThe latest QGC workbook audit identified items that require review.\n\nManagers included:\n${managerSummary}\n\nFlagged projects:\n${projects}\n\nPlease review your items and update the workbook/status before the next escalation review.\n\nEffort Audit Team`,
-  };
 }
 
 export function downloadEml(draft: NotificationDraft): void {

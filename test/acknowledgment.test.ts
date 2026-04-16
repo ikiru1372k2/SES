@@ -30,7 +30,12 @@ test('draft exposes unreviewedCount; acknowledged and corrected are not counted'
     [auditIssueKey(i2)]: { issueKey: auditIssueKey(i2), processId: 'p', status: 'acknowledged', updatedAt: '' },
     [auditIssueKey(i3)]: { issueKey: auditIssueKey(i3), processId: 'p', status: 'corrected', updatedAt: '' },
   };
-  const [draft] = buildNotificationDrafts([i1, i2, i3], 'Company Reminder', '', undefined, {}, {}, acks);
+  const [draft] = buildNotificationDrafts({
+    issues: [i1, i2, i3],
+    theme: 'Company Reminder',
+    deadline: '',
+    acknowledgments: acks,
+  });
 
   assert.equal(draft?.issueCount, 3);
   assert.equal(draft?.unreviewedCount, 1);
@@ -45,7 +50,13 @@ test('comments and corrections appear in draft HTML as escaped text', () => {
   const comments: Record<string, IssueComment[]> = {
     [key]: [{ id: 'c1', issueKey: key, processId: 'p', author: 'me', body: 'PM confirmed', createdAt: '' }],
   };
-  const [draft] = buildNotificationDrafts([issue], 'Company Reminder', '', undefined, corrections, comments, {});
+  const [draft] = buildNotificationDrafts({
+    issues: [issue],
+    theme: 'Company Reminder',
+    deadline: '',
+    corrections,
+    comments,
+  });
 
   assert.ok(draft?.htmlBody.includes('&lt;b&gt;beta&lt;/b&gt;'));
   assert.ok(draft?.htmlBody.includes('800'));

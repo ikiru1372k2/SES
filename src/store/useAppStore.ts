@@ -6,6 +6,7 @@ import { deleteWorkbookRawData, putWorkbookRawData } from '../lib/blobStore';
 import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
 import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
+import { makeDefaultTrackingEntry, trackingKey } from '../lib/tracking';
 import type {
   AcknowledgmentStatus,
   AuditPolicy,
@@ -327,7 +328,7 @@ export const useAppStore = create<AppStore>()(
         const now = new Date().toISOString();
         set((state) => ({
           processes: patchProcess(state.processes, processId, (process) => {
-            const key = `${processId}:${managerEmail}`;
+            const key = trackingKey(processId, managerEmail);
             const current = process.notificationTracking[key];
             const outlookCount = (current?.outlookCount ?? 0) + (channel === 'outlook' || channel === 'eml' || channel === 'sendAll' ? 1 : 0);
             const teamsCount = (current?.teamsCount ?? 0) + (channel === 'teams' ? 1 : 0);
@@ -340,12 +341,9 @@ export const useAppStore = create<AppStore>()(
                   : outlookCount === 1
                     ? 'Reminder 1 sent'
                     : 'Not contacted';
+            const base = makeDefaultTrackingEntry(processId, managerName, managerEmail, flaggedProjectCount);
             const entry: TrackingEntry = {
-              key,
-              processId,
-              managerName,
-              managerEmail,
-              flaggedProjectCount,
+              ...base,
               outlookCount,
               teamsCount,
               lastContactAt: now,
@@ -363,22 +361,10 @@ export const useAppStore = create<AppStore>()(
         const now = new Date().toISOString();
         set((state) => ({
           processes: patchProcess(state.processes, processId, (process) => {
-            const key = `${processId}:${managerEmail}`;
+            const key = trackingKey(processId, managerEmail);
             const current = process.notificationTracking[key];
-            const entry: TrackingEntry = current ?? {
-              key,
-              processId,
-              managerName: managerEmail.split('@')[0]?.replace(/[._-]+/g, ' ') || 'Unassigned',
-              managerEmail,
-              flaggedProjectCount: 0,
-              outlookCount: 0,
-              teamsCount: 0,
-              lastContactAt: null,
-              stage: 'Not contacted',
-              resolved: false,
-              history: [],
-              projectStatuses: {},
-            };
+            const derivedName = managerEmail.split('@')[0]?.replace(/[._-]+/g, ' ') || 'Unassigned';
+            const entry: TrackingEntry = current ?? makeDefaultTrackingEntry(processId, derivedName, managerEmail, 0);
             return {
               ...process,
               notificationTracking: {
@@ -401,7 +387,7 @@ export const useAppStore = create<AppStore>()(
         const now = new Date().toISOString();
         set((state) => ({
           processes: patchProcess(state.processes, processId, (process) => {
-            const key = `${processId}:${managerEmail}`;
+            const key = trackingKey(processId, managerEmail);
             const current = process.notificationTracking[key];
             if (!current) return process;
             const stage = current.teamsCount > 0 ? 'Teams escalated' : current.outlookCount >= 2 ? 'Reminder 2 sent' : current.outlookCount === 1 ? 'Reminder 1 sent' : 'Not contacted';
@@ -521,7 +507,7 @@ export const useAppStore = create<AppStore>()(
         const now = new Date().toISOString();
         set((state) => ({
           processes: patchProcess(state.processes, processId, (process) => {
-            const key = `${processId}:${managerEmail}`;
+            const key = trackingKey(processId, managerEmail);
             const current = process.notificationTracking[key];
             if (!current) return process;
             const existingStatus = current.projectStatuses?.[projectNo] ?? {

@@ -11,6 +11,7 @@ import { getWorkbookRawData } from './blobStore';
 import { detectWorkbookSheets } from './excelParser';
 import { createId } from './id';
 import { normalizeAuditPolicy } from './auditPolicy';
+import { trackingKey } from './tracking';
 
 export const DATA_KEY = 'effort-auditor-data';
 export const UI_KEY = 'effort-auditor-ui';
@@ -83,14 +84,6 @@ function stripRawDataFromProcesses(processes: AuditProcess[]): AuditProcess[] {
 
 export function rememberActiveProcess(id: string | null): void {
   localStorage.setItem(UI_KEY, JSON.stringify({ lastActiveProcessId: id }));
-}
-
-export function loadActiveProcessId(): string | null {
-  try {
-    return JSON.parse(localStorage.getItem(UI_KEY) || '{}').lastActiveProcessId ?? null;
-  } catch {
-    return null;
-  }
 }
 
 function sanitizeProcess(value: unknown): AuditProcess | null {
@@ -188,9 +181,9 @@ function sanitizeTracking(value: unknown, processId: string): Record<string, Tra
   if (!value || typeof value !== 'object') return {};
   return Object.fromEntries(Object.entries(value as Record<string, Partial<TrackingEntry>>).map(([key, entry]) => {
     const managerEmail = String(entry.managerEmail ?? key.split(':').at(-1) ?? '');
-    const trackingKey = `${processId}:${managerEmail}`;
-    return [trackingKey, {
-      key: trackingKey,
+    const keyNorm = trackingKey(processId, managerEmail);
+    return [keyNorm, {
+      key: keyNorm,
       processId,
       managerName: String(entry.managerName ?? 'Unassigned'),
       managerEmail,

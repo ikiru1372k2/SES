@@ -2,7 +2,8 @@ import { MoreVertical } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import toast from 'react-hot-toast';
-import { buildNotificationDrafts, isValidEmail, recipientKeyFor } from '../../lib/notificationBuilder';
+import { buildNotificationDrafts, isValidEmail, managerKey } from '../../lib/notificationBuilder';
+import { makeDefaultTrackingEntry, PIPELINE_COLUMNS, type PipelineKey, pipelineKey, trackingKey } from '../../lib/tracking';
 import type {
   AuditIssue,
   AuditProcess,
@@ -14,22 +15,6 @@ import type {
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 
-type PipelineKey = 'notContacted' | 'notified' | 'escalated' | 'resolved';
-
-const columns: Array<{ key: PipelineKey; title: string; accent: string }> = [
-  { key: 'notContacted', title: 'Not contacted', accent: 'border-gray-400' },
-  { key: 'notified', title: 'Notified', accent: 'border-blue-500' },
-  { key: 'escalated', title: 'Escalated', accent: 'border-amber-500' },
-  { key: 'resolved', title: 'Resolved', accent: 'border-green-600' },
-];
-
-function pipelineKey(entry: TrackingEntry): PipelineKey {
-  if (entry.resolved) return 'resolved';
-  if (entry.teamsCount > 0 || entry.outlookCount >= 2) return 'escalated';
-  if (entry.outlookCount > 0) return 'notified';
-  return 'notContacted';
-}
-
 export function TrackingTab({ process, result }: { process: AuditProcess; result: AuditResult | null }) {
   const recordTrackingEvent = useAppStore((state) => state.recordTrackingEvent);
   const markTrackingResolved = useAppStore((state) => state.markTrackingResolved);
@@ -40,35 +25,23 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
   const [hoverColumn, setHoverColumn] = useState<PipelineKey | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
-  const drafts = useMemo(() => buildNotificationDrafts(result?.issues ?? [], 'Company Reminder', ''), [result]);
+  const drafts = useMemo(
+    () => buildNotificationDrafts({ issues: result?.issues ?? [], theme: 'Company Reminder', deadline: '' }),
+    [result],
+  );
 
   const entries = useMemo(() => {
     const managerIssues = new Map<string, { name: string; email: string; count: number }>();
     (result?.issues ?? []).forEach((issue) => {
       const email = isValidEmail(issue.email) ? issue.email : null;
-      const key = recipientKeyFor(issue.projectManager, email);
+      const key = managerKey(issue.projectManager, email);
       const current = managerIssues.get(key) ?? { name: issue.projectManager, email: key, count: 0 };
       current.count += 1;
       managerIssues.set(key, current);
     });
     return [...managerIssues.values()].map((manager) => {
-      const tracking = process.notificationTracking[`${process.id}:${manager.email}`];
-      return (
-        tracking ?? {
-          key: `${process.id}:${manager.email}`,
-          processId: process.id,
-          managerName: manager.name,
-          managerEmail: manager.email,
-          flaggedProjectCount: manager.count,
-          outlookCount: 0,
-          teamsCount: 0,
-          lastContactAt: null,
-          stage: 'Not contacted' as const,
-          resolved: false,
-          history: [],
-          projectStatuses: {},
-        }
-      );
+      const tracking = process.notificationTracking[trackingKey(process.id, manager.email)];
+      return tracking ?? makeDefaultTrackingEntry(process.id, manager.name, manager.email, manager.count);
     });
   }, [process.id, process.notificationTracking, result]);
 
@@ -77,7 +50,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
     return !search || text.includes(search.toLowerCase());
   });
 
-  const grouped = columns.reduce<Record<PipelineKey, TrackingEntry[]>>(
+  const grouped = PIPELINE_COLUMNS.reduce<Record<PipelineKey, TrackingEntry[]>>(
     (acc, column) => ({ ...acc, [column.key]: [] }),
     { notContacted: [], notified: [], escalated: [], resolved: [] },
   );
@@ -155,7 +128,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
         </div>
       </div>
       <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-4">
-        {columns.map((column) => (
+        {PIPELINE_COLUMNS.map((column) => (
           <div
             key={column.key}
             onDragOver={(event) => onDragOverColumn(event, column.key)}

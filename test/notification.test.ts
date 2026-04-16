@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGeneralNotification, buildNotificationDrafts, notificationPlainText, openMailDraft } from '../src/lib/notificationBuilder.js';
+import { buildNotificationDrafts, isValidEmail, notificationPlainText, openMailDraft } from '../src/lib/notificationBuilder.js';
 import type { AuditIssue } from '../src/lib/types.js';
 
 function issue(patch: Partial<AuditIssue> = {}): AuditIssue {
@@ -22,12 +22,19 @@ function issue(patch: Partial<AuditIssue> = {}): AuditIssue {
 }
 
 test('notification HTML escapes workbook and template values', () => {
-  const [draft] = buildNotificationDrafts([issue()], 'Company Reminder', '<tomorrow>', {
-    intro: 'Intro <script>',
-    actionLine: 'Act <now>',
-    closing: 'Close & confirm',
-    signature1: 'Team "A"',
-    signature2: "Owner's Desk",
+  const [draft] = buildNotificationDrafts({
+    issues: [issue()],
+    theme: 'Company Reminder',
+    deadline: '<tomorrow>',
+    template: {
+      greeting: 'Dear',
+      deadlineLine: 'by',
+      intro: 'Intro <script>',
+      actionLine: 'Act <now>',
+      closing: 'Close & confirm',
+      signature1: 'Team "A"',
+      signature2: "Owner's Desk",
+    },
   });
   assert.ok(draft);
 
@@ -39,17 +46,21 @@ test('notification HTML escapes workbook and template values', () => {
   assert.match(draft.recipientKey, /^missing-email:/);
 });
 
-test('general notification only includes valid workbook emails', () => {
-  const drafts = buildNotificationDrafts([
-    issue({ id: 'valid', projectManager: 'Valid Manager', email: 'valid.manager@company.com' }),
-    issue({ id: 'missing', projectManager: 'Missing Manager', email: '' }),
-    issue({ id: 'invalid', projectManager: 'Invalid Manager', email: 'bad address' }),
-  ], 'Compact Update', '');
+test('draft list exposes one recipient per valid workbook email', () => {
+  const drafts = buildNotificationDrafts({
+    issues: [
+      issue({ id: 'valid', projectManager: 'Valid Manager', email: 'valid.manager@company.com' }),
+      issue({ id: 'missing', projectManager: 'Missing Manager', email: '' }),
+      issue({ id: 'invalid', projectManager: 'Invalid Manager', email: 'bad address' }),
+    ],
+    theme: 'Compact Update',
+    deadline: '',
+  });
 
-  const general = buildGeneralNotification(drafts);
+  const recipients = [...new Set(drafts.map((draft) => draft.email).filter(isValidEmail))];
 
-  assert.deepEqual(general.recipients, ['valid.manager@company.com']);
-  assert.ok(general.body.includes('missing email'));
+  assert.deepEqual(recipients, ['valid.manager@company.com']);
+  assert.ok(drafts.some((draft) => draft.pmName.includes('Missing')));
 });
 
 test('mailto generation strips header controls, filters invalid recipients, and uses comma separators', () => {
@@ -63,21 +74,26 @@ test('mailto generation strips header controls, filters invalid recipients, and 
 });
 
 test('notification drafts include proposed corrections in escaped HTML and plain text', () => {
-  const [draft] = buildNotificationDrafts([issue({
-    projectNo: 'P-2',
-    projectName: 'Corrected Project',
-    projectManager: 'Valid Manager',
-    email: 'valid.manager@company.com',
-    effort: 920,
-    sheetName: 'Effort',
-    rowIndex: 5,
-  })], 'Company Reminder', '', undefined, {
-    'P-2|Effort|5': {
-      issueKey: 'P-2|Effort|5',
-      processId: 'process-1',
-      effort: 850,
-      note: 'Capacity <cap>',
-      updatedAt: '2026-04-16T00:00:00.000Z',
+  const [draft] = buildNotificationDrafts({
+    issues: [issue({
+      projectNo: 'P-2',
+      projectName: 'Corrected Project',
+      projectManager: 'Valid Manager',
+      email: 'valid.manager@company.com',
+      effort: 920,
+      sheetName: 'Effort',
+      rowIndex: 5,
+    })],
+    theme: 'Company Reminder',
+    deadline: '',
+    corrections: {
+      'P-2|Effort|5': {
+        issueKey: 'P-2|Effort|5',
+        processId: 'process-1',
+        effort: 850,
+        note: 'Capacity <cap>',
+        updatedAt: '2026-04-16T00:00:00.000Z',
+      },
     },
   });
 

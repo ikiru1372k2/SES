@@ -1,5 +1,4 @@
 import { auditIssueKey } from '../lib/auditEngine';
-import { recipientKeyFor } from '../lib/notificationBuilder';
 import type { AuditIssue, AuditProcess, AuditResult, IssueComment, IssueCorrection } from '../lib/types';
 
 export function selectIssueComments(process: AuditProcess, issue: AuditIssue): IssueComment[] {
@@ -23,12 +22,4 @@ export function selectHasUnsavedAudit(process: AuditProcess): boolean {
 
 export function selectCorrectionCount(process: AuditProcess): number {
   return Object.keys(process.corrections ?? {}).length;
-}
-
-export function selectManagerRiskScore(process: AuditProcess, managerName: string): number {
-  return selectLatestAuditResult(process)?.issues.filter((issue) => issue.projectManager === managerName).length ?? 0;
-}
-
-export function selectManagerKey(issue: Pick<AuditIssue, 'projectManager' | 'email'>): string {
-  return recipientKeyFor(issue.projectManager, issue.email);
 }
