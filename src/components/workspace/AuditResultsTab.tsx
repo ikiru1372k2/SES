@@ -1,9 +1,11 @@
-import { Settings, X } from 'lucide-react';
-import { FormEvent, useMemo, useState } from 'react';
+import { CheckCircle2, ChevronRight, Circle, Settings, X } from 'lucide-react';
+import { Fragment, FormEvent, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/auditPolicy';
 import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
 import { openAuditReport } from '../../lib/reportExporter';
+import { severityTone } from '../../lib/severity';
 import type { AuditPolicy, AuditProcess, AuditIssue, IssueCategory, IssueComment, IssueCorrection, WorkbookFile } from '../../lib/types';
 import { selectIssueComments, selectIssueCorrection } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
@@ -13,7 +15,7 @@ import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
 import { StatusBadge } from '../shared/StatusBadge';
 
-type SortKey = keyof Pick<AuditIssue, 'severity' | 'projectNo' | 'projectName' | 'projectManager' | 'sheetName' | 'projectState' | 'effort' | 'ruleName' | 'reason'>;
+type SortKey = keyof Pick<AuditIssue, 'severity' | 'projectNo' | 'projectName' | 'projectManager' | 'sheetName' | 'projectState' | 'effort' | 'reason'>;
 
 const categoryOptions: IssueCategory[] = ['Overplanning', 'Missing Planning', 'Other'];
 const issueHeaders: Array<{ key: SortKey; label: string }> = [
@@ -24,8 +26,7 @@ const issueHeaders: Array<{ key: SortKey; label: string }> = [
   { key: 'sheetName', label: 'Sheet' },
   { key: 'projectState', label: 'State' },
   { key: 'effort', label: 'Effort' },
-  { key: 'ruleName', label: 'Rule' },
-  { key: 'reason', label: 'Reason' },
+  { key: 'reason', label: 'Issue' },
 ];
 
 export function AuditResultsTab({ process, file }: { process: AuditProcess; file?: WorkbookFile | undefined }) {
@@ -43,6 +44,8 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   const [sort, setSort] = useState<SortKey>('severity');
   const [expanded, setExpanded] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useKeyboardShortcut('/', () => searchRef.current?.focus(), Boolean(result));
   const policyChanged = Boolean(result && isPolicyChanged(process.auditPolicy, result.policySnapshot));
   const searchIndex = useMemo(() => {
     return (result?.issues ?? []).map((issue) => ({
@@ -89,7 +92,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
             <h2 className="text-xl font-semibold text-gray-950 dark:text-white">Audit Results</h2>
             {policyChanged ? <Badge tone="amber">Policy changed - re-run audit</Badge> : null}
           </div>
-          <p className="mt-1 text-sm text-gray-500">{policySummary(result?.policySnapshot ?? process.auditPolicy)}</p>
+          <p className="mt-1 text-sm text-gray-500">{result ? `${result.issues.length} issue${result.issues.length === 1 ? '' : 's'} found across ${result.sheets.length} audited sheet${result.sheets.length === 1 ? '' : 's'}.` : policySummary(process.auditPolicy)}</p>
         </div>
         <button onClick={() => setSettingsOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
           <Settings size={16} />
@@ -100,10 +103,10 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
       {!result ? (
         <EmptyState title="No audit run yet">
           <div className="space-y-1 text-left">
-            <div>{file ? 'Done' : '1'} Upload a workbook</div>
-            <div>{hasSelected ? 'Done' : '2'} Select sheets in the sidebar</div>
-            <div>3 Run audit with the QGC policy</div>
-            <div>4 Save a version for traceability</div>
+            <Step done={Boolean(file)}>Upload a workbook</Step>
+            <Step done={hasSelected}>Select sheets in the sidebar</Step>
+            <Step done={false}>Run audit with the QGC policy</Step>
+            <Step done={false}>Save a version for traceability</Step>
           </div>
           {file ? <button onClick={() => runAudit(process.id, file.id)} disabled={!hasSelected} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Run Audit</button> : null}
         </EmptyState>
@@ -116,11 +119,11 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
             <MetricCard label="Sheets Audited" value={result.sheets.length} />
           </div>
 
-          <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-800">
+          {policyChanged ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
             <div className="font-semibold">Policy used</div>
             <div className="mt-1 text-gray-600 dark:text-gray-300">{policySummary(result.policySnapshot ?? process.auditPolicy)}</div>
-            {policyChanged ? <div className="mt-2 text-amber-700 dark:text-amber-300">Settings were changed after this audit. Re-run audit to apply the latest QGC policy.</div> : null}
-          </div>
+            <div className="mt-2">Settings were changed after this audit. Re-run audit to apply the latest QGC policy.</div>
+          </div> : null}
 
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
             <table className="min-w-full text-left text-sm">
@@ -128,20 +131,27 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
               <tbody>
                 {file?.sheets.map((item) => {
                   const audited = result.sheets.find((sheetResult) => sheetResult.sheetName === item.name);
-                  return <tr key={item.name} className="border-t border-gray-100 dark:border-gray-700"><td className="p-3">{item.name}</td><td><StatusBadge value={item.status === 'valid' ? 'Valid' : item.status === 'duplicate' ? 'Duplicate' : 'Invalid'} /></td><td>{item.rowCount}</td><td>{audited?.flaggedCount ?? '-'}</td></tr>;
+                  return <tr key={item.name} className="border-t border-gray-100 even:bg-gray-50/60 dark:border-gray-700 dark:even:bg-gray-900/40"><td className="p-3">{item.name}</td><td><StatusBadge value={item.status === 'valid' ? 'Valid' : item.status === 'duplicate' ? 'Duplicate' : 'Invalid'} /></td><td>{item.rowCount}</td><td>{audited?.flaggedCount ?? '-'}</td></tr>;
                 })}
               </tbody>
             </table>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <select value={sheet} onChange={(event) => setSheet(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value="">Sheet</option>{sheets.map((item) => <option key={item}>{item}</option>)}</select>
-            <select value={severity} onChange={(event) => setSeverity(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value="">Severity</option><option>High</option><option>Medium</option><option>Low</option></select>
-            <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value="">All categories</option>{categoryOptions.map((item) => <option key={item}>{item}</option>)}</select>
-            <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value="">Rule status</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." className="min-w-52 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800" />
-            <button onClick={() => openAuditReport(process, result)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">PDF Report</button>
-            <button onClick={() => exportIssuesCsv('audit-issues.csv', filtered)} className="ml-auto rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Export CSV</button>
+          <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex flex-wrap gap-2">
+              <select value={sheet} onChange={(event) => setSheet(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">Sheet</option>{sheets.map((item) => <option key={item}>{item}</option>)}</select>
+              <select value={severity} onChange={(event) => setSeverity(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">Severity</option><option>High</option><option>Medium</option><option>Low</option></select>
+              <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">All categories</option>{categoryOptions.map((item) => <option key={item}>{item}</option>)}</select>
+              <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">Rule status</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select>
+              <input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." className="min-w-52 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-sm dark:border-gray-700">
+              <span className="text-gray-500">{filtered.length} of {result.issues.length} issues shown</span>
+              <div className="flex gap-2">
+                <button onClick={() => openAuditReport(process, result)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">PDF Report</button>
+                <button onClick={() => exportIssuesCsv('audit-issues.csv', filtered)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Export CSV</button>
+              </div>
+            </div>
           </div>
 
           <div className="overflow-auto rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
@@ -151,21 +161,20 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
               </thead>
               <tbody>
                 {filtered.map((issue) => (
-                  <>
-                    <tr key={issue.id} onClick={() => setExpanded(expanded === issue.id ? '' : issue.id)} className="cursor-pointer border-t border-gray-100 align-top hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700">
-                      <td className="p-3"><Badge tone={issue.severity === 'High' ? 'red' : issue.severity === 'Medium' ? 'amber' : 'blue'}>{issue.severity}</Badge></td>
+                  <Fragment key={issue.id}>
+                    <tr onClick={() => setExpanded(expanded === issue.id ? '' : issue.id)} className="group cursor-pointer border-t border-gray-100 align-top even:bg-gray-50/60 hover:bg-gray-100 dark:border-gray-700 dark:even:bg-gray-900/40 dark:hover:bg-gray-700">
+                      <td className="p-3"><div className="flex items-center gap-2"><ChevronRight size={15} className={`transition ${expanded === issue.id ? 'rotate-90' : ''}`} /><Badge tone={severityTone[issue.severity]}>{issue.severity}</Badge></div></td>
                       <td className="p-3">{issue.projectNo}</td>
                       <td className="p-3">{issue.projectName}</td>
                       <td className="p-3">{issue.projectManager}</td>
                       <td className="p-3">{issue.sheetName}</td>
                       <td className="p-3">{issue.projectState}</td>
                       <td className="p-3">{issue.effort}</td>
-                      <td className="p-3">{issue.ruleName ?? issue.auditStatus}</td>
-                      <td className="max-w-md p-3">{issue.reason ?? issue.notes}</td>
+                      <td className="max-w-lg p-3"><Badge>{issue.ruleName ?? issue.auditStatus}</Badge><div className="mt-1 text-gray-700 dark:text-gray-200">{issue.reason ?? issue.notes}</div><div className="mt-1 hidden text-xs text-gray-400 group-hover:block">Click for details, notes, and corrections</div></td>
                     </tr>
                     {expanded === issue.id ? (
                       <tr className="border-t border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-                        <td colSpan={9} className="p-4">
+                        <td colSpan={8} className="p-4">
                           <div className="grid gap-3 text-sm md:grid-cols-4">
                             <Detail label="Why flagged?" value={issue.reason ?? issue.notes} />
                             <Detail label="Category" value={issue.category ?? 'Audit rule'} />
@@ -186,7 +195,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                         </td>
                       </tr>
                     ) : null}
-                  </>
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -195,9 +204,14 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
         </>
       )}
 
-      {settingsOpen ? <QgcSettingsDrawer process={process} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? <QgcSettingsDrawer process={process} file={file} onClose={() => setSettingsOpen(false)} /> : null}
     </div>
   );
+}
+
+function Step({ done, children }: { done: boolean; children: React.ReactNode }) {
+  const Icon = done ? CheckCircle2 : Circle;
+  return <div className="flex items-center gap-2"><Icon size={16} className={done ? 'text-green-600' : 'text-gray-400'} />{children}</div>;
 }
 
 function IssueCorrectionEditor({ issue, correction, onSave, onClear }: { issue: AuditIssue; correction?: IssueCorrection | undefined; onSave: (correction: Omit<IssueCorrection, 'issueKey' | 'processId' | 'updatedAt'>) => void; onClear: () => void }) {
@@ -277,9 +291,10 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function QgcSettingsDrawer({ process, onClose }: { process: AuditProcess; onClose: () => void }) {
+function QgcSettingsDrawer({ process, file, onClose }: { process: AuditProcess; file?: WorkbookFile | undefined; onClose: () => void }) {
   const updateAuditPolicy = useAppStore((state) => state.updateAuditPolicy);
   const resetAuditPolicy = useAppStore((state) => state.resetAuditPolicy);
+  const runAudit = useAppStore((state) => state.runAudit);
   const [draft, setDraft] = useState<AuditPolicy>(process.auditPolicy);
 
   function setNumber(key: keyof AuditPolicy, value: string) {
@@ -293,7 +308,11 @@ function QgcSettingsDrawer({ process, onClose }: { process: AuditProcess; onClos
   function save(event: FormEvent) {
     event.preventDefault();
     updateAuditPolicy(process.id, { ...draft, mediumEffortMin: 0, mediumEffortMax: 0, lowEffortEnabled: false });
-    toast.success('Settings saved. Re-run audit to apply.');
+    if (file) {
+      void runAudit(process.id, file.id).then(() => toast.success('Settings saved and audit re-run'));
+    } else {
+      toast.success('Settings saved');
+    }
     onClose();
   }
 
@@ -335,7 +354,7 @@ function QgcSettingsDrawer({ process, onClose }: { process: AuditProcess; onClos
         </details>
 
         <div className="sticky bottom-0 mt-6 flex gap-2 border-t border-gray-200 bg-white pt-4 dark:border-gray-700 dark:bg-gray-900">
-          <button type="submit" className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">Save Settings</button>
+          <button type="submit" className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">{file ? 'Save & Re-run Audit' : 'Save Settings'}</button>
           <button type="button" onClick={reset} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Reset Defaults</button>
           <button type="button" onClick={onClose} className="ml-auto rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Cancel</button>
         </div>

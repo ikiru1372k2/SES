@@ -2,11 +2,12 @@ import { ArrowDownToLine, ArrowLeft, Loader2, Play, Save } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { downloadAuditedWorkbook } from '../../lib/excelParser';
 import { isAuditDueSoon, nextDueDateAfterSave } from '../../lib/scheduleHelpers';
 import { displayName } from '../../lib/storage';
 import type { AuditProcess } from '../../lib/types';
-import { selectCorrectionCount, selectLatestAuditResult } from '../../store/selectors';
+import { selectCorrectionCount, selectHasUnsavedAudit, selectLatestAuditResult } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { BrandMark } from '../shared/BrandMark';
 import { Button } from '../shared/Button';
@@ -21,8 +22,9 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
   const hasSavedVersion = (process?.versions.length ?? 0) > 0;
   const latestResult = currentAuditResult ?? (process ? selectLatestAuditResult(process) : null);
   const correctionCount = process ? selectCorrectionCount(process) : 0;
+  const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
   const canRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning);
-  const canSave = Boolean(currentAuditResult && !isAuditRunning);
+  const canSave = Boolean(process && latestResult && hasUnsavedAudit && !isAuditRunning);
   const canDownload = Boolean(process && activeFile && latestResult && hasSavedVersion && !isAuditRunning);
 
   async function onRunAudit() {
@@ -41,6 +43,8 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
     if (!activeFile || !latestResult || !process) return;
     downloadAuditedWorkbook(activeFile, latestResult, process.corrections).catch(() => toast.error('Could not download corrected workbook'));
   }
+  useKeyboardShortcut('r', () => { void onRunAudit(); }, canRun);
+  useKeyboardShortcut('s', () => setVersionModalOpen(true), canSave);
 
   if (!process) {
     return (
@@ -78,7 +82,7 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
           {activeFile?.lastAuditedAt ? <div className="mt-0.5 text-[11px] text-gray-500">Last run: {new Date(activeFile.lastAuditedAt).toLocaleString()}</div> : null}
         </div>
         <Button
-          title={!currentAuditResult ? 'Run an audit first to save a version.' : ''}
+          title={canSave ? '' : latestResult ? 'No new audit to save.' : 'Run an audit first to save a version.'}
           disabled={!canSave}
           onClick={() => setVersionModalOpen(true)}
           variant="secondary"
@@ -86,26 +90,33 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
         >
           Save Version
         </Button>
-        <Button
-          title={!hasSavedVersion ? 'Save a version first to download audited workbook.' : ''}
-          disabled={!canDownload}
-          onClick={onDownload}
-          variant="secondary"
-          leading={<ArrowDownToLine size={15} />}
-        >
-          Download
-        </Button>
+        {correctionCount === 0 ? (
+          <Button
+            title={!hasSavedVersion ? 'Save a version first to download audited workbook.' : ''}
+            disabled={!canDownload}
+            onClick={onDownload}
+            variant="secondary"
+            leading={<ArrowDownToLine size={15} />}
+          >
+            Download
+          </Button>
+        ) : null}
         <Button
           title={!correctionCount ? 'Add inline corrections before downloading a corrected workbook.' : ''}
           disabled={!canDownload || correctionCount === 0}
           onClick={onDownloadCorrected}
-          variant="secondary"
+          variant={correctionCount ? 'primary' : 'secondary'}
           leading={<ArrowDownToLine size={15} />}
         >
           Download Corrected
         </Button>
+        {correctionCount ? (
+          <button onClick={onDownload} disabled={!canDownload} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800">
+            Original
+          </button>
+        ) : null}
       </div>
-      {versionModalOpen && process && currentAuditResult ? <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} /> : null}
+      {versionModalOpen && process && latestResult ? <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} /> : null}
     </header>
   );
 }
@@ -113,6 +124,7 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
 function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose: () => void }) {
   const saveVersion = useAppStore((state) => state.saveVersion);
   const updateProcess = useAppStore((state) => state.updateProcess);
+  const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
   const nextVersion = process.versions.length + 1;
   const [versionName, setVersionName] = useState(`${displayName(process.name)} - V${nextVersion}`);
   const [notes, setNotes] = useState('');
@@ -127,6 +139,13 @@ function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose
       }
     }
     toast.success(`${updated?.versions[0]?.versionName ?? versionName} saved`);
+    setWorkspaceTab('notifications');
+    onClose();
+  }
+
+  function close() {
+    const changed = versionName !== `${displayName(process.name)} - V${nextVersion}` || notes.trim() !== '';
+    if (changed && !window.confirm('Discard unsaved version details?')) return;
     onClose();
   }
 
@@ -143,7 +162,7 @@ function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose
           Version ID will be {process.id}-v{nextVersion}.
         </div>
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={close}>Cancel</Button>
           <Button type="submit">Save Version</Button>
         </div>
       </form>

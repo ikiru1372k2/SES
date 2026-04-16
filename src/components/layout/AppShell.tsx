@@ -8,12 +8,12 @@ export function AppShell({ process, sidebar, children }: { process?: AuditProces
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const progressText = useAppStore((state) => state.auditProgressText);
   return (
-    <div className="flex h-full flex-col bg-[#f6f6f4] text-gray-950 dark:bg-gray-950 dark:text-white">
+    <div className="flex h-full flex-col bg-slate-50 text-gray-950 dark:bg-gray-950 dark:text-white">
       <TopBar process={process} />
       {isAuditRunning ? (
         <div className="border-b border-gray-200 bg-white px-5 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
           <div className="mb-1">{progressText}</div>
-          <ProgressBar value={60} />
+          <ProgressBar value={0} indeterminate />
         </div>
       ) : null}
       <div className="flex min-h-0 flex-1">

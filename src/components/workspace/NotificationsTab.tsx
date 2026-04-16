@@ -82,10 +82,8 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
   return (
     <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
       <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-semibold">Notification Drafts ({drafts.length} managers)</h2>
-          <button onClick={sendAll} disabled={!drafts.length} className="rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover disabled:opacity-40">Send All</button>
-        </div>
+        <h2 className="font-semibold">Notification Drafts ({drafts.length} managers)</h2>
+        <button onClick={sendAll} disabled={!drafts.length} className="w-full rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-40">Send All ({drafts.filter((draft) => draft.email).length} managers)</button>
         <label className="block text-xs font-medium text-gray-500">Theme</label>
         <select value={theme} onChange={(event) => setTheme(event.target.value as NotificationDraft['theme'])} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900">
           <option>Company Reminder</option><option>Executive Summary</option><option>Compact Update</option>
@@ -110,10 +108,10 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
                 <div className={draft.email ? 'text-xs text-gray-500' : 'text-xs font-medium text-red-600'}>{draft.email ?? 'Missing manager email'}</div>
                 <div className="mt-1 text-xs text-gray-500">{draft.issueCount} flagged projects · {draft.pendingCorrectionCount} correction(s) · {tracking?.stage ?? draft.stage}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <span onClick={(event) => { event.stopPropagation(); void navigator.clipboard.writeText(notificationPlainText(draft)); toast.success('Draft copied'); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Copy</span>
-                  <span onClick={(event) => { event.stopPropagation(); openOutlook(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Open Outlook</span>
-                  <span onClick={(event) => { event.stopPropagation(); downloadDraft(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Download .eml</span>
-                  <span onClick={(event) => { event.stopPropagation(); openTeams(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Teams</span>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); void navigator.clipboard.writeText(notificationPlainText(draft)); toast.success('Draft copied'); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Copy</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); openOutlook(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Open Outlook</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); downloadDraft(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Download .eml</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); openTeams(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Teams</button>
                 </div>
               </button>
             );

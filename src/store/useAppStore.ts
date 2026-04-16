@@ -23,7 +23,7 @@ type AppStore = {
   isAuditRunning: boolean;
   auditProgressText: string;
   uploads: Record<string, UploadState>;
-  hydrateProcesses: () => void;
+  hydrateProcesses: () => Promise<void>;
   createProcess: (name: string, description: string) => AuditProcess;
   updateProcess: (id: string, patch: Partial<AuditProcess>) => void;
   deleteProcess: (id: string) => void;
@@ -87,7 +87,7 @@ export const useAppStore = create<AppStore>()(
       uploads: {},
 
       hydrateProcesses: () => {
-        void loadProcessesFromLocalDb().then((processes) => {
+        return loadProcessesFromLocalDb().then((processes) => {
           if (processes.length) set({ processes });
         });
       },
@@ -257,7 +257,8 @@ export const useAppStore = create<AppStore>()(
       },
 
       saveVersion: (processId, details) => {
-        const result = get().currentAuditResult;
+        const processForResult = get().processes.find((process) => process.id === processId);
+        const result = get().currentAuditResult ?? processForResult?.latestAuditResult;
         if (!result) return undefined;
         let updated: AuditProcess | undefined;
         set((state) => ({

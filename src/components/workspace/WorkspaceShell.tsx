@@ -7,8 +7,8 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
   { id: 'results', label: 'Audit Results' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'tracking', label: 'Tracking' },
-  { id: 'versions', label: 'Version History' },
   { id: 'analytics', label: 'Analytics' },
+  { id: 'versions', label: 'History' },
 ];
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {

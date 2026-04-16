@@ -21,7 +21,14 @@ export function PreviewTab({ process, file, result }: { process: AuditProcess; f
   const blankRows = rows.slice(headerRowIndex + 1, headerRowIndex + 101).filter((row) => row.every((cell) => String(cell ?? '').trim() === '')).length;
 
   if (!file) {
-    return <EmptyState title="Upload a workbook to preview your data"><button className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">Use the sidebar upload</button></EmptyState>;
+    return (
+      <EmptyState title="Upload a workbook to preview your data">
+        <div className="space-y-1 text-sm">
+          <p>SES will detect auditable sheets, skip duplicate/reference tabs, and show row counts before you run the audit.</p>
+          <p>Use `.xlsx` or `.xlsm` files up to 10 MB.</p>
+        </div>
+      </EmptyState>
+    );
   }
 
   return (

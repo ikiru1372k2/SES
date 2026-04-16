@@ -5,7 +5,7 @@ import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
 
 export function AnalyticsTab({ process }: { process: AuditProcess }) {
-  if (!process.versions.length) return <EmptyState title="No analytics yet">Save versions to build trends for flagged rows, issues, and manager risk.</EmptyState>;
+  if (!process.versions.length) return <EmptyState title="No analytics yet">Save versions to build trends, effort deltas, anomaly signals, and manager risk over time.</EmptyState>;
   const latest = process.versions[0]!.result;
   const trend = [...process.versions].reverse().map((version) => ({ version: `V${version.versionNumber}`, flagged: version.result.flaggedRows, issues: version.result.issues.length }));
   const managerRows = Object.entries(latest.issues.reduce<Record<string, number>>((acc, issue) => ({ ...acc, [issue.projectManager]: (acc[issue.projectManager] ?? 0) + 1 }), {})).map(([manager, count]) => ({ manager, count })).sort((a, b) => b.count - a.count).slice(0, 8);

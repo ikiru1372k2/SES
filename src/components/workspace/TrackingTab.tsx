@@ -1,17 +1,18 @@
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { buildNotificationDrafts, isValidEmail, notificationPlainText, openMailDraft, openTeamsMessage, recipientKeyFor } from '../../lib/notificationBuilder';
+import { buildNotificationDrafts, notificationPlainText, openMailDraft, openTeamsMessage } from '../../lib/notificationBuilder';
 import type { AuditProcess, AuditResult, NotificationDraft, TrackingEntry } from '../../lib/types';
+import { selectManagerKey } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 
-type PipelineKey = 'notContacted' | 'outlookSent' | 'teamsSent' | 'resolved';
+type PipelineKey = 'notContacted' | 'notified' | 'escalated' | 'resolved';
 type FilterKey = 'all' | PipelineKey;
 
 const columns: Array<{ key: PipelineKey; title: string; accent: string }> = [
   { key: 'notContacted', title: 'Not contacted', accent: 'border-gray-400' },
-  { key: 'outlookSent', title: 'Outlook sent', accent: 'border-blue-500' },
-  { key: 'teamsSent', title: 'Teams sent', accent: 'border-amber-500' },
+  { key: 'notified', title: 'Notified', accent: 'border-blue-500' },
+  { key: 'escalated', title: 'Escalated', accent: 'border-amber-500' },
   { key: 'resolved', title: 'Resolved', accent: 'border-green-600' },
 ];
 
@@ -25,8 +26,8 @@ function trackingPercent(entry: TrackingEntry): number {
 
 function pipelineKey(entry: TrackingEntry): PipelineKey {
   if (entry.resolved) return 'resolved';
-  if (entry.teamsCount > 0) return 'teamsSent';
-  if (entry.outlookCount > 0) return 'outlookSent';
+  if (entry.teamsCount > 0 || entry.outlookCount >= 2) return 'escalated';
+  if (entry.outlookCount > 0) return 'notified';
   return 'notContacted';
 }
 
@@ -45,8 +46,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
   const entries = useMemo(() => {
     const managerIssues = new Map<string, { name: string; email: string; count: number }>();
     (result?.issues ?? []).forEach((issue) => {
-      const email = isValidEmail(issue.email) ? issue.email : null;
-      const key = recipientKeyFor(issue.projectManager, email);
+      const key = selectManagerKey(issue);
       const current = managerIssues.get(key) ?? { name: issue.projectManager, email: key, count: 0 };
       current.count += 1;
       managerIssues.set(key, current);
@@ -80,7 +80,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
   const grouped = columns.reduce<Record<PipelineKey, TrackingEntry[]>>((acc, column) => {
     acc[column.key] = searched.filter((entry) => pipelineKey(entry) === column.key);
     return acc;
-  }, { notContacted: [], outlookSent: [], teamsSent: [], resolved: [] });
+  }, { notContacted: [], notified: [], escalated: [], resolved: [] });
 
   const selected = entries.find((entry) => entry.key === selectedKey) ?? searched[0] ?? entries[0];
   const selectedDraft = selected ? draftsByKey.get(selected.managerEmail) : undefined;
@@ -129,7 +129,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
 
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard label="Total users" value={entries.length} />
-        <SummaryCard label="Not contacted" value={groupCount(entries, 'notContacted')} tone="text-brand" />
+        <SummaryCard label="Not contacted" value={groupCount(entries, 'notContacted')} tone="text-gray-700" />
         <SummaryCard label="In progress" value={inProgress} tone="text-amber-700" />
         <SummaryCard label="Resolved" value={groupCount(entries, 'resolved')} tone="text-green-700" />
       </div>
@@ -145,8 +145,8 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
         {([
           ['all', 'All'],
           ['notContacted', 'Not contacted'],
-          ['outlookSent', 'Outlook sent'],
-          ['teamsSent', 'Teams sent'],
+          ['notified', 'Notified'],
+          ['escalated', 'Escalated'],
           ['resolved', 'Resolved'],
         ] as Array<[FilterKey, string]>).map(([key, label]) => (
           <button

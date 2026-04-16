@@ -21,7 +21,7 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
   }, [process.versions, fromId, toId]);
 
   if (!process.versions.length) {
-    return <EmptyState title="No saved versions">Run an audit and save a version to start tracking history.</EmptyState>;
+    return <EmptyState title="No saved versions">Run an audit and save a version to preserve traceability, compare changes, and support notifications.</EmptyState>;
   }
 
   const rows = comparison?.[activeTab] ?? [];
