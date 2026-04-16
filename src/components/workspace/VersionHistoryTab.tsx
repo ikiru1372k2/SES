@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { compareResults, exportIssuesCsv } from '../../lib/auditEngine';
 import { downloadAuditedWorkbook } from '../../lib/excelParser';
 import type { AuditProcess, WorkbookFile } from '../../lib/types';
+import { selectCorrectionCount } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
@@ -12,6 +13,7 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
   const [fromId, setFromId] = useState(process.versions[1]?.versionId ?? process.versions[0]?.versionId ?? '');
   const [toId, setToId] = useState(process.versions[0]?.versionId ?? '');
   const [activeTab, setActiveTab] = useState<'newIssues' | 'resolvedIssues' | 'changedIssues'>('newIssues');
+  const correctionCount = selectCorrectionCount(process);
   const comparison = useMemo(() => {
     const from = process.versions.find((version) => version.id === fromId || version.versionId === fromId);
     const to = process.versions.find((version) => version.id === toId || version.versionId === toId);
@@ -42,6 +44,7 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
             <div className="flex gap-2">
               <button onClick={() => loadVersion(process.id, version.versionId)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700">Load this version</button>
               <button onClick={() => { if (file) void downloadAuditedWorkbook(file, version.result); }} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700">Download</button>
+              {correctionCount ? <button onClick={() => { if (file) void downloadAuditedWorkbook(file, version.result, process.corrections); }} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700">Corrected</button> : null}
             </div>
           </div>
         ))}

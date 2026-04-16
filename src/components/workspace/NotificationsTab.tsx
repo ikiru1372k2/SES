@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { auditIssueKey } from '../../lib/auditEngine';
 import { buildGeneralNotification, buildNotificationDrafts, downloadEml, notificationPlainText, openMailDraft, openTeamsMessage } from '../../lib/notificationBuilder';
 import type { AuditProcess, AuditResult, NotificationDraft } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
@@ -29,7 +30,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
     signature1: 'Effort Audit Team',
     signature2: 'Workbook Auditor',
   });
-  const drafts = useMemo(() => buildNotificationDrafts(result?.issues ?? [], theme, deadline, template), [result, theme, deadline, template]);
+  const drafts = useMemo(() => buildNotificationDrafts(result?.issues ?? [], theme, deadline, template, process.corrections), [process.corrections, result, theme, deadline, template]);
   const active = drafts[selected] ?? drafts[0];
 
   function track(draft: NotificationDraft, channel: 'outlook' | 'eml' | 'teams' | 'sendAll', note: string) {
@@ -107,7 +108,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
               <button key={draft.recipientKey} onClick={() => setSelected(index)} className={`w-full rounded-lg border p-3 text-left text-sm ${active?.recipientKey === draft.recipientKey ? 'border-blue-400 bg-blue-50 dark:bg-blue-950' : 'border-gray-200 dark:border-gray-700'}`}>
                 <div className="font-medium">{draft.pmName}</div>
                 <div className={draft.email ? 'text-xs text-gray-500' : 'text-xs font-medium text-red-600'}>{draft.email ?? 'Missing manager email'}</div>
-                <div className="mt-1 text-xs text-gray-500">{draft.issueCount} flagged projects · {tracking?.stage ?? draft.stage}</div>
+                <div className="mt-1 text-xs text-gray-500">{draft.issueCount} flagged projects · {draft.pendingCorrectionCount} correction(s) · {tracking?.stage ?? draft.stage}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <span onClick={(event) => { event.stopPropagation(); void navigator.clipboard.writeText(notificationPlainText(draft)); toast.success('Draft copied'); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Copy</span>
                   <span onClick={(event) => { event.stopPropagation(); openOutlook(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Open Outlook</span>
@@ -135,17 +136,21 @@ function NotificationPreview({ draft, deadline, template }: { draft: Notificatio
       <p>The following {draft.issueCount} project(s) require your attention:</p>
       <table>
         <thead>
-          <tr><th>Project No</th><th>Project</th><th>Severity</th><th>Notes</th></tr>
+          <tr><th>Project No</th><th>Project</th><th>Severity</th><th>Notes</th>{draft.pendingCorrectionCount ? <><th>Proposed Effort</th><th>Correction Note</th></> : null}</tr>
         </thead>
         <tbody>
-          {draft.projects.map((issue) => (
-            <tr key={issue.id}>
-              <td>{issue.projectNo}</td>
-              <td>{issue.projectName}</td>
-              <td>{issue.severity}</td>
-              <td>{issue.notes}</td>
-            </tr>
-          ))}
+          {draft.projects.map((issue) => {
+            const correction = draft.corrections[auditIssueKey(issue)];
+            return (
+              <tr key={issue.id}>
+                <td>{issue.projectNo}</td>
+                <td>{issue.projectName}</td>
+                <td>{issue.severity}</td>
+                <td>{issue.notes}</td>
+                {draft.pendingCorrectionCount ? <><td>{correction ? `${issue.effort} -> ${correction.effort ?? issue.effort}` : ''}</td><td>{correction?.note ?? ''}</td></> : null}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       <p>{template.actionLine} by {deadline || 'the agreed deadline'}.</p>

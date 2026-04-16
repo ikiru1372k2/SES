@@ -1,4 +1,5 @@
-import type { AuditIssue, NotificationDraft } from './types';
+import { auditIssueKey } from './auditEngine';
+import type { AuditIssue, IssueCorrection, NotificationDraft } from './types';
 
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 // eslint-disable-next-line no-control-regex
@@ -38,15 +39,21 @@ export function buildNotificationDrafts(
     signature1: 'Effort Audit Team',
     signature2: 'Workbook Auditor',
   },
+  corrections: Record<string, IssueCorrection> = {},
 ): NotificationDraft[] {
   const byManager = new Map<string, AuditIssue[]>();
   issues.forEach((issue) => byManager.set(issue.projectManager, [...(byManager.get(issue.projectManager) ?? []), issue]));
   return [...byManager.entries()].map(([pmName, projects]) => {
     const email = projects.map((issue) => sanitizeHeader(issue.email ?? '')).find(isValidEmail) ?? null;
+    const draftCorrections = Object.fromEntries(projects.map((issue) => [auditIssueKey(issue), corrections[auditIssueKey(issue)]]).filter((entry): entry is [string, IssueCorrection] => Boolean(entry[1])));
+    const hasCorrections = Object.keys(draftCorrections).length > 0;
     const rows = projects
-      .map((issue) => `<tr><td>${escapeHtml(issue.projectNo)}</td><td>${escapeHtml(issue.projectName)}</td><td>${escapeHtml(issue.severity)}</td><td>${escapeHtml(issue.notes)}</td></tr>`)
+      .map((issue) => {
+        const correction = draftCorrections[auditIssueKey(issue)];
+        return `<tr><td>${escapeHtml(issue.projectNo)}</td><td>${escapeHtml(issue.projectName)}</td><td>${escapeHtml(issue.severity)}</td><td>${escapeHtml(issue.notes)}</td>${hasCorrections ? `<td>${escapeHtml(correction ? `${issue.effort} -> ${correction.effort ?? issue.effort}` : '')}</td><td>${escapeHtml(correction?.note ?? '')}</td>` : ''}</tr>`;
+      })
       .join('');
-    const htmlBody = `<p>Dear ${escapeHtml(pmName)},</p><p>${escapeHtml(template.intro)}</p><p>The following ${projects.length} project(s) require your attention:</p><table><tr><th>Project No</th><th>Project</th><th>Severity</th><th>Notes</th></tr>${rows}</table><p>${escapeHtml(template.actionLine)} by ${escapeHtml(deadline || 'the agreed deadline')}.</p><p>${escapeHtml(template.closing)}</p><p>${escapeHtml(template.signature1)}<br/>${escapeHtml(template.signature2)}</p>`;
+    const htmlBody = `<p>Dear ${escapeHtml(pmName)},</p><p>${escapeHtml(template.intro)}</p><p>The following ${projects.length} project(s) require your attention:</p><table><tr><th>Project No</th><th>Project</th><th>Severity</th><th>Notes</th>${hasCorrections ? '<th>Proposed Effort</th><th>Correction Note</th>' : ''}</tr>${rows}</table><p>${escapeHtml(template.actionLine)} by ${escapeHtml(deadline || 'the agreed deadline')}.</p><p>${escapeHtml(template.closing)}</p><p>${escapeHtml(template.signature1)}<br/>${escapeHtml(template.signature2)}</p>`;
     return {
       pmName,
       email,
@@ -58,12 +65,18 @@ export function buildNotificationDrafts(
       theme,
       subject: `${theme}: ${projects.length} workbook audit item${projects.length === 1 ? '' : 's'}`,
       htmlBody,
+      corrections: draftCorrections,
+      pendingCorrectionCount: Object.keys(draftCorrections).length,
     };
   });
 }
 
 export function notificationPlainText(draft: NotificationDraft): string {
-  const rows = draft.projects.map((issue) => `- ${issue.projectNo} | ${issue.projectName} | ${issue.severity} | ${issue.reason ?? issue.notes}`).join('\n');
+  const rows = draft.projects.map((issue) => {
+    const correction = draft.corrections[auditIssueKey(issue)];
+    const correctionText = correction ? ` | proposed effort ${issue.effort} -> ${correction.effort ?? issue.effort}${correction.note ? ` (${correction.note})` : ''}` : '';
+    return `- ${issue.projectNo} | ${issue.projectName} | ${issue.severity} | ${issue.reason ?? issue.notes}${correctionText}`;
+  }).join('\n');
   return `Dear ${draft.pmName},\n\nThe following ${draft.issueCount} project(s) require your attention:\n\n${rows}\n\nPlease review and update the workbook by the agreed deadline.\n\nEffort Audit Team`;
 }
 
@@ -86,7 +99,11 @@ export function buildGeneralNotification(drafts: NotificationDraft[]): { recipie
     .map((draft) => `${draft.pmName} (${draft.email ?? 'missing email'}) - ${draft.issueCount} flagged project(s)`)
     .join('\n');
   const projects = drafts
-    .flatMap((draft) => draft.projects.map((issue) => `- ${draft.pmName}: ${issue.projectNo} | ${issue.projectName} | ${issue.severity} | ${issue.reason ?? issue.notes}`))
+    .flatMap((draft) => draft.projects.map((issue) => {
+      const correction = draft.corrections[auditIssueKey(issue)];
+      const correctionText = correction ? ` | proposed effort ${issue.effort} -> ${correction.effort ?? issue.effort}` : '';
+      return `- ${draft.pmName}: ${issue.projectNo} | ${issue.projectName} | ${issue.severity} | ${issue.reason ?? issue.notes}${correctionText}`;
+    }))
     .join('\n');
   return {
     recipients,

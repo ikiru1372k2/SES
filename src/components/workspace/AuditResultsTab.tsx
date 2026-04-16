@@ -5,6 +5,7 @@ import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../
 import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
 import { openAuditReport } from '../../lib/reportExporter';
 import type { AuditPolicy, AuditProcess, AuditIssue, IssueCategory, IssueComment, IssueCorrection, WorkbookFile } from '../../lib/types';
+import { selectIssueComments, selectIssueCorrection } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { Badge } from '../shared/Badge';
 import { Button } from '../shared/Button';
@@ -172,13 +173,13 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                             <Detail label="Recommended action" value={issue.recommendedAction ?? 'Review this project with the owner.'} />
                           </div>
                           <IssueComments
-                            comments={process.comments?.[auditIssueKey(issue)] ?? []}
+                            comments={selectIssueComments(process, issue)}
                             onAdd={(body) => addIssueComment(process.id, auditIssueKey(issue), body)}
                             onDelete={(commentId) => deleteIssueComment(process.id, auditIssueKey(issue), commentId)}
                           />
                           <IssueCorrectionEditor
                             issue={issue}
-                            correction={process.corrections?.[auditIssueKey(issue)]}
+                            correction={selectIssueCorrection(process, issue)}
                             onSave={(correction) => saveIssueCorrection(process.id, auditIssueKey(issue), correction)}
                             onClear={() => clearIssueCorrection(process.id, auditIssueKey(issue))}
                           />

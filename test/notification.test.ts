@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGeneralNotification, buildNotificationDrafts, openMailDraft } from '../src/lib/notificationBuilder.js';
+import { buildGeneralNotification, buildNotificationDrafts, notificationPlainText, openMailDraft } from '../src/lib/notificationBuilder.js';
 import type { AuditIssue } from '../src/lib/types.js';
 
 function issue(patch: Partial<AuditIssue> = {}): AuditIssue {
@@ -60,4 +60,31 @@ test('mailto generation strips header controls, filters invalid recipients, and 
 
   assert.match(fakeWindow.location.href, /^mailto:one%40example\.com,two%40example\.com\?/);
   assert.ok(!decodeURIComponent(fakeWindow.location.href).includes('Bcc:'));
+});
+
+test('notification drafts include proposed corrections in escaped HTML and plain text', () => {
+  const [draft] = buildNotificationDrafts([issue({
+    projectNo: 'P-2',
+    projectName: 'Corrected Project',
+    projectManager: 'Valid Manager',
+    email: 'valid.manager@company.com',
+    effort: 920,
+    sheetName: 'Effort',
+    rowIndex: 5,
+  })], 'Company Reminder', '', undefined, {
+    'P-2|Effort|5': {
+      issueKey: 'P-2|Effort|5',
+      processId: 'process-1',
+      effort: 850,
+      note: 'Capacity <cap>',
+      updatedAt: '2026-04-16T00:00:00.000Z',
+    },
+  });
+
+  assert.ok(draft);
+  assert.equal(draft.pendingCorrectionCount, 1);
+  assert.ok(draft.htmlBody.includes('Proposed Effort'));
+  assert.ok(draft.htmlBody.includes('920 -&gt; 850'));
+  assert.ok(draft.htmlBody.includes('Capacity &lt;cap&gt;'));
+  assert.ok(notificationPlainText(draft).includes('proposed effort 920 -> 850'));
 });

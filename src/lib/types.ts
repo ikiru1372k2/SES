@@ -169,4 +169,6 @@ export interface NotificationDraft {
   theme: 'Company Reminder' | 'Executive Summary' | 'Compact Update';
   subject: string;
   htmlBody: string;
+  corrections: Record<string, IssueCorrection>;
+  pendingCorrectionCount: number;
 }

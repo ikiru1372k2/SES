@@ -3,8 +3,10 @@ import { FormEvent, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { downloadAuditedWorkbook } from '../../lib/excelParser';
+import { isAuditDueSoon, nextDueDateAfterSave } from '../../lib/scheduleHelpers';
 import { displayName } from '../../lib/storage';
 import type { AuditProcess } from '../../lib/types';
+import { selectCorrectionCount, selectLatestAuditResult } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { BrandMark } from '../shared/BrandMark';
 import { Button } from '../shared/Button';
@@ -17,7 +19,8 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
   const activeFile = process?.files.find((file) => file.id === process.activeFileId);
   const selectedSheets = activeFile?.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected).length ?? 0;
   const hasSavedVersion = (process?.versions.length ?? 0) > 0;
-  const latestResult = currentAuditResult ?? process?.versions[0]?.result ?? null;
+  const latestResult = currentAuditResult ?? (process ? selectLatestAuditResult(process) : null);
+  const correctionCount = process ? selectCorrectionCount(process) : 0;
   const canRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning);
   const canSave = Boolean(currentAuditResult && !isAuditRunning);
   const canDownload = Boolean(process && activeFile && latestResult && hasSavedVersion && !isAuditRunning);
@@ -32,6 +35,11 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
   function onDownload() {
     if (!activeFile || !latestResult) return;
     downloadAuditedWorkbook(activeFile, latestResult).catch(() => toast.error('Could not download audited workbook'));
+  }
+
+  function onDownloadCorrected() {
+    if (!activeFile || !latestResult || !process) return;
+    downloadAuditedWorkbook(activeFile, latestResult, process.corrections).catch(() => toast.error('Could not download corrected workbook'));
   }
 
   if (!process) {
@@ -87,6 +95,15 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
         >
           Download
         </Button>
+        <Button
+          title={!correctionCount ? 'Add inline corrections before downloading a corrected workbook.' : ''}
+          disabled={!canDownload || correctionCount === 0}
+          onClick={onDownloadCorrected}
+          variant="secondary"
+          leading={<ArrowDownToLine size={15} />}
+        >
+          Download Corrected
+        </Button>
       </div>
       {versionModalOpen && process && currentAuditResult ? <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} /> : null}
     </header>
@@ -95,6 +112,7 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
 
 function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose: () => void }) {
   const saveVersion = useAppStore((state) => state.saveVersion);
+  const updateProcess = useAppStore((state) => state.updateProcess);
   const nextVersion = process.versions.length + 1;
   const [versionName, setVersionName] = useState(`${displayName(process.name)} - V${nextVersion}`);
   const [notes, setNotes] = useState('');
@@ -102,6 +120,12 @@ function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose
   function submit(event: FormEvent) {
     event.preventDefault();
     const updated = saveVersion(process.id, { versionName, notes });
+    if (updated && isAuditDueSoon(updated)) {
+      const nextDue = nextDueDateAfterSave(updated);
+      if (window.confirm(`Schedule the next audit for ${new Date(`${nextDue}T00:00:00`).toLocaleDateString()}?`)) {
+        updateProcess(process.id, { nextAuditDue: nextDue });
+      }
+    }
     toast.success(`${updated?.versions[0]?.versionName ?? versionName} saved`);
     onClose();
   }

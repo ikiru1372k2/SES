@@ -2,13 +2,15 @@ import { Edit2, MoreHorizontal, Trash2, X } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
+import { scheduleBucket } from '../../lib/scheduleHelpers';
 import { displayName } from '../../lib/storage';
 import type { AuditProcess } from '../../lib/types';
+import { selectLatestAuditResult } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../shared/Button';
 
 function severityCounts(process: AuditProcess) {
-  const latest = process.latestAuditResult ?? process.versions[0]?.result;
+  const latest = selectLatestAuditResult(process);
   return {
     High: latest?.issues.filter((issue) => issue.severity === 'High').length ?? 0,
     Medium: latest?.issues.filter((issue) => issue.severity === 'Medium').length ?? 0,
@@ -20,10 +22,10 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   const deleteProcess = useAppStore((state) => state.deleteProcess);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const latest = process.latestAuditResult ?? process.versions[0]?.result;
+  const latest = selectLatestAuditResult(process);
   const counts = severityCounts(process);
   const total = Math.max(1, counts.High + counts.Medium + counts.Low);
-  const overdue = Boolean(process.nextAuditDue && new Date(process.nextAuditDue) < new Date());
+  const overdue = scheduleBucket(process) === 'overdue';
 
   function confirmDelete() {
     const ok = window.confirm(`Delete "${displayName(process.name)}"? This removes its files, versions, and tracking data from this browser.`);

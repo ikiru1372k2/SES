@@ -1,6 +1,7 @@
 import type ExcelJS from 'exceljs';
+import { auditIssueKey } from './auditEngine';
 import { createId } from './id';
-import type { AuditIssue, AuditResult, SheetInfo, WorkbookFile } from './types';
+import type { AuditIssue, AuditResult, IssueCorrection, SheetInfo, WorkbookFile } from './types';
 
 export const MAX_WORKBOOK_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const HEADER_SCAN_LIMIT = 20;
@@ -194,23 +195,35 @@ export function detectWorkbookSheets(rawData: Record<string, unknown[][]>): Shee
   });
 }
 
-export async function downloadAuditedWorkbook(file: WorkbookFile, result: AuditResult): Promise<void> {
+export async function downloadAuditedWorkbook(file: WorkbookFile, result: AuditResult, corrections: Record<string, IssueCorrection> = {}): Promise<void> {
   const ExcelJS = (await import('exceljs')).default;
   const workbook = new ExcelJS.Workbook();
   const auditedSheets = new Set(result.sheets.map((sheet) => sheet.sheetName));
   const usedSheetNames = new Set<string>();
+  const includeCorrections = Object.keys(corrections).length > 0;
 
   Object.entries(file.rawData).forEach(([sheetName, rows]) => {
     const sheet = file.sheets.find((item) => item.name === sheetName);
     const headerRowIndex = sheet?.headerRowIndex ?? 0;
     const output = rows.map((row) => [...row]);
     if (auditedSheets.has(sheetName) && output.length > headerRowIndex) {
-      output[headerRowIndex] = [...(output[headerRowIndex] ?? []), 'Audit Severity', 'Audit Notes'];
+      output[headerRowIndex] = [
+        ...(output[headerRowIndex] ?? []),
+        'Audit Severity',
+        'Audit Notes',
+        ...(includeCorrections ? ['Corrected Effort', 'Corrected State', 'Corrected Manager', 'Correction Note'] : []),
+      ];
       const issuesByRow = new Map<number, AuditIssue>();
       result.issues.filter((issue) => issue.sheetName === sheetName).forEach((issue) => issuesByRow.set(issue.rowIndex, issue));
       for (let index = headerRowIndex + 1; index < output.length; index += 1) {
         const issue = issuesByRow.get(index);
-        output[index] = [...(output[index] ?? []), issue?.severity ?? '', issue?.notes ?? ''];
+        const correction = issue ? corrections[auditIssueKey(issue)] : undefined;
+        output[index] = [
+          ...(output[index] ?? []),
+          issue?.severity ?? '',
+          issue?.notes ?? '',
+          ...(includeCorrections ? [correction?.effort ?? '', correction?.projectState ?? '', correction?.projectManager ?? '', correction?.note ?? ''] : []),
+        ];
       }
     }
     const worksheet = workbook.addWorksheet(uniqueSheetName(sheetName, usedSheetNames));
@@ -222,7 +235,7 @@ export async function downloadAuditedWorkbook(file: WorkbookFile, result: AuditR
   const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${baseName}_audited.xlsx`;
+  link.download = `${baseName}_${includeCorrections ? 'corrected' : 'audited'}.xlsx`;
   link.click();
   URL.revokeObjectURL(url);
 }

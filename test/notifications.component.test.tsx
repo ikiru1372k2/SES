@@ -1,4 +1,6 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { AuditSchedule } from '../src/components/dashboard/AuditSchedule';
 import { NotificationsTab } from '../src/components/workspace/NotificationsTab';
 import type { AuditProcess, AuditResult } from '../src/lib/types';
 
@@ -60,4 +62,45 @@ test('notification preview renders workbook text as safe content', () => {
   expect(screen.getByText('<b>unsafe</b>')).toBeInTheDocument();
   expect(document.querySelector('img')).toBeNull();
   expect(document.querySelector('script')).toBeNull();
+});
+
+test('notification preview renders pending correction context', () => {
+  render(<NotificationsTab process={{
+    ...process,
+    corrections: {
+      '<P-1>|Effort|1': {
+        issueKey: '<P-1>|Effort|1',
+        processId: process.id,
+        effort: 850,
+        note: 'Capacity cap',
+        updatedAt: '2026-04-16T00:00:00.000Z',
+      },
+    },
+  }} result={result} />);
+
+  expect(screen.getByText('999 -> 850')).toBeInTheDocument();
+  expect(screen.getByText('Capacity cap')).toBeInTheDocument();
+});
+
+test('audit schedule renders overdue and upcoming buckets', () => {
+  const today = new Date();
+  const date = (offset: number) => {
+    const next = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+    return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+  };
+
+  render(
+    <MemoryRouter>
+      <AuditSchedule processes={[
+        { ...process, id: 'overdue', name: 'Overdue Audit', nextAuditDue: date(-1) },
+        { ...process, id: 'soon', name: 'Soon Audit', nextAuditDue: date(4) },
+        { ...process, id: 'upcoming', name: 'Upcoming Audit', nextAuditDue: date(24) },
+      ]} />
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByText('Overdue')).toBeInTheDocument();
+  expect(screen.getByText('Due this week')).toBeInTheDocument();
+  expect(screen.getByText('Upcoming')).toBeInTheDocument();
+  expect(screen.getByText('Overdue Audit')).toBeInTheDocument();
 });

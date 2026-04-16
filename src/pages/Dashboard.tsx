@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
+import { bucketedProcesses } from '../lib/scheduleHelpers';
 import { CreateProcessModal } from '../components/dashboard/CreateProcessModal';
+import { AuditSchedule } from '../components/dashboard/AuditSchedule';
 import { ProcessCard } from '../components/dashboard/ProcessCard';
 import { AppShell } from '../components/layout/AppShell';
 import { BrandMark } from '../components/shared/BrandMark';
@@ -18,6 +20,10 @@ export function Dashboard() {
     didHydrate.current = true;
     hydrateProcesses();
   }, [hydrateProcesses]);
+  useEffect(() => {
+    const overdue = bucketedProcesses(processes).overdue.length;
+    document.title = overdue ? `(${overdue}) SES - Audit Overdue` : 'SES - Smart Escalation System';
+  }, [processes]);
 
   return (
     <AppShell>
@@ -34,6 +40,7 @@ export function Dashboard() {
             </div>
           </div>
         </div>
+        <AuditSchedule processes={processes} />
         {processes.length ? (
           <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {processes.map((process) => <ProcessCard key={process.id} process={process} />)}
