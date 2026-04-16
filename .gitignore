@@ -1,0 +1,17 @@
+node_modules/
+dist/
+output/
+certs/
+data/
+*.log
+~$*.xlsx
+*.xlsx
+*.xlsm
+*.xls
+!test/fixtures/**/*.xlsx
+!test/fixtures/**/*.xlsm
+!test/fixtures/**/*.xls
+.env
+.env.*
+.DS_Store
+Thumbs.db

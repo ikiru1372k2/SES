@@ -1,0 +1,16 @@
+node_modules
+dist
+output
+certs
+data
+.git
+.gitignore
+*.log
+*.xlsx
+*.xlsm
+*.xls
+~$*.xlsx
+.env
+.env.*
+Dockerfile
+README.md
