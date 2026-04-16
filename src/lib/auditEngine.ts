@@ -1,4 +1,4 @@
-import { createDefaultAuditPolicy, normalizeAuditPolicy } from './auditPolicy';
+import { normalizeAuditPolicy } from './auditPolicy';
 import type { AuditIssue, AuditPolicy, AuditResult, ComparisonResult, IssueCategory, Severity, WorkbookFile } from './types';
 
 type RowObject = Record<string, unknown>;

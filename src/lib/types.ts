@@ -25,6 +25,7 @@ export interface AuditProcess {
   description: string;
   createdAt: string;
   updatedAt: string;
+  nextAuditDue: string | null;
   files: WorkbookFile[];
   activeFileId: string | null;
   versions: AuditVersion[];
@@ -32,6 +33,7 @@ export interface AuditProcess {
   auditPolicy: AuditPolicy;
   notificationTracking: Record<string, TrackingEntry>;
   comments: Record<string, IssueComment[]>;
+  corrections: Record<string, IssueCorrection>;
 }
 
 export interface WorkbookFile {
@@ -93,6 +95,16 @@ export interface IssueComment {
   author: string;
   body: string;
   createdAt: string;
+}
+
+export interface IssueCorrection {
+  issueKey: string;
+  processId: string;
+  effort?: number;
+  projectState?: string;
+  projectManager?: string;
+  note: string;
+  updatedAt: string;
 }
 
 export interface SheetAuditResult {

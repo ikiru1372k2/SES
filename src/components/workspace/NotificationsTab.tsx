@@ -109,7 +109,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
                 <div className={draft.email ? 'text-xs text-gray-500' : 'text-xs font-medium text-red-600'}>{draft.email ?? 'Missing manager email'}</div>
                 <div className="mt-1 text-xs text-gray-500">{draft.issueCount} flagged projects · {tracking?.stage ?? draft.stage}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <span onClick={(event) => { event.stopPropagation(); navigator.clipboard.writeText(notificationPlainText(draft)); toast.success('Draft copied'); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Copy</span>
+                  <span onClick={(event) => { event.stopPropagation(); void navigator.clipboard.writeText(notificationPlainText(draft)); toast.success('Draft copied'); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Copy</span>
                   <span onClick={(event) => { event.stopPropagation(); openOutlook(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Open Outlook</span>
                   <span onClick={(event) => { event.stopPropagation(); downloadDraft(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Download .eml</span>
                   <span onClick={(event) => { event.stopPropagation(); openTeams(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Teams</span>

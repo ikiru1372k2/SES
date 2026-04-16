@@ -126,6 +126,7 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
     description: String(item.description ?? ''),
     createdAt: String(item.createdAt ?? now),
     updatedAt: String(item.updatedAt ?? item.createdAt ?? now),
+    nextAuditDue: item.nextAuditDue ? String(item.nextAuditDue) : null,
     files: Array.isArray(item.files)
       ? item.files.map((file) => {
           const rawData = file.rawData && typeof file.rawData === 'object' ? file.rawData as Record<string, unknown[][]> : {};
@@ -149,6 +150,7 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
     auditPolicy: normalizeAuditPolicy(item.auditPolicy),
     notificationTracking: tracking,
     comments: sanitizeComments(item.comments, processId),
+    corrections: sanitizeCorrections(item.corrections, processId),
   };
 }
 
@@ -194,5 +196,21 @@ function sanitizeTracking(value: unknown, processId: string): Record<string, Tra
         note: String(event.note ?? ''),
       })) : [],
     } satisfies TrackingEntry];
+  }));
+}
+
+function sanitizeCorrections(value: unknown, processId: string): AuditProcess['corrections'] {
+  if (!value || typeof value !== 'object') return {};
+  return Object.fromEntries(Object.entries(value as Record<string, Partial<AuditProcess['corrections'][string]>>).map(([issueKey, correction]) => {
+    const next = {
+      issueKey: String(correction.issueKey ?? issueKey),
+      processId,
+      ...(correction.effort !== undefined ? { effort: Number(correction.effort) || 0 } : {}),
+      ...(correction.projectState ? { projectState: String(correction.projectState) } : {}),
+      ...(correction.projectManager ? { projectManager: String(correction.projectManager) } : {}),
+      note: String(correction.note ?? ''),
+      updatedAt: String(correction.updatedAt ?? new Date().toISOString()),
+    };
+    return [next.issueKey, next];
   }));
 }

@@ -18,7 +18,9 @@ jobs:
           npm install --package-lock-only --ignore-scripts
           git diff --exit-code package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run test:components
       - run: npm audit --audit-level=high
       - run: npm run build

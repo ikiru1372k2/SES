@@ -93,7 +93,7 @@ export default defineConfig({
                 sendJson(response, 400, { ok: false, error: 'Invalid JSON' });
               }
             });
-          } catch (error) {
+          } catch {
             sendJson(response, 500, { ok: false, error: 'Local DB error' });
           }
         });

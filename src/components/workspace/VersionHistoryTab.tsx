@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { compareResults, exportIssuesCsv } from '../../lib/auditEngine';
 import { downloadAuditedWorkbook } from '../../lib/excelParser';
 import type { AuditProcess, WorkbookFile } from '../../lib/types';
@@ -24,7 +25,10 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
   const rows = comparison?.[activeTab] ?? [];
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-semibold">Version History</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold">Version History</h2>
+        {process.versions.length >= 2 ? <Link to={`/workspace/${process.id}/compare`} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700">Open compare page</Link> : null}
+      </div>
       <div className="space-y-2">
         {process.versions.map((version) => (
           <div key={version.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-800">

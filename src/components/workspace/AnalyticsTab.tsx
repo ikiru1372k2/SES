@@ -1,4 +1,5 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { effortAnomalies } from '../../lib/anomaly';
 import type { AuditProcess } from '../../lib/types';
 import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
@@ -12,6 +13,7 @@ export function AnalyticsTab({ process }: { process: AuditProcess }) {
   const medium = latest.issues.filter((issue) => issue.severity === 'Medium').length;
   const low = latest.issues.filter((issue) => issue.severity === 'Low').length;
   const total = Math.max(1, high + medium + low);
+  const anomalies = effortAnomalies(process.versions);
 
   return (
     <div className="space-y-5">
@@ -33,6 +35,18 @@ export function AnalyticsTab({ process }: { process: AuditProcess }) {
       <section className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
         <h2 className="font-semibold">Top Managers by Flagged Rows</h2>
         <div className="mt-4 h-72"><ResponsiveContainer><BarChart data={managerRows} layout="vertical"><CartesianGrid strokeDasharray="3 3" /><XAxis type="number" /><YAxis dataKey="manager" type="category" width={120} /><Tooltip /><Bar dataKey="count" fill="#2563eb" /></BarChart></ResponsiveContainer></div>
+      </section>
+      <section className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+        <h2 className="font-semibold">Effort Anomalies</h2>
+        <p className="mt-1 text-sm text-gray-500">Projects whose effort changed by 200h or more versus the previous saved version.</p>
+        <div className="mt-4 divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-gray-700 dark:border-gray-700">
+          {anomalies.map((item) => (
+            <div key={item.issue.id} className="p-3 text-sm">
+              <strong>{item.issue.projectNo}</strong> - {item.issue.projectName}: {item.previousEffort}h to {item.issue.effort}h ({item.delta > 0 ? '+' : ''}{item.delta}h)
+            </div>
+          ))}
+          {!anomalies.length ? <div className="p-3 text-sm text-gray-500">No effort anomalies detected.</div> : null}
+        </div>
       </section>
     </div>
   );

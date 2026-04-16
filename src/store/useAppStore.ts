@@ -5,8 +5,8 @@ import { runAuditAsync } from '../lib/auditRunner';
 import { deleteWorkbookRawData, putWorkbookRawData } from '../lib/blobStore';
 import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
-import { DATA_KEY, loadProcesses, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
-import type { AuditPolicy, AuditProcess, AuditResult, IssueComment, TrackingChannel, TrackingEntry, WorkbookFile, WorkspaceTab } from '../lib/types';
+import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
+import type { AuditPolicy, AuditProcess, AuditResult, IssueComment, IssueCorrection, TrackingChannel, TrackingEntry, WorkbookFile, WorkspaceTab } from '../lib/types';
 
 type UploadState = {
   fileName: string;
@@ -45,6 +45,8 @@ type AppStore = {
   reopenTracking: (processId: string, managerEmail: string) => void;
   addIssueComment: (processId: string, issueKey: string, body: string, author?: string) => void;
   deleteIssueComment: (processId: string, issueKey: string, commentId: string) => void;
+  saveIssueCorrection: (processId: string, issueKey: string, correction: Omit<IssueCorrection, 'issueKey' | 'processId' | 'updatedAt'>) => void;
+  clearIssueCorrection: (processId: string, issueKey: string) => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
 };
 
@@ -97,12 +99,14 @@ export const useAppStore = create<AppStore>()(
           description: description.trim(),
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          nextAuditDue: null,
           files: [],
           activeFileId: null,
           versions: [],
           auditPolicy: createDefaultAuditPolicy(),
           notificationTracking: {},
           comments: {},
+          corrections: {},
         };
         set((state) => ({ processes: [process, ...state.processes], activeProcessId: process.id, activeWorkspaceTab: 'preview', currentAuditResult: null }));
         rememberActiveProcess(process.id);
@@ -421,6 +425,37 @@ export const useAppStore = create<AppStore>()(
             },
             updatedAt: now,
           })),
+        }));
+      },
+
+      saveIssueCorrection: (processId, issueKey, correction) => {
+        const now = new Date().toISOString();
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => ({
+            ...process,
+            corrections: {
+              ...(process.corrections ?? {}),
+              [issueKey]: {
+                issueKey,
+                processId,
+                ...correction,
+                note: correction.note.trim(),
+                updatedAt: now,
+              },
+            },
+            updatedAt: now,
+          })),
+        }));
+      },
+
+      clearIssueCorrection: (processId, issueKey) => {
+        const now = new Date().toISOString();
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => {
+            const corrections = { ...(process.corrections ?? {}) };
+            delete corrections[issueKey];
+            return { ...process, corrections, updatedAt: now };
+          }),
         }));
       },
 

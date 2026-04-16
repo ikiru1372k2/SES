@@ -3,7 +3,8 @@ import { FormEvent, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/auditPolicy';
 import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
-import type { AuditPolicy, AuditProcess, AuditIssue, IssueCategory, IssueComment, WorkbookFile } from '../../lib/types';
+import { openAuditReport } from '../../lib/reportExporter';
+import type { AuditPolicy, AuditProcess, AuditIssue, IssueCategory, IssueComment, IssueCorrection, WorkbookFile } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { Badge } from '../shared/Badge';
 import { Button } from '../shared/Button';
@@ -31,6 +32,8 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   const runAudit = useAppStore((state) => state.runAudit);
   const addIssueComment = useAppStore((state) => state.addIssueComment);
   const deleteIssueComment = useAppStore((state) => state.deleteIssueComment);
+  const saveIssueCorrection = useAppStore((state) => state.saveIssueCorrection);
+  const clearIssueCorrection = useAppStore((state) => state.clearIssueCorrection);
   const [severity, setSeverity] = useState('');
   const [sheet, setSheet] = useState('');
   const [status, setStatus] = useState('');
@@ -136,6 +139,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
             <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value="">All categories</option>{categoryOptions.map((item) => <option key={item}>{item}</option>)}</select>
             <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"><option value="">Rule status</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select>
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." className="min-w-52 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800" />
+            <button onClick={() => openAuditReport(process, result)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">PDF Report</button>
             <button onClick={() => exportIssuesCsv('audit-issues.csv', filtered)} className="ml-auto rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Export CSV</button>
           </div>
 
@@ -172,6 +176,12 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                             onAdd={(body) => addIssueComment(process.id, auditIssueKey(issue), body)}
                             onDelete={(commentId) => deleteIssueComment(process.id, auditIssueKey(issue), commentId)}
                           />
+                          <IssueCorrectionEditor
+                            issue={issue}
+                            correction={process.corrections?.[auditIssueKey(issue)]}
+                            onSave={(correction) => saveIssueCorrection(process.id, auditIssueKey(issue), correction)}
+                            onClear={() => clearIssueCorrection(process.id, auditIssueKey(issue))}
+                          />
                         </td>
                       </tr>
                     ) : null}
@@ -186,6 +196,37 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
 
       {settingsOpen ? <QgcSettingsDrawer process={process} onClose={() => setSettingsOpen(false)} /> : null}
     </div>
+  );
+}
+
+function IssueCorrectionEditor({ issue, correction, onSave, onClear }: { issue: AuditIssue; correction?: IssueCorrection | undefined; onSave: (correction: Omit<IssueCorrection, 'issueKey' | 'processId' | 'updatedAt'>) => void; onClear: () => void }) {
+  const [effort, setEffort] = useState(String(correction?.effort ?? issue.effort));
+  const [projectState, setProjectState] = useState(correction?.projectState ?? issue.projectState);
+  const [projectManager, setProjectManager] = useState(correction?.projectManager ?? issue.projectManager);
+  const [note, setNote] = useState(correction?.note ?? '');
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSave({ effort: Number(effort) || 0, projectState: projectState.trim(), projectManager: projectManager.trim(), note });
+  }
+
+  return (
+    <section className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="font-semibold">Inline correction</h4>
+        {correction ? <span className="text-xs text-gray-500">Updated {new Date(correction.updatedAt).toLocaleString()}</span> : null}
+      </div>
+      <form onSubmit={submit} className="mt-3 grid gap-3 md:grid-cols-4">
+        <label className="text-xs text-gray-500">Effort<input value={effort} onChange={(event) => setEffort(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+        <label className="text-xs text-gray-500">State<input value={projectState} onChange={(event) => setProjectState(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+        <label className="text-xs text-gray-500">Manager<input value={projectManager} onChange={(event) => setProjectManager(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+        <label className="text-xs text-gray-500">Note<input value={note} onChange={(event) => setNote(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+        <div className="flex gap-2 md:col-span-4">
+          <Button type="submit" size="sm">Save correction</Button>
+          {correction ? <Button variant="secondary" size="sm" onClick={onClear}>Clear correction</Button> : null}
+        </div>
+      </form>
+    </section>
   );
 }
 

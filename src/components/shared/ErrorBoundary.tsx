@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { recordDebugEvent } from '../../lib/debugLog';
 
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   override state: { error: Error | null } = { error: null };
@@ -9,6 +10,11 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Workbook Auditor crashed', error, info);
+    recordDebugEvent({
+      message: error.message,
+      ...(error.stack ? { stack: error.stack } : {}),
+      ...(info.componentStack ? { componentStack: info.componentStack } : {}),
+    });
   }
 
   override render() {

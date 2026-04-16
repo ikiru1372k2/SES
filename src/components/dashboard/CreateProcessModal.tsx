@@ -17,7 +17,7 @@ export function CreateProcessModal({ onClose }: { onClose: () => void }) {
     const process = createProcess(name, description);
     toast.success('Process saved');
     onClose();
-    navigate(`/workspace/${process.id}`);
+    void navigate(`/workspace/${process.id}`);
   }
 
   return (

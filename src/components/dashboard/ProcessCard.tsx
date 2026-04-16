@@ -23,6 +23,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   const latest = process.latestAuditResult ?? process.versions[0]?.result;
   const counts = severityCounts(process);
   const total = Math.max(1, counts.High + counts.Medium + counts.Low);
+  const overdue = Boolean(process.nextAuditDue && new Date(process.nextAuditDue) < new Date());
 
   function confirmDelete() {
     const ok = window.confirm(`Delete "${displayName(process.name)}"? This removes its files, versions, and tracking data from this browser.`);
@@ -37,6 +38,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
         <div>
           <h2 className="font-semibold text-gray-950 dark:text-white">{displayName(process.name)}</h2>
           <p className="mt-1 line-clamp-2 text-sm text-gray-500 dark:text-gray-400">{process.description || 'Workbook audit process'}</p>
+          {process.nextAuditDue ? <p className={overdue ? 'mt-2 text-xs font-semibold text-red-700' : 'mt-2 text-xs text-gray-500'}>Next audit due: {new Date(process.nextAuditDue).toLocaleDateString()}</p> : null}
         </div>
         <div className="relative">
           <button title="Process actions" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><MoreHorizontal size={18} /></button>
@@ -80,11 +82,12 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
   const updateProcess = useAppStore((state) => state.updateProcess);
   const [name, setName] = useState(process.name);
   const [description, setDescription] = useState(process.description);
+  const [nextAuditDue, setNextAuditDue] = useState(process.nextAuditDue ?? '');
 
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    updateProcess(process.id, { name: name.trim(), description: description.trim() });
+    updateProcess(process.id, { name: name.trim(), description: description.trim(), nextAuditDue: nextAuditDue || null });
     toast.success('Process updated');
     onClose();
   }
@@ -100,6 +103,8 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
         <input value={name} onChange={(event) => setName(event.target.value)} required className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
         <label className="mt-4 block text-sm font-medium">Description</label>
         <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="mt-2 h-24 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
+        <label className="mt-4 block text-sm font-medium">Next audit due</label>
+        <input type="date" value={nextAuditDue} onChange={(event) => setNextAuditDue(event.target.value)} className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button type="submit">Save Changes</Button>

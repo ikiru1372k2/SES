@@ -1,7 +1,8 @@
 import type { AuditIssue, NotificationDraft } from './types';
 
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
-const controlChars = /[\u0000-\u001f\u007f]+/g;
+// eslint-disable-next-line no-control-regex
+const controlChars = new RegExp('[\\u0000-\\u001f\\u007f]+', 'g');
 
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
