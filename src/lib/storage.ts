@@ -1,5 +1,6 @@
 import type { AuditProcess, TrackingEntry } from './types';
 import { detectWorkbookSheets } from './excelParser';
+import { createId } from './id';
 import { normalizeAuditPolicy } from './auditPolicy';
 
 export const DATA_KEY = 'effort-auditor-data';
@@ -11,7 +12,7 @@ export function loadProcesses(): AuditProcess[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     const processes = parsed.processes ?? parsed.state?.processes ?? [];
-    return Array.isArray(processes) ? processes.map(sanitizeProcess).filter(Boolean) as AuditProcess[] : [];
+    return sanitizeProcesses(processes);
   } catch {
     return [];
   }
@@ -27,7 +28,7 @@ export async function loadProcessesFromLocalDb(): Promise<AuditProcess[]> {
     if (!response.ok) return loadProcesses();
     const parsed = await response.json();
     const processes = parsed.processes ?? [];
-    return Array.isArray(processes) ? processes.map(sanitizeProcess).filter(Boolean) as AuditProcess[] : [];
+    return sanitizeProcesses(processes);
   } catch {
     return loadProcesses();
   }
@@ -48,6 +49,10 @@ export async function saveProcessesToLocalDb(processes: AuditProcess[]): Promise
 
 export function displayName(name: string): string {
   return name.replaceAll('_', ' ');
+}
+
+export function sanitizeProcesses(value: unknown): AuditProcess[] {
+  return Array.isArray(value) ? value.map(sanitizeProcess).filter(Boolean) as AuditProcess[] : [];
 }
 
 export function rememberActiveProcess(id: string | null): void {
@@ -102,7 +107,7 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
           const previousSelection = new Map((Array.isArray(file.sheets) ? file.sheets : []).map((sheet) => [sheet.name, sheet.isSelected]));
           return {
             ...file,
-            id: String(file.id ?? `${Date.now()}-${Math.random()}`),
+            id: String(file.id ?? createId()),
             name: String(file.name ?? 'Workbook.xlsx'),
             uploadedAt: String(file.uploadedAt ?? now),
             lastAuditedAt: file.lastAuditedAt ? String(file.lastAuditedAt) : null,

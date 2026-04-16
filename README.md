@@ -46,11 +46,13 @@ It is not:
 - A CLI audit pipeline.
 - A certificate-based localhost add-in project.
 
-The browser entry is still named `taskpane.html` only to keep the existing URL stable:
+The primary browser entry is the root URL:
 
 ```text
-http://localhost:3210/taskpane.html
+http://localhost:3210/
 ```
+
+`taskpane.html` is retained only as a compatibility entry for older bookmarks.
 
 ## Tech Stack
 
@@ -58,10 +60,10 @@ http://localhost:3210/taskpane.html
 | --- | --- | --- |
 | Frontend | React 18 | Main UI framework |
 | Language | TypeScript | Type-safe app and audit logic |
-| Build tool | Vite 5 | Local dev server and production build |
-| Routing | React Router v6 | Dashboard, workspace, compare pages |
+| Build tool | Vite 8 | Local dev server and production build |
+| Routing | React Router v7 | Dashboard, workspace, compare pages |
 | State | Zustand | Process, file, audit, version, tracking state |
-| Excel parsing | SheetJS `xlsx` | Read uploaded Excel files and generate audited workbook downloads |
+| Excel parsing | ExcelJS | Read uploaded Excel files and generate audited workbook downloads |
 | Charts | Recharts | Analytics and trend charts |
 | Notifications | react-hot-toast | Success, warning, and error messages |
 | Icons | lucide-react | UI icons |
@@ -129,7 +131,9 @@ excel_audit_add_ins/
   test/
     audit.test.ts
 
+  index.html
   taskpane.html
+  nginx.conf
   vite.config.ts
   tailwind.config.js
   postcss.config.js
@@ -145,6 +149,8 @@ excel_audit_add_ins/
 
 1. Create a process, such as `May 2026 Audit`.
 2. Upload one or more Excel workbooks.
+   - Supported formats: `.xlsx` and `.xlsm`.
+   - Legacy binary `.xls` files must be saved as `.xlsx` or `.xlsm` before upload.
 3. SES detects valid effort sheets and duplicate/reference sheets.
 4. Preview workbook rows in the browser.
 5. Select audit scope:
@@ -536,7 +542,7 @@ npm run dev
 Open:
 
 ```text
-http://localhost:3210/taskpane.html
+http://localhost:3210/
 ```
 
 Stop the app:
@@ -547,7 +553,19 @@ Ctrl+C
 
 ### Local Network Access
 
-The dev script uses:
+The default dev script binds to localhost for safer local use:
+
+```text
+vite --host 127.0.0.1
+```
+
+For intentional LAN testing, run:
+
+```powershell
+npm run dev:lan
+```
+
+That script uses:
 
 ```text
 vite --host 0.0.0.0
@@ -556,7 +574,7 @@ vite --host 0.0.0.0
 That means the app can listen on the machine network IP, for example:
 
 ```text
-http://10.144.129.250:3210/taskpane.html
+http://10.144.129.250:3210/
 ```
 
 Other users can reach it only if:
@@ -593,12 +611,12 @@ docker build -t ses-auditor .
 
 The Dockerfile:
 
-- Uses Node 22 Alpine.
+- Uses a Node 22 build stage.
 - Installs dependencies with `npm ci`.
 - Runs `npm run build` during image build.
+- Serves the static `dist/` output with nginx.
 - Exposes port `3210`.
-- Runs the Vite server on `0.0.0.0`.
-- Mounts `/app/data` as a persistent data volume.
+- Does not run the Vite dev server or expose `/api/local-db` in production.
 
 ### Run Container With Persistent Data
 
@@ -617,7 +635,7 @@ docker run --rm -p 3210:3210 -v "%cd%\data:/app/data" ses-auditor
 Open:
 
 ```text
-http://localhost:3210/taskpane.html
+http://localhost:3210/
 ```
 
 Stop:
@@ -626,15 +644,9 @@ Stop:
 Ctrl+C
 ```
 
-### Why Docker Runs Vite
+### Docker Persistence
 
-The local file database is implemented as Vite middleware in `vite.config.ts`. Running the Vite server keeps the local file database endpoint available:
-
-```text
-/api/local-db
-```
-
-This is useful for the current self-automation version because it keeps persistence simple and local.
+Docker serves the static app. The local file database is a development-only Vite middleware, so Docker builds use browser `localStorage` fallback persistence.
 
 ## Build And Test
 
@@ -687,7 +699,7 @@ npm run preview
 Open:
 
 ```text
-http://localhost:3210/taskpane.html
+http://localhost:3210/
 ```
 
 Note: preview mode is useful for checking the static build. For normal local usage with JSON file persistence, prefer `npm run dev`.
@@ -711,7 +723,7 @@ For another colleague to access the app from your machine:
 3. Share:
 
    ```text
-   http://<your-ip>:3210/taskpane.html
+   http://<your-ip>:3210/
    ```
 
 4. If they cannot open it:

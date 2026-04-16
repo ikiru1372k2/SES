@@ -1,12 +1,12 @@
 import { Toaster } from 'react-hot-toast';
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { CompareProcesses } from './components/dashboard/CompareProcesses';
 import { Dashboard } from './pages/Dashboard';
 import { Workspace } from './pages/Workspace';
 
 export default function App() {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/workspace/:id" element={<Workspace />} />
@@ -14,6 +14,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <Toaster position="top-right" />
-    </HashRouter>
+    </BrowserRouter>
   );
 }

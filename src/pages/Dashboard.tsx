@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { CreateProcessModal } from '../components/dashboard/CreateProcessModal';
 import { ProcessCard } from '../components/dashboard/ProcessCard';
@@ -11,9 +11,12 @@ export function Dashboard() {
   const processes = useAppStore((state) => state.processes);
   const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
   const [showCreate, setShowCreate] = useState(false);
+  const didHydrate = useRef(false);
   useEffect(() => {
-    if (!processes.length) hydrateProcesses();
-  }, [hydrateProcesses, processes.length]);
+    if (didHydrate.current) return;
+    didHydrate.current = true;
+    hydrateProcesses();
+  }, [hydrateProcesses]);
 
   return (
     <AppShell>

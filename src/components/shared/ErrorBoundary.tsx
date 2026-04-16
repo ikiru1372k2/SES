@@ -23,7 +23,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
             onClick={() => {
               localStorage.removeItem('effort-auditor-data');
               localStorage.removeItem('effort-auditor-ui');
-              window.location.href = '/taskpane.html';
+              window.location.href = '/';
             }}
           >
             Reset local app data

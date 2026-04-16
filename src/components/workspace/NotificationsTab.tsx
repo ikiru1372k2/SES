@@ -23,21 +23,33 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
   const active = drafts[selected] ?? drafts[0];
 
   function track(draft: NotificationDraft, channel: 'outlook' | 'eml' | 'teams' | 'sendAll', note: string) {
-    recordTrackingEvent(process.id, draft.pmName, draft.email, draft.issueCount, channel, note);
+    recordTrackingEvent(process.id, draft.pmName, draft.recipientKey, draft.issueCount, channel, note);
   }
 
   function openOutlook(draft: NotificationDraft) {
+    if (!draft.email) {
+      toast.error('Add a project manager email in the workbook before opening Outlook');
+      return;
+    }
     openMailDraft([draft.email], draft.subject, notificationPlainText(draft));
     track(draft, 'outlook', 'Opened Outlook mail draft');
   }
 
   function downloadDraft(draft: NotificationDraft) {
+    if (!draft.email) {
+      toast.error('Add a project manager email in the workbook before downloading .eml');
+      return;
+    }
     downloadEml(draft);
     track(draft, 'eml', 'Downloaded .eml draft');
     toast.success('Draft downloaded and tracking updated');
   }
 
   function openTeams(draft: NotificationDraft) {
+    if (!draft.email) {
+      toast.error('Add a project manager email in the workbook before opening Teams');
+      return;
+    }
     openTeamsMessage(draft.email, notificationPlainText(draft));
     track(draft, 'teams', 'Opened Teams escalation');
   }
@@ -45,8 +57,12 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
   function sendAll() {
     if (!drafts.length) return;
     const general = buildGeneralNotification(drafts);
+    if (!general.recipients.length) {
+      toast.error('No valid manager emails found in the workbook');
+      return;
+    }
     openMailDraft(general.recipients, general.subject, general.body);
-    drafts.forEach((draft) => track(draft, 'sendAll', 'Included in Send All general Outlook draft'));
+    drafts.filter((draft) => draft.email).forEach((draft) => track(draft, 'sendAll', 'Included in Send All general Outlook draft'));
     toast.success(`General draft opened for ${general.recipients.length} manager(s)`);
   }
 
@@ -76,17 +92,17 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
         </details>
         <div className="space-y-2">
           {drafts.map((draft, index) => {
-            const tracking = process.notificationTracking[`${process.id}:${draft.email}`];
+            const tracking = process.notificationTracking[`${process.id}:${draft.recipientKey}`];
             return (
-              <button key={draft.email} onClick={() => setSelected(index)} className={`w-full rounded-lg border p-3 text-left text-sm ${active?.email === draft.email ? 'border-blue-400 bg-blue-50 dark:bg-blue-950' : 'border-gray-200 dark:border-gray-700'}`}>
+              <button key={draft.recipientKey} onClick={() => setSelected(index)} className={`w-full rounded-lg border p-3 text-left text-sm ${active?.recipientKey === draft.recipientKey ? 'border-blue-400 bg-blue-50 dark:bg-blue-950' : 'border-gray-200 dark:border-gray-700'}`}>
                 <div className="font-medium">{draft.pmName}</div>
-                <div className="text-xs text-gray-500">{draft.email}</div>
+                <div className={draft.email ? 'text-xs text-gray-500' : 'text-xs font-medium text-red-600'}>{draft.email ?? 'Missing manager email'}</div>
                 <div className="mt-1 text-xs text-gray-500">{draft.issueCount} flagged projects · {tracking?.stage ?? draft.stage}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <span onClick={(event) => { event.stopPropagation(); navigator.clipboard.writeText(notificationPlainText(draft)); toast.success('Draft copied'); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Copy</span>
-                  <span onClick={(event) => { event.stopPropagation(); openOutlook(draft); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Open Outlook</span>
-                  <span onClick={(event) => { event.stopPropagation(); downloadDraft(draft); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Download .eml</span>
-                  <span onClick={(event) => { event.stopPropagation(); openTeams(draft); }} className="rounded border border-gray-300 px-2 py-1 text-xs">Teams</span>
+                  <span onClick={(event) => { event.stopPropagation(); openOutlook(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Open Outlook</span>
+                  <span onClick={(event) => { event.stopPropagation(); downloadDraft(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Download .eml</span>
+                  <span onClick={(event) => { event.stopPropagation(); openTeams(draft); }} className={`rounded border border-gray-300 px-2 py-1 text-xs ${draft.email ? '' : 'opacity-40'}`}>Teams</span>
                 </div>
               </button>
             );
@@ -95,8 +111,36 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
       </section>
       <section className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
         <h2 className="font-semibold">Preview</h2>
-        {active ? <div className="prose prose-sm mt-4 max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: active.htmlBody }} /> : <p className="mt-4 text-sm text-gray-500">No flagged managers in this audit.</p>}
+        {active ? <NotificationPreview draft={active} deadline={deadline} template={template} /> : <p className="mt-4 text-sm text-gray-500">No flagged managers in this audit.</p>}
       </section>
+    </div>
+  );
+}
+
+function NotificationPreview({ draft, deadline, template }: { draft: NotificationDraft; deadline: string; template: { intro: string; actionLine: string; closing: string; signature1: string; signature2: string } }) {
+  return (
+    <div className="prose prose-sm mt-4 max-w-none dark:prose-invert">
+      <p>Dear {draft.pmName},</p>
+      <p>{template.intro}</p>
+      <p>The following {draft.issueCount} project(s) require your attention:</p>
+      <table>
+        <thead>
+          <tr><th>Project No</th><th>Project</th><th>Severity</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          {draft.projects.map((issue) => (
+            <tr key={issue.id}>
+              <td>{issue.projectNo}</td>
+              <td>{issue.projectName}</td>
+              <td>{issue.severity}</td>
+              <td>{issue.notes}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p>{template.actionLine} by {deadline || 'the agreed deadline'}.</p>
+      <p>{template.closing}</p>
+      <p>{template.signature1}<br />{template.signature2}</p>
     </div>
   );
 }

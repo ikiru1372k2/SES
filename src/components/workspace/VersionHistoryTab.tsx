@@ -37,7 +37,7 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
             </div>
             <div className="flex gap-2">
               <button onClick={() => loadVersion(process.id, version.versionId)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700">Load this version</button>
-              <button onClick={() => file && downloadAuditedWorkbook(file, version.result)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700">Download</button>
+              <button onClick={() => { if (file) void downloadAuditedWorkbook(file, version.result); }} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700">Download</button>
             </div>
           </div>
         ))}

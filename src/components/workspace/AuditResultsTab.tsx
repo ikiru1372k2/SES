@@ -37,16 +37,38 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   const [expanded, setExpanded] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const policyChanged = Boolean(result && isPolicyChanged(process.auditPolicy, result.policySnapshot));
+  const searchIndex = useMemo(() => {
+    return (result?.issues ?? []).map((issue) => ({
+      issue,
+      blob: [
+        issue.severity,
+        issue.projectNo,
+        issue.projectName,
+        issue.projectManager,
+        issue.sheetName,
+        issue.projectState,
+        issue.effort,
+        issue.ruleName,
+        issue.auditStatus,
+        issue.category,
+        issue.reason,
+        issue.notes,
+        issue.recommendedAction,
+      ].join(' ').toLowerCase(),
+    }));
+  }, [result]);
 
   const filtered = useMemo(() => {
-    return (result?.issues ?? [])
-      .filter((issue) => !severity || issue.severity === severity)
-      .filter((issue) => !sheet || issue.sheetName === sheet)
-      .filter((issue) => !status || issue.auditStatus === status)
-      .filter((issue) => !category || issue.category === category)
-      .filter((issue) => !search || JSON.stringify(issue).toLowerCase().includes(search.toLowerCase()))
+    const query = search.trim().toLowerCase();
+    return searchIndex
+      .filter(({ issue }) => !severity || issue.severity === severity)
+      .filter(({ issue }) => !sheet || issue.sheetName === sheet)
+      .filter(({ issue }) => !status || issue.auditStatus === status)
+      .filter(({ issue }) => !category || issue.category === category)
+      .filter(({ blob }) => !query || blob.includes(query))
+      .map(({ issue }) => issue)
       .sort((a, b) => String(a[sort] ?? '').localeCompare(String(b[sort] ?? '')));
-  }, [result, severity, sheet, status, category, search, sort]);
+  }, [searchIndex, severity, sheet, status, category, search, sort]);
 
   const sheets = result ? [...new Set(result.issues.map((issue) => issue.sheetName))] : [];
   const statuses = result ? [...new Set(result.issues.map((issue) => issue.auditStatus))] : [];

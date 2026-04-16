@@ -134,15 +134,24 @@ function rowsToObjects(rows: unknown[][], headerRowIndex: number, normalizedHead
     .map((row, index) => ({ cells: row, rowIndex: headerRowIndex + 1 + index }))
     .filter(({ cells }) => !isBlankRow(cells))
     .map(({ cells, rowIndex }) => {
-      const entries = headers.flatMap((header, index) => {
+      const row: RowObject = {};
+      headers.forEach((header, index) => {
         const originalHeader = originalHeaders[index];
         const cell = cells[index];
-        return [
-          [header, cell],
-          [originalHeader, cell],
-        ].filter(([key]) => String(key ?? '').trim() !== '');
+        const canonicalKey = String(header ?? '').trim();
+        const originalKey = String(originalHeader ?? '').trim();
+        if (canonicalKey && !canonicalKey.startsWith('column') && row[canonicalKey] === undefined) row[canonicalKey] = cell;
+        if (originalKey) {
+          let key = originalKey;
+          let suffix = 2;
+          while (row[key] !== undefined) {
+            key = `${originalKey} ${suffix}`;
+            suffix += 1;
+          }
+          row[key] = cell;
+        }
       });
-      return { row: Object.fromEntries(entries), rowIndex };
+      return { row, rowIndex };
     });
 }
 
@@ -197,7 +206,7 @@ export function runAudit(file: WorkbookFile, auditPolicy?: AuditPolicy): AuditRe
   };
 }
 
-const keyFor = (issue: AuditIssue) => `${issue.projectNo}|${issue.sheetName}`;
+const keyFor = (issue: AuditIssue) => `${issue.projectNo}|${issue.sheetName}|${issue.rowIndex}`;
 
 export function compareResults(from: AuditResult, to: AuditResult): ComparisonResult {
   const fromMap = new Map(from.issues.map((issue) => [keyFor(issue), issue]));

@@ -1,6 +1,8 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { createId } from './id';
 import type { AuditIssue, AuditResult, SheetInfo, WorkbookFile } from './types';
 
+export const MAX_WORKBOOK_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const HEADER_SCAN_LIMIT = 20;
 const DUPLICATE_NAME_RE = /summary|ref|lookup/i;
 const COLUMN_ALIASES: Record<string, string[]> = {
@@ -17,8 +19,6 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   status: ['status', 'audit status'],
 };
 const CORE_COLUMNS = ['projectNo', 'projectManager', 'projectState', 'effort'];
-
-const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 type HeaderCandidate = {
   headerRowIndex: number;
@@ -65,7 +65,9 @@ function rowHeaderScore(row: unknown[]): { score: number; normalizedHeaders: str
 
 function detectHeader(rows: unknown[][]): HeaderCandidate | null {
   let best: HeaderCandidate | null = null;
-  for (const [index, row] of rows.slice(0, HEADER_SCAN_LIMIT).entries()) {
+  const scanLength = Math.min(rows.length, HEADER_SCAN_LIMIT);
+  for (let index = 0; index < scanLength; index += 1) {
+    const row = rows[index];
     const candidate = rowHeaderScore(row);
     if (!best || candidate.score > best.score) best = { ...candidate, headerRowIndex: index };
   }
@@ -81,18 +83,69 @@ function sheetFingerprint(rows: unknown[][]): string {
   return JSON.stringify(rows.filter(hasContent).slice(0, 80));
 }
 
+function cellValueToPrimitive(value: ExcelJS.CellValue): unknown {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value !== 'object') return value;
+  if ('result' in value) return cellValueToPrimitive(value.result as ExcelJS.CellValue);
+  if ('text' in value) return String(value.text ?? '');
+  if ('richText' in value && Array.isArray(value.richText)) return value.richText.map((part) => part.text).join('');
+  return String(value);
+}
+
+function worksheetToRows(worksheet: ExcelJS.Worksheet): unknown[][] {
+  const rows: unknown[][] = [];
+  const rowCount = worksheet.rowCount;
+  const columnCount = worksheet.columnCount;
+  for (let rowNumber = 1; rowNumber <= rowCount; rowNumber += 1) {
+    const row = worksheet.getRow(rowNumber);
+    const values: unknown[] = [];
+    for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
+      values.push(cellValueToPrimitive(row.getCell(columnNumber).value));
+    }
+    rows.push(values);
+  }
+  return rows;
+}
+
+function uniqueSheetName(name: string, usedNames: Set<string>): string {
+  const base = name.replace(/[:\\/?*[\]]/g, ' ').trim().slice(0, 31) || 'Sheet';
+  let candidate = base;
+  let suffix = 1;
+  while (usedNames.has(candidate)) {
+    suffix += 1;
+    const suffixText = ` (${suffix})`;
+    candidate = `${base.slice(0, 31 - suffixText.length)}${suffixText}`;
+  }
+  usedNames.add(candidate);
+  return candidate;
+}
+
+export function validateWorkbookFile(file: File): void {
+  if (/\.xls$/i.test(file.name)) {
+    throw new Error('Legacy .xls files are not supported. Please save the workbook as .xlsx or .xlsm and upload again.');
+  }
+  if (!/\.(xlsx|xlsm)$/i.test(file.name)) {
+    throw new Error(`${file.name} is not a supported Excel workbook. Upload .xlsx or .xlsm files.`);
+  }
+  if (file.size > MAX_WORKBOOK_FILE_SIZE_BYTES) {
+    throw new Error(`${file.name} is too large. Upload workbooks up to 10 MB.`);
+  }
+}
+
 export async function parseWorkbook(file: File): Promise<WorkbookFile> {
+  validateWorkbookFile(file);
   const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'array' });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
   const rawData: Record<string, unknown[][]> = {};
 
-  workbook.SheetNames.forEach((name) => {
-    const worksheet = workbook.Sheets[name];
-    rawData[name] = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, defval: '', blankrows: true });
+  workbook.eachSheet((worksheet) => {
+    rawData[worksheet.name] = worksheetToRows(worksheet);
   });
 
   return {
-    id: makeId(),
+    id: createId(),
     name: file.name,
     uploadedAt: new Date().toISOString(),
     lastAuditedAt: null,
@@ -137,9 +190,10 @@ export function detectWorkbookSheets(rawData: Record<string, unknown[][]>): Shee
   });
 }
 
-export function downloadAuditedWorkbook(file: WorkbookFile, result: AuditResult): void {
-  const workbook = XLSX.utils.book_new();
+export async function downloadAuditedWorkbook(file: WorkbookFile, result: AuditResult): Promise<void> {
+  const workbook = new ExcelJS.Workbook();
   const auditedSheets = new Set(result.sheets.map((sheet) => sheet.sheetName));
+  const usedSheetNames = new Set<string>();
 
   Object.entries(file.rawData).forEach(([sheetName, rows]) => {
     const sheet = file.sheets.find((item) => item.name === sheetName);
@@ -154,9 +208,16 @@ export function downloadAuditedWorkbook(file: WorkbookFile, result: AuditResult)
         output[index] = [...output[index], issue?.severity ?? '', issue?.notes ?? ''];
       }
     }
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(output), sheetName.slice(0, 31));
+    const worksheet = workbook.addWorksheet(uniqueSheetName(sheetName, usedSheetNames));
+    output.forEach((row) => worksheet.addRow(row));
   });
 
-  const baseName = file.name.replace(/\.(xlsx|xlsm|xls)$/i, '');
-  XLSX.writeFile(workbook, `${baseName}_audited.xlsx`);
+  const baseName = file.name.replace(/\.(xlsx|xlsm)$/i, '');
+  const buffer = await workbook.xlsx.writeBuffer();
+  const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${baseName}_audited.xlsx`;
+  link.click();
+  URL.revokeObjectURL(url);
 }

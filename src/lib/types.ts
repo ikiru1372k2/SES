@@ -137,7 +137,9 @@ export interface ComparisonResult {
 
 export interface NotificationDraft {
   pmName: string;
-  email: string;
+  email: string | null;
+  recipientKey: string;
+  hasValidRecipient: boolean;
   issueCount: number;
   projects: AuditIssue[];
   stage: 'Reminder 1' | 'Reminder 2' | 'Escalation';

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { buildNotificationDrafts, notificationPlainText, openMailDraft, openTeamsMessage } from '../../lib/notificationBuilder';
+import { buildNotificationDrafts, isValidEmail, notificationPlainText, openMailDraft, openTeamsMessage, recipientKeyFor } from '../../lib/notificationBuilder';
 import type { AuditProcess, AuditResult, NotificationDraft, TrackingEntry } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
@@ -30,10 +30,6 @@ function pipelineKey(entry: TrackingEntry): PipelineKey {
   return 'notContacted';
 }
 
-function makeFallbackEmail(name: string) {
-  return `${name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.+|\.+$/g, '') || 'unassigned'}@company.com`;
-}
-
 export function TrackingTab({ process, result }: { process: AuditProcess; result: AuditResult | null }) {
   const recordTrackingEvent = useAppStore((state) => state.recordTrackingEvent);
   const markTrackingResolved = useAppStore((state) => state.markTrackingResolved);
@@ -44,15 +40,16 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
   const [selectedKey, setSelectedKey] = useState('');
 
   const drafts = useMemo(() => buildNotificationDrafts(result?.issues ?? [], 'Company Reminder', ''), [result]);
-  const draftsByEmail = useMemo(() => new Map(drafts.map((draft) => [draft.email, draft])), [drafts]);
+  const draftsByKey = useMemo(() => new Map(drafts.map((draft) => [draft.recipientKey, draft])), [drafts]);
 
   const entries = useMemo(() => {
     const managerIssues = new Map<string, { name: string; email: string; count: number }>();
     (result?.issues ?? []).forEach((issue) => {
-      const email = issue.email || makeFallbackEmail(issue.projectManager);
-      const current = managerIssues.get(email) ?? { name: issue.projectManager, email, count: 0 };
+      const email = isValidEmail(issue.email) ? issue.email : null;
+      const key = recipientKeyFor(issue.projectManager, email);
+      const current = managerIssues.get(key) ?? { name: issue.projectManager, email: key, count: 0 };
       current.count += 1;
-      managerIssues.set(email, current);
+      managerIssues.set(key, current);
     });
 
     return [...managerIssues.values()].map((manager) => {
@@ -86,7 +83,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
   }, { notContacted: [], outlookSent: [], teamsSent: [], resolved: [] });
 
   const selected = entries.find((entry) => entry.key === selectedKey) ?? searched[0] ?? entries[0];
-  const selectedDraft = selected ? draftsByEmail.get(selected.managerEmail) : undefined;
+  const selectedDraft = selected ? draftsByKey.get(selected.managerEmail) : undefined;
   const inProgress = entries.filter((entry) => !entry.resolved && (entry.outlookCount > 0 || entry.teamsCount > 0)).length;
 
   if (!result) return <EmptyState title="No escalation tracking yet">Run an audit first to create manager tracking from flagged projects.</EmptyState>;
@@ -96,13 +93,21 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
   }
 
   function openOutlook(entry: TrackingEntry, draft?: NotificationDraft) {
-    if (draft) openMailDraft([draft.email], draft.subject, notificationPlainText(draft));
+    if (!draft?.email) {
+      toast.error('Add a project manager email in the workbook before opening Outlook');
+      return;
+    }
+    openMailDraft([draft.email], draft.subject, notificationPlainText(draft));
     track(entry, 'outlook', 'Opened Outlook mail draft from tracking');
     toast.success('Outlook action recorded');
   }
 
   function openTeams(entry: TrackingEntry, draft?: NotificationDraft) {
-    openTeamsMessage(entry.managerEmail, draft ? notificationPlainText(draft) : `Please review ${entry.flaggedProjectCount} flagged project(s).`);
+    if (!draft?.email) {
+      toast.error('Add a project manager email in the workbook before opening Teams');
+      return;
+    }
+    openTeamsMessage(draft.email, notificationPlainText(draft));
     track(entry, 'teams', 'Opened Teams escalation from tracking');
     toast.success('Teams action recorded');
   }
@@ -176,14 +181,14 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="font-semibold">{selected.managerName}</h3>
-              <p className="text-sm text-gray-500">{selected.managerEmail}</p>
+              <p className={selected.managerEmail.startsWith('missing-email:') ? 'text-sm font-medium text-red-600' : 'text-sm text-gray-500'}>{selected.managerEmail.startsWith('missing-email:') ? 'Missing manager email' : selected.managerEmail}</p>
               <p className="mt-1 text-xs text-gray-500">
                 {selected.flaggedProjectCount} flagged project(s) - {selected.stage} - Last contact: {selected.lastContactAt ? new Date(selected.lastContactAt).toLocaleString() : '-'}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button onClick={() => openOutlook(selected, selectedDraft)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-[#b00020] hover:text-[#b00020] dark:border-gray-700">Open Outlook</button>
-              <button onClick={() => openTeams(selected, selectedDraft)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-[#b00020] hover:text-[#b00020] dark:border-gray-700">Teams</button>
+              <button onClick={() => openOutlook(selected, selectedDraft)} disabled={!selectedDraft?.email} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-[#b00020] hover:text-[#b00020] disabled:opacity-40 dark:border-gray-700">Open Outlook</button>
+              <button onClick={() => openTeams(selected, selectedDraft)} disabled={!selectedDraft?.email} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-[#b00020] hover:text-[#b00020] disabled:opacity-40 dark:border-gray-700">Teams</button>
               {selected.resolved ? (
                 <button onClick={() => reopenTracking(process.id, selected.managerEmail)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Reopen</button>
               ) : (
@@ -213,13 +218,14 @@ function SummaryCard({ label, value, tone = 'text-gray-950 dark:text-white' }: {
 
 function TrackingCard({ entry, active, onClick }: { entry: TrackingEntry; active: boolean; onClick: () => void }) {
   const percent = trackingPercent(entry);
+  const missingEmail = entry.managerEmail.startsWith('missing-email:');
   return (
     <button
       onClick={onClick}
       className={`w-full rounded-lg border p-3 text-left transition hover:border-[#b00020]/50 hover:shadow-sm ${active ? 'border-[#b00020] bg-red-50 dark:bg-red-950/20' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}
     >
       <div className="font-semibold leading-tight">{entry.managerName}</div>
-      <div className="truncate text-xs text-gray-500">{entry.managerEmail}</div>
+      <div className={missingEmail ? 'truncate text-xs font-medium text-red-600' : 'truncate text-xs text-gray-500'}>{missingEmail ? 'Missing manager email' : entry.managerEmail}</div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs text-violet-800">{entry.flaggedProjectCount} proj</span>
         {entry.outlookCount ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-800">OL {entry.outlookCount}</span> : null}

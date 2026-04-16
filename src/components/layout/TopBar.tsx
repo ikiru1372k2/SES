@@ -30,7 +30,7 @@ export function TopBar({ process }: { process?: AuditProcess }) {
 
   function onDownload() {
     if (!activeFile || !latestResult) return;
-    downloadAuditedWorkbook(activeFile, latestResult);
+    downloadAuditedWorkbook(activeFile, latestResult).catch(() => toast.error('Could not download audited workbook'));
   }
 
   if (!process) {

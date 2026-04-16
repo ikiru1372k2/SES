@@ -1,5 +1,6 @@
 import { Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { validateWorkbookFile } from '../../lib/excelParser';
 import type { AuditProcess } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { ProgressBar } from '../shared/ProgressBar';
@@ -14,8 +15,10 @@ export function FilesSidebar({ process }: { process: AuditProcess }) {
   async function upload(files: FileList | null) {
     if (!files?.length) return;
     for (const file of Array.from(files)) {
-      if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) {
-        toast.error(`${file.name} is not an Excel workbook`);
+      try {
+        validateWorkbookFile(file);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : `${file.name} is not a supported workbook`);
         continue;
       }
       uploadFile(process.id, file).then(() => toast.success(`${file.name} uploaded`)).catch(() => toast.error(`${file.name} failed`));
@@ -30,12 +33,12 @@ export function FilesSidebar({ process }: { process: AuditProcess }) {
           <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-[#b00020] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#8f001a]">
             <Upload size={14} />
             Upload
-            <input type="file" multiple accept=".xlsx,.xlsm,.xls" onChange={(event) => upload(event.target.files)} className="hidden" />
+            <input type="file" multiple accept=".xlsx,.xlsm" onChange={(event) => upload(event.target.files)} className="hidden" />
           </label>
         </div>
         <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); upload(event.dataTransfer.files); }} className="mt-3 flex cursor-pointer flex-col items-center rounded-lg border border-dashed border-gray-300 bg-white p-4 text-center text-xs text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700">
           Drag workbooks here or pick multiple files
-          <input type="file" multiple accept=".xlsx,.xlsm,.xls" onChange={(event) => upload(event.target.files)} className="hidden" />
+          <input type="file" multiple accept=".xlsx,.xlsm" onChange={(event) => upload(event.target.files)} className="hidden" />
         </label>
         <div className="mt-4 space-y-2">
           {Object.entries(uploads).map(([key, item]) => (

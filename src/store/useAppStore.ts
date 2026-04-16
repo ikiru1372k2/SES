@@ -3,10 +3,9 @@ import { persist, type PersistStorage, type StorageValue } from 'zustand/middlew
 import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../lib/auditPolicy';
 import { runAudit as executeAudit } from '../lib/auditEngine';
 import { parseWorkbook } from '../lib/excelParser';
+import { createId } from '../lib/id';
 import { DATA_KEY, loadProcesses, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
 import type { AuditPolicy, AuditProcess, AuditResult, TrackingChannel, TrackingEntry, WorkbookFile, WorkspaceTab } from '../lib/types';
-
-const id = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 type UploadState = {
   fileName: string;
@@ -49,10 +48,19 @@ type AppStore = {
 const browserStorage: PersistStorage<AppStore> = {
   getItem: async () => ({ state: { processes: await loadProcessesFromLocalDb() } as AppStore, version: 1 }),
   setItem: (_name, value: StorageValue<AppStore>) => {
-    void saveProcessesToLocalDb(value.state?.processes ?? []);
+    debouncedSaveProcesses(value.state?.processes ?? []);
   },
   removeItem: () => localStorage.removeItem(DATA_KEY),
 };
+
+let saveTimer: number | undefined;
+
+function debouncedSaveProcesses(processes: AuditProcess[]): void {
+  if (saveTimer) window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    void saveProcessesToLocalDb(processes);
+  }, 400);
+}
 
 function patchProcess(processes: AuditProcess[], processId: string, updater: (process: AuditProcess) => AuditProcess): AuditProcess[] {
   return processes.map((process) => (process.id === processId ? updater(process) : process));
@@ -81,7 +89,7 @@ export const useAppStore = create<AppStore>()(
 
       createProcess: (name, description) => {
         const process: AuditProcess = {
-          id: id(),
+          id: createId(),
           name: name.trim(),
           description: description.trim(),
           createdAt: new Date().toISOString(),
@@ -119,7 +127,7 @@ export const useAppStore = create<AppStore>()(
       },
 
       uploadFile: async (processId, file) => {
-        const uploadId = `${processId}-${file.name}-${Date.now()}`;
+        const uploadId = createId(`${processId}-${file.name}`);
         set((state) => ({ uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 20, status: 'uploading' } } }));
         try {
           const workbookFile = await parseWorkbook(file);
