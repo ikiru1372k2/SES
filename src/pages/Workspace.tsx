@@ -2,6 +2,7 @@ import { Navigate, useParams } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
 import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
+import { TabPanel } from '../components/workspace/TabPanel';
 import { PreviewTab } from '../components/workspace/PreviewTab';
 import { AuditResultsTab } from '../components/workspace/AuditResultsTab';
 import { NotificationsTab } from '../components/workspace/NotificationsTab';
@@ -24,15 +25,37 @@ export function Workspace() {
   return (
     <AppShell process={process} sidebar={<FilesSidebar process={process} />}>
       <WorkspaceShell>
-        {tab === 'preview' ? <PreviewTab process={process} file={activeFile} result={result} /> : null}
-        {tab === 'results' ? <AuditResultsTab process={process} file={activeFile} /> : null}
-        {tab === 'notifications' ? <NotificationsTab process={process} result={result ?? process.versions[0]?.result ?? null} /> : null}
-        {tab === 'tracking' ? <TrackingTab process={process} result={result ?? process.versions[0]?.result ?? null} /> : null}
-        {tab === 'versions' ? <VersionHistoryTab process={process} file={activeFile} /> : null}
+        {tab === 'preview' ? (
+          <TabPanel>
+            <PreviewTab process={process} file={activeFile} result={result} />
+          </TabPanel>
+        ) : null}
+        {tab === 'results' ? (
+          <TabPanel>
+            <AuditResultsTab process={process} file={activeFile} />
+          </TabPanel>
+        ) : null}
+        {tab === 'notifications' ? (
+          <TabPanel scroll="split">
+            <NotificationsTab process={process} result={result ?? process.versions[0]?.result ?? null} />
+          </TabPanel>
+        ) : null}
+        {tab === 'tracking' ? (
+          <TabPanel scroll="split">
+            <TrackingTab process={process} result={result ?? process.versions[0]?.result ?? null} />
+          </TabPanel>
+        ) : null}
+        {tab === 'versions' ? (
+          <TabPanel>
+            <VersionHistoryTab process={process} file={activeFile} />
+          </TabPanel>
+        ) : null}
         {tab === 'analytics' ? (
-          <Suspense fallback={<div className="p-5 text-sm text-gray-500">Loading analytics...</div>}>
-            <AnalyticsTab process={process} />
-          </Suspense>
+          <TabPanel>
+            <Suspense fallback={<div className="p-5 text-sm text-gray-500">Loading analytics...</div>}>
+              <AnalyticsTab process={process} />
+            </Suspense>
+          </TabPanel>
         ) : null}
       </WorkspaceShell>
     </AppShell>

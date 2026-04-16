@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuditSchedule } from '../src/components/dashboard/AuditSchedule';
 import { NotificationsTab } from '../src/components/workspace/NotificationsTab';
@@ -32,6 +32,8 @@ const process: AuditProcess = {
   notificationTracking: {},
   comments: {},
   corrections: {},
+  acknowledgments: {},
+  savedTemplates: {},
 };
 
 const result: AuditResult = {
@@ -57,6 +59,7 @@ const result: AuditResult = {
 
 test('notification preview renders workbook text as safe content', () => {
   render(<NotificationsTab process={process} result={result} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Per-manager drafts' }));
 
   expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
   expect(screen.getByText('<b>unsafe</b>')).toBeInTheDocument();
@@ -77,8 +80,10 @@ test('notification preview renders pending correction context', () => {
       },
     },
   }} result={result} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Per-manager drafts' }));
 
-  expect(screen.getByText('999 -> 850')).toBeInTheDocument();
+  expect(screen.getByText(/999h/)).toBeInTheDocument();
+  expect(screen.getByText(/850h/)).toBeInTheDocument();
   expect(screen.getByText('Capacity cap')).toBeInTheDocument();
 });
 

@@ -1,5 +1,13 @@
 import { auditIssueKey } from './auditEngine';
-import type { AuditIssue, IssueCorrection, NotificationDraft } from './types';
+import type {
+  AuditIssue,
+  IssueAcknowledgment,
+  IssueComment,
+  IssueCorrection,
+  NotificationDraft,
+  NotificationTemplate,
+  NotificationTheme,
+} from './types';
 
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 // eslint-disable-next-line no-control-regex
@@ -28,32 +36,163 @@ export function recipientKeyFor(name: string, email?: string | null): string {
   return `missing-email:${clean || 'unassigned'}`;
 }
 
+export function defaultTemplateForTheme(theme: NotificationTheme): Omit<NotificationTemplate, 'greeting' | 'deadlineLine'> {
+  switch (theme) {
+    case 'Executive Summary':
+      return {
+        intro: 'Executive summary of flagged items from the latest QGC workbook audit.',
+        actionLine: 'Your review is requested',
+        closing: 'Thank you for your continued attention to these items.',
+        signature1: 'Effort Audit Team',
+        signature2: 'QGC Governance',
+      };
+    case 'Compact Update':
+      return {
+        intro: 'Quick note about flagged items in the latest audit.',
+        actionLine: 'Please update when you can',
+        closing: 'Thanks.',
+        signature1: 'Effort Audit Team',
+        signature2: '',
+      };
+    case 'Formal':
+      return {
+        intro: 'Pursuant to the QGC audit, the projects listed below require your review.',
+        actionLine: 'Kindly provide updates',
+        closing: 'Regards,',
+        signature1: 'Effort Audit Team',
+        signature2: 'QGC Governance Office',
+      };
+    case 'Urgent':
+      return {
+        intro: 'Urgent: the items below exceeded overplanning thresholds and require immediate attention.',
+        actionLine: 'Please respond within 48 hours',
+        closing: 'Escalation may occur after the deadline.',
+        signature1: 'Effort Audit Team',
+        signature2: '',
+      };
+    case 'Friendly Follow-up':
+      return {
+        intro: 'Hope you are well! Wanted to follow up on a few items from the latest audit.',
+        actionLine: 'Let me know if you have any questions',
+        closing: 'Thanks again,',
+        signature1: 'Effort Audit Team',
+        signature2: '',
+      };
+    case 'Escalation':
+      return {
+        intro: 'This is a formal escalation notice for the flagged items below.',
+        actionLine: 'Immediate resolution is requested',
+        closing: 'Your prompt attention is required.',
+        signature1: 'Effort Audit Team',
+        signature2: 'QGC Governance',
+      };
+    case 'Company Reminder':
+    default:
+      return {
+        intro: 'Your effort workbook has flagged the projects below.',
+        actionLine: 'Please review and update the workbook',
+        closing: 'Thank you for closing these audit items.',
+        signature1: 'Effort Audit Team',
+        signature2: 'Workbook Auditor',
+      };
+  }
+}
+
 export function buildNotificationDrafts(
   issues: AuditIssue[],
   theme: NotificationDraft['theme'],
   deadline: string,
-  template = {
-    intro: 'Your effort workbook has flagged the projects below.',
-    actionLine: 'Please review and update the workbook',
-    closing: 'Thank you for closing these audit items.',
-    signature1: 'Effort Audit Team',
-    signature2: 'Workbook Auditor',
-  },
+  template = defaultTemplateForTheme(theme),
   corrections: Record<string, IssueCorrection> = {},
+  comments: Record<string, IssueComment[]> = {},
+  acknowledgments: Record<string, IssueAcknowledgment> = {},
 ): NotificationDraft[] {
   const byManager = new Map<string, AuditIssue[]>();
   issues.forEach((issue) => byManager.set(issue.projectManager, [...(byManager.get(issue.projectManager) ?? []), issue]));
   return [...byManager.entries()].map(([pmName, projects]) => {
     const email = projects.map((issue) => sanitizeHeader(issue.email ?? '')).find(isValidEmail) ?? null;
-    const draftCorrections = Object.fromEntries(projects.map((issue) => [auditIssueKey(issue), corrections[auditIssueKey(issue)]]).filter((entry): entry is [string, IssueCorrection] => Boolean(entry[1])));
-    const hasCorrections = Object.keys(draftCorrections).length > 0;
-    const rows = projects
-      .map((issue) => {
-        const correction = draftCorrections[auditIssueKey(issue)];
-        return `<tr><td>${escapeHtml(issue.projectNo)}</td><td>${escapeHtml(issue.projectName)}</td><td>${escapeHtml(issue.severity)}</td><td>${escapeHtml(issue.notes)}</td>${hasCorrections ? `<td>${escapeHtml(correction ? `${issue.effort} -> ${correction.effort ?? issue.effort}` : '')}</td><td>${escapeHtml(correction?.note ?? '')}</td>` : ''}</tr>`;
+    const draftCorrections = Object.fromEntries(
+      projects
+        .map((issue) => [auditIssueKey(issue), corrections[auditIssueKey(issue)]])
+        .filter((entry): entry is [string, IssueCorrection] => Boolean(entry[1])),
+    );
+    const draftComments = projects.reduce<Record<string, IssueComment[]>>((acc, issue) => {
+      const issueComments = comments[auditIssueKey(issue)] ?? [];
+      if (issueComments.length) acc[auditIssueKey(issue)] = issueComments;
+      return acc;
+    }, {});
+    const draftAcknowledgments = Object.fromEntries(
+      projects
+        .map((issue) => [auditIssueKey(issue), acknowledgments[auditIssueKey(issue)]])
+        .filter((entry): entry is [string, IssueAcknowledgment] => Boolean(entry[1])),
+    );
+    const projectsExpanded = projects.map((issue) => {
+      const key = auditIssueKey(issue);
+      return {
+        issue,
+        correction: corrections[key],
+        comments: comments[key] ?? [],
+        acknowledgment: acknowledgments[key],
+      };
+    });
+    const unreviewedCount = projectsExpanded.filter(
+      (item) => item.acknowledgment?.status !== 'acknowledged' && item.acknowledgment?.status !== 'corrected',
+    ).length;
+    const cellStyle = 'padding:8px 12px;border:1px solid #e5e7eb;vertical-align:top;font-size:12px;';
+    const headerCellStyle =
+      'padding:8px 12px;border:1px solid #d1d5db;background:#f3f4f6;font-weight:600;text-align:left;font-size:12px;';
+    const rowsHtml = projectsExpanded
+      .map(({ issue, correction, comments: issueComments, acknowledgment }, index) => {
+        const rowBg = index % 2 === 0 ? 'background:#ffffff;' : 'background:#f9fafb;';
+        const severityColor = issue.severity === 'High' ? '#dc2626' : issue.severity === 'Medium' ? '#d97706' : '#2563eb';
+        const statusLabel = acknowledgment
+          ? acknowledgment.status === 'corrected'
+            ? 'Corrected'
+            : acknowledgment.status === 'acknowledged'
+              ? 'Acknowledged'
+              : 'Needs review'
+          : 'Needs review';
+        const correctionCell = correction
+          ? `${escapeHtml(String(issue.effort))}h &rarr; <strong>${escapeHtml(String(correction.effort ?? issue.effort))}h</strong>`
+          : `${escapeHtml(String(issue.effort))}h`;
+        return `<tr style="${rowBg}">
+      <td style="${cellStyle}">${escapeHtml(issue.projectNo)}</td>
+      <td style="${cellStyle}">${escapeHtml(issue.projectName)}</td>
+      <td style="${cellStyle}"><span style="display:inline-block;padding:2px 8px;border-radius:4px;background:${severityColor};color:#ffffff;font-size:11px;font-weight:600;">${escapeHtml(issue.severity)}</span></td>
+      <td style="${cellStyle}">${escapeHtml(issue.notes)}</td>
+      <td style="${cellStyle}">${correctionCell}</td>
+      <td style="${cellStyle}">${escapeHtml(correction?.note ?? '')}</td>
+      <td style="${cellStyle}">${issueComments.map((c) => escapeHtml(c.body)).join('<br>')}</td>
+      <td style="${cellStyle}">${escapeHtml(statusLabel)}</td>
+    </tr>`;
       })
       .join('');
-    const htmlBody = `<p>Dear ${escapeHtml(pmName)},</p><p>${escapeHtml(template.intro)}</p><p>The following ${projects.length} project(s) require your attention:</p><table><tr><th>Project No</th><th>Project</th><th>Severity</th><th>Notes</th>${hasCorrections ? '<th>Proposed Effort</th><th>Correction Note</th>' : ''}</tr>${rows}</table><p>${escapeHtml(template.actionLine)} by ${escapeHtml(deadline || 'the agreed deadline')}.</p><p>${escapeHtml(template.closing)}</p><p>${escapeHtml(template.signature1)}<br/>${escapeHtml(template.signature2)}</p>`;
+    const htmlBody = `<div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:900px;">
+<p>Dear ${escapeHtml(pmName)},</p>
+<p>${escapeHtml(template.intro)}</p>
+<p>The following <strong>${projects.length}</strong> project(s) require your attention:</p>
+<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;border:1px solid #d1d5db;margin:12px 0;">
+<thead>
+<tr>
+<th style="${headerCellStyle}">Project No</th>
+<th style="${headerCellStyle}">Project</th>
+<th style="${headerCellStyle}">Severity</th>
+<th style="${headerCellStyle}">Notes</th>
+<th style="${headerCellStyle}">Proposed Effort</th>
+<th style="${headerCellStyle}">Correction Note</th>
+<th style="${headerCellStyle}">Auditor Comments</th>
+<th style="${headerCellStyle}">Status</th>
+</tr>
+</thead>
+<tbody>${rowsHtml}</tbody>
+</table>
+<p>${escapeHtml(template.actionLine)} by <strong>${escapeHtml(deadline || 'the agreed deadline')}</strong>.</p>
+<p>${escapeHtml(template.closing)}</p>
+<p style="margin-top:24px;color:#6b7280;">
+${escapeHtml(template.signature1)}<br/>
+${escapeHtml(template.signature2)}
+</p>
+</div>`;
     return {
       pmName,
       email,
@@ -61,12 +200,15 @@ export function buildNotificationDrafts(
       hasValidRecipient: Boolean(email),
       issueCount: projects.length,
       projects,
+      corrections: draftCorrections,
+      comments: draftComments,
+      acknowledgments: draftAcknowledgments,
+      pendingCorrectionCount: projectsExpanded.filter((p) => p.correction).length,
+      unreviewedCount,
       stage: projects.some((issue) => issue.severity === 'High') ? 'Escalation' : 'Reminder 1',
       theme,
       subject: `${theme}: ${projects.length} workbook audit item${projects.length === 1 ? '' : 's'}`,
       htmlBody,
-      corrections: draftCorrections,
-      pendingCorrectionCount: Object.keys(draftCorrections).length,
     };
   });
 }

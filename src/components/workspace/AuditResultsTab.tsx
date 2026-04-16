@@ -6,7 +6,16 @@ import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../
 import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
 import { openAuditReport } from '../../lib/reportExporter';
 import { severityTone } from '../../lib/severity';
-import type { AuditPolicy, AuditProcess, AuditIssue, IssueCategory, IssueComment, IssueCorrection, WorkbookFile } from '../../lib/types';
+import type {
+  AcknowledgmentStatus,
+  AuditPolicy,
+  AuditProcess,
+  AuditIssue,
+  IssueCategory,
+  IssueComment,
+  IssueCorrection,
+  WorkbookFile,
+} from '../../lib/types';
 import { selectIssueComments, selectIssueCorrection } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { Badge } from '../shared/Badge';
@@ -36,6 +45,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   const deleteIssueComment = useAppStore((state) => state.deleteIssueComment);
   const saveIssueCorrection = useAppStore((state) => state.saveIssueCorrection);
   const clearIssueCorrection = useAppStore((state) => state.clearIssueCorrection);
+  const setIssueAcknowledgment = useAppStore((state) => state.setIssueAcknowledgment);
   const [severity, setSeverity] = useState('');
   const [sheet, setSheet] = useState('');
   const [status, setStatus] = useState('');
@@ -186,6 +196,33 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                             onAdd={(body) => addIssueComment(process.id, auditIssueKey(issue), body)}
                             onDelete={(commentId) => deleteIssueComment(process.id, auditIssueKey(issue), commentId)}
                           />
+                          <div className="mt-4">
+                            <div className="mb-2 text-xs font-semibold text-gray-500">Auditor decision</div>
+                            <div className="flex flex-wrap gap-2">
+                              {(['needs_review', 'acknowledged', 'corrected'] as AcknowledgmentStatus[]).map((statusOption) => {
+                                const current = process.acknowledgments?.[auditIssueKey(issue)]?.status ?? 'needs_review';
+                                const label = statusOption === 'needs_review' ? 'Needs review' : statusOption === 'acknowledged' ? 'Acknowledged' : 'Corrected';
+                                const active = current === statusOption;
+                                return (
+                                  <button
+                                    key={statusOption}
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setIssueAcknowledgment(process.id, auditIssueKey(issue), statusOption);
+                                    }}
+                                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                                      active
+                                        ? 'border-brand bg-brand-subtle text-brand'
+                                        : 'border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300'
+                                    }`}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                           <IssueCorrectionEditor
                             issue={issue}
                             correction={selectIssueCorrection(process, issue)}

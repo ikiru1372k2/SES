@@ -32,6 +32,8 @@ function process(nextAuditDue: string | null, patch: Partial<AuditProcess> = {})
     notificationTracking: {},
     comments: {},
     corrections: {},
+    acknowledgments: {},
+    savedTemplates: {},
     ...patch,
   };
 }

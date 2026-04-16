@@ -1,13 +1,20 @@
+import { MoreVertical } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { DragEvent } from 'react';
 import toast from 'react-hot-toast';
-import { buildNotificationDrafts, notificationPlainText, openMailDraft, openTeamsMessage } from '../../lib/notificationBuilder';
-import type { AuditProcess, AuditResult, NotificationDraft, TrackingEntry } from '../../lib/types';
-import { selectManagerKey } from '../../store/selectors';
+import { buildNotificationDrafts, isValidEmail, recipientKeyFor } from '../../lib/notificationBuilder';
+import type {
+  AuditIssue,
+  AuditProcess,
+  AuditResult,
+  ProjectTrackingStage,
+  ProjectTrackingStatus,
+  TrackingEntry,
+} from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 
 type PipelineKey = 'notContacted' | 'notified' | 'escalated' | 'resolved';
-type FilterKey = 'all' | PipelineKey;
 
 const columns: Array<{ key: PipelineKey; title: string; accent: string }> = [
   { key: 'notContacted', title: 'Not contacted', accent: 'border-gray-400' },
@@ -15,14 +22,6 @@ const columns: Array<{ key: PipelineKey; title: string; accent: string }> = [
   { key: 'escalated', title: 'Escalated', accent: 'border-amber-500' },
   { key: 'resolved', title: 'Resolved', accent: 'border-green-600' },
 ];
-
-function trackingPercent(entry: TrackingEntry): number {
-  if (entry.resolved) return 100;
-  if (entry.teamsCount > 0) return 80;
-  if (entry.outlookCount >= 2) return 60;
-  if (entry.outlookCount === 1) return 35;
-  return 0;
-}
 
 function pipelineKey(entry: TrackingEntry): PipelineKey {
   if (entry.resolved) return 'resolved';
@@ -35,206 +34,346 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
   const recordTrackingEvent = useAppStore((state) => state.recordTrackingEvent);
   const markTrackingResolved = useAppStore((state) => state.markTrackingResolved);
   const reopenTracking = useAppStore((state) => state.reopenTracking);
-  const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
+  const updateProjectStatus = useAppStore((state) => state.updateProjectStatus);
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<FilterKey>('all');
-  const [selectedKey, setSelectedKey] = useState('');
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [hoverColumn, setHoverColumn] = useState<PipelineKey | null>(null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const drafts = useMemo(() => buildNotificationDrafts(result?.issues ?? [], 'Company Reminder', ''), [result]);
-  const draftsByKey = useMemo(() => new Map(drafts.map((draft) => [draft.recipientKey, draft])), [drafts]);
 
   const entries = useMemo(() => {
     const managerIssues = new Map<string, { name: string; email: string; count: number }>();
     (result?.issues ?? []).forEach((issue) => {
-      const key = selectManagerKey(issue);
+      const email = isValidEmail(issue.email) ? issue.email : null;
+      const key = recipientKeyFor(issue.projectManager, email);
       const current = managerIssues.get(key) ?? { name: issue.projectManager, email: key, count: 0 };
       current.count += 1;
       managerIssues.set(key, current);
     });
-
     return [...managerIssues.values()].map((manager) => {
       const tracking = process.notificationTracking[`${process.id}:${manager.email}`];
-      return tracking ?? {
-        key: `${process.id}:${manager.email}`,
-        processId: process.id,
-        managerName: manager.name,
-        managerEmail: manager.email,
-        flaggedProjectCount: manager.count,
-        outlookCount: 0,
-        teamsCount: 0,
-        lastContactAt: null,
-        stage: 'Not contacted' as const,
-        resolved: false,
-        history: [],
-      };
+      return (
+        tracking ?? {
+          key: `${process.id}:${manager.email}`,
+          processId: process.id,
+          managerName: manager.name,
+          managerEmail: manager.email,
+          flaggedProjectCount: manager.count,
+          outlookCount: 0,
+          teamsCount: 0,
+          lastContactAt: null,
+          stage: 'Not contacted' as const,
+          resolved: false,
+          history: [],
+          projectStatuses: {},
+        }
+      );
     });
   }, [process.id, process.notificationTracking, result]);
 
   const searched = entries.filter((entry) => {
     const text = `${entry.managerName} ${entry.managerEmail}`.toLowerCase();
-    const matchesSearch = !search || text.includes(search.toLowerCase());
-    const matchesFilter = filter === 'all' || pipelineKey(entry) === filter;
-    return matchesSearch && matchesFilter;
+    return !search || text.includes(search.toLowerCase());
   });
 
-  const grouped = columns.reduce<Record<PipelineKey, TrackingEntry[]>>((acc, column) => {
-    acc[column.key] = searched.filter((entry) => pipelineKey(entry) === column.key);
-    return acc;
-  }, { notContacted: [], notified: [], escalated: [], resolved: [] });
-
-  const selected = entries.find((entry) => entry.key === selectedKey) ?? searched[0] ?? entries[0];
-  const selectedDraft = selected ? draftsByKey.get(selected.managerEmail) : undefined;
-  const inProgress = entries.filter((entry) => !entry.resolved && (entry.outlookCount > 0 || entry.teamsCount > 0)).length;
-
-  if (!result) return <EmptyState title="No escalation tracking yet">Run an audit first to create manager tracking from flagged projects.</EmptyState>;
-
-  function track(entry: TrackingEntry, channel: 'outlook' | 'teams' | 'manual', note: string) {
-    recordTrackingEvent(process.id, entry.managerName, entry.managerEmail, entry.flaggedProjectCount, channel, note);
+  const grouped = columns.reduce<Record<PipelineKey, TrackingEntry[]>>(
+    (acc, column) => ({ ...acc, [column.key]: [] }),
+    { notContacted: [], notified: [], escalated: [], resolved: [] },
+  );
+  for (const entry of searched) {
+    grouped[pipelineKey(entry)].push(entry);
   }
 
-  function openOutlook(entry: TrackingEntry, draft?: NotificationDraft) {
-    if (!draft?.email) {
-      toast.error('Add a project manager email in the workbook before opening Outlook');
+  function moveTo(entry: TrackingEntry, target: PipelineKey) {
+    if (pipelineKey(entry) === target) return;
+    if (target === 'resolved') {
+      markTrackingResolved(process.id, entry.managerEmail);
+      toast.success(`${entry.managerName} marked resolved`);
       return;
     }
-    openMailDraft([draft.email], draft.subject, notificationPlainText(draft));
-    track(entry, 'outlook', 'Opened Outlook mail draft from tracking');
-    toast.success('Outlook action recorded');
-  }
-
-  function openTeams(entry: TrackingEntry, draft?: NotificationDraft) {
-    if (!draft?.email) {
-      toast.error('Add a project manager email in the workbook before opening Teams');
-      return;
+    if (entry.resolved) {
+      reopenTracking(process.id, entry.managerEmail);
     }
-    openTeamsMessage(draft.email, notificationPlainText(draft));
-    track(entry, 'teams', 'Opened Teams escalation from tracking');
-    toast.success('Teams action recorded');
+    if (target === 'notified') {
+      recordTrackingEvent(process.id, entry.managerName, entry.managerEmail, entry.flaggedProjectCount, 'manual', 'Moved to Notified');
+    }
+    if (target === 'escalated') {
+      recordTrackingEvent(process.id, entry.managerName, entry.managerEmail, entry.flaggedProjectCount, 'teams', 'Moved to Escalated');
+    }
+    if (target === 'notContacted') {
+      reopenTracking(process.id, entry.managerEmail);
+    }
+    toast.success(`${entry.managerName} moved to ${target === 'notContacted' ? 'Not contacted' : target[0]!.toUpperCase() + target.slice(1)}`);
   }
 
-  function resolveEntry(entry: TrackingEntry) {
-    track(entry, 'manual', 'Prepared manager tracking record before resolution');
-    markTrackingResolved(process.id, entry.managerEmail);
-    setFilter('all');
-    setSelectedKey(`${process.id}:${entry.managerEmail}`);
-    toast.success('Manager moved to Resolved');
+  function onDragStart(event: DragEvent<HTMLDivElement>, key: string) {
+    setDraggingKey(key);
+    event.dataTransfer.setData('text/plain', key);
+    event.dataTransfer.effectAllowed = 'move';
+  }
+
+  function onDragEnd() {
+    setDraggingKey(null);
+    setHoverColumn(null);
+  }
+
+  function onDragOverColumn(event: DragEvent<HTMLDivElement>, column: PipelineKey) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setHoverColumn(column);
+  }
+
+  function onDropColumn(event: DragEvent<HTMLDivElement>, column: PipelineKey) {
+    event.preventDefault();
+    const key = event.dataTransfer.getData('text/plain');
+    const entry = entries.find((e) => e.key === key);
+    if (entry) moveTo(entry, column);
+    setDraggingKey(null);
+    setHoverColumn(null);
+  }
+
+  if (!result) {
+    return (
+      <div className="p-5">
+        <EmptyState title="No tracking data yet">Run an audit to start tracking manager escalation.</EmptyState>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-xl font-semibold">SES - Escalation Tracking</h2>
-        <p className="mt-1 text-sm text-gray-500">Compact pipeline view for manager outreach, Teams escalation, and resolution.</p>
+    <div className="flex min-h-0 flex-1 flex-col p-5">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-3">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search managers..."
+          className="min-w-52 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+        />
+        <div className="text-sm text-gray-500">
+          {entries.length} manager(s) · drag cards between columns or use the menu
+        </div>
       </div>
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <SummaryCard label="Total users" value={entries.length} />
-        <SummaryCard label="Not contacted" value={groupCount(entries, 'notContacted')} tone="text-gray-700" />
-        <SummaryCard label="In progress" value={inProgress} tone="text-amber-700" />
-        <SummaryCard label="Resolved" value={groupCount(entries, 'resolved')} tone="text-green-700" />
-      </div>
-
-      <input
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Search by name or email..."
-        className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm dark:border-gray-700 dark:bg-gray-900"
-      />
-
-      <div className="flex flex-wrap gap-2">
-        {([
-          ['all', 'All'],
-          ['notContacted', 'Not contacted'],
-          ['notified', 'Notified'],
-          ['escalated', 'Escalated'],
-          ['resolved', 'Resolved'],
-        ] as Array<[FilterKey, string]>).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setFilter(key)}
-            className={`rounded-lg border px-4 py-2 text-sm font-medium ${filter === key ? 'border-brand bg-brand-subtle text-brand dark:bg-red-950/30' : 'border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800'}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid gap-3 xl:grid-cols-4">
+      <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-4">
         {columns.map((column) => (
-          <section key={column.key} className="min-h-72">
-            <div className={`mb-3 flex items-center justify-center gap-2 rounded-lg border-t-2 ${column.accent} border-x border-b border-gray-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300`}>
-              {column.title}
-              <span className="rounded-full border border-gray-300 px-2 py-0.5 text-[11px]">{grouped[column.key].length}</span>
+          <div
+            key={column.key}
+            onDragOver={(event) => onDragOverColumn(event, column.key)}
+            onDragLeave={() => setHoverColumn(null)}
+            onDrop={(event) => onDropColumn(event, column.key)}
+            className={`flex min-h-0 flex-col rounded-xl border-2 ${column.accent} bg-white dark:bg-gray-800 ${
+              hoverColumn === column.key ? 'ring-2 ring-brand' : ''
+            }`}
+          >
+            <div className="shrink-0 border-b border-gray-100 p-3 dark:border-gray-700">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">{column.title}</h3>
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold dark:bg-gray-700">
+                  {grouped[column.key].length}
+                </span>
+              </div>
             </div>
-            <div className="space-y-2">
-              {grouped[column.key].map((entry) => (
-                <TrackingCard key={entry.key} entry={entry} active={selected?.key === entry.key} onClick={() => setSelectedKey(entry.key)} />
-              ))}
-              {!grouped[column.key].length ? <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-sm text-gray-400 dark:border-gray-700">-</div> : null}
-            </div>
-          </section>
-        ))}
-      </div>
-
-      {selected ? (
-        <section className="sticky bottom-0 rounded-xl border border-gray-200 bg-white p-4 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h3 className="font-semibold">{selected.managerName}</h3>
-              <p className={selected.managerEmail.startsWith('missing-email:') ? 'text-sm font-medium text-red-600' : 'text-sm text-gray-500'}>{selected.managerEmail.startsWith('missing-email:') ? 'Missing manager email' : selected.managerEmail}</p>
-              <p className="mt-1 text-xs text-gray-500">
-                {selected.flaggedProjectCount} flagged project(s) - {selected.stage} - Last contact: {selected.lastContactAt ? new Date(selected.lastContactAt).toLocaleString() : '-'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => openOutlook(selected, selectedDraft)} disabled={!selectedDraft?.email} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-brand hover:text-brand disabled:opacity-40 dark:border-gray-700">Open Outlook</button>
-              <button onClick={() => openTeams(selected, selectedDraft)} disabled={!selectedDraft?.email} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-brand hover:text-brand disabled:opacity-40 dark:border-gray-700">Teams</button>
-              {selected.resolved ? (
-                <button onClick={() => reopenTracking(process.id, selected.managerEmail)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Reopen</button>
-              ) : (
-                <button onClick={() => resolveEntry(selected)} className="rounded-lg bg-green-700 px-3 py-2 text-sm font-medium text-white hover:bg-green-800">Resolve</button>
-              )}
-              <button onClick={() => setWorkspaceTab('notifications')} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Reopen draft</button>
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+              {grouped[column.key].map((entry) => {
+                const draft = drafts.find((d) => d.recipientKey === entry.managerEmail);
+                return (
+                  <ManagerCard
+                    key={entry.key}
+                    entry={entry}
+                    draft={draft}
+                    processId={process.id}
+                    dragging={draggingKey === entry.key}
+                    expanded={expandedKey === entry.key}
+                    onDragStart={(event) => onDragStart(event, entry.key)}
+                    onDragEnd={onDragEnd}
+                    onExpand={() => setExpandedKey(expandedKey === entry.key ? null : entry.key)}
+                    onMove={(target) => moveTo(entry, target)}
+                    onUpdateProjectStatus={(projectNo, patch) =>
+                      updateProjectStatus(process.id, entry.managerEmail, projectNo, patch)
+                    }
+                  />
+                );
+              })}
+              {!grouped[column.key].length ? (
+                <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-400 dark:border-gray-700">
+                  Drop a manager here
+                </div>
+              ) : null}
             </div>
           </div>
-        </section>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ManagerCard({
+  entry,
+  draft,
+  processId,
+  dragging,
+  expanded,
+  onDragStart,
+  onDragEnd,
+  onExpand,
+  onMove,
+  onUpdateProjectStatus,
+}: {
+  entry: TrackingEntry;
+  draft: ReturnType<typeof buildNotificationDrafts>[number] | undefined;
+  processId: string;
+  dragging: boolean;
+  expanded: boolean;
+  onDragStart: (event: DragEvent<HTMLDivElement>) => void;
+  onDragEnd: () => void;
+  onExpand: () => void;
+  onMove: (target: PipelineKey) => void;
+  onUpdateProjectStatus: (
+    projectNo: string,
+    patch: Partial<Pick<ProjectTrackingStatus, 'stage' | 'feedback'>>,
+  ) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className={`relative rounded-lg border border-gray-200 bg-white p-3 text-sm shadow-sm dark:border-gray-700 dark:bg-gray-900 ${
+        dragging ? 'opacity-40' : ''
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-medium">{entry.managerName}</div>
+          <div className="truncate text-xs text-gray-500">{draft?.email ?? 'No email'}</div>
+        </div>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setMenuOpen((value) => !value);
+          }}
+          className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+          aria-label="Move menu"
+        >
+          <MoreVertical size={14} />
+        </button>
+        {menuOpen ? (
+          <div className="absolute right-2 top-8 z-10 w-40 rounded-lg border border-gray-200 bg-white p-1 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-800">
+            <button type="button" onClick={() => { onMove('notContacted'); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700">
+              Move to Not contacted
+            </button>
+            <button type="button" onClick={() => { onMove('notified'); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700">
+              Move to Notified
+            </button>
+            <button type="button" onClick={() => { onMove('escalated'); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700">
+              Move to Escalated
+            </button>
+            <button type="button" onClick={() => { onMove('resolved'); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700">
+              Move to Resolved
+            </button>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-2 text-xs text-gray-500">
+        {entry.flaggedProjectCount} flagged · Outlook: {entry.outlookCount} · Teams: {entry.teamsCount}
+      </div>
+      {entry.lastContactAt ? (
+        <div className="mt-1 text-xs text-gray-400">Last: {new Date(entry.lastContactAt).toLocaleDateString()}</div>
+      ) : null}
+      <button
+        type="button"
+        onClick={onExpand}
+        className="mt-2 w-full rounded border border-gray-200 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+      >
+        {expanded ? 'Hide projects' : `Show ${draft?.projects.length ?? 0} project${draft?.projects.length === 1 ? '' : 's'}`}
+      </button>
+      {expanded && draft ? (
+        <div className="mt-2 space-y-2">
+          {draft.projects.map((issue) => {
+            const status = entry.projectStatuses?.[issue.projectNo];
+            const currentStage = status?.stage ?? 'open';
+            return (
+              <ProjectRow
+                key={`${processId}:${entry.managerEmail}:${issue.id}`}
+                issue={issue}
+                status={status}
+                currentStage={currentStage}
+                onStageChange={(stage) => onUpdateProjectStatus(issue.projectNo, { stage })}
+                onFeedbackChange={(feedback) => onUpdateProjectStatus(issue.projectNo, { feedback })}
+              />
+            );
+          })}
+        </div>
       ) : null}
     </div>
   );
 }
 
-function groupCount(entries: TrackingEntry[], key: PipelineKey) {
-  return entries.filter((entry) => pipelineKey(entry) === key).length;
-}
+function ProjectRow({
+  issue,
+  status,
+  currentStage,
+  onStageChange,
+  onFeedbackChange,
+}: {
+  issue: AuditIssue;
+  status: ProjectTrackingStatus | undefined;
+  currentStage: ProjectTrackingStage;
+  onStageChange: (stage: ProjectTrackingStage) => void;
+  onFeedbackChange: (feedback: string) => void;
+}) {
+  const [draft, setDraft] = useState(status?.feedback ?? '');
+  const [showHistory, setShowHistory] = useState(false);
 
-function SummaryCard({ label, value, tone = 'text-gray-950 dark:text-white' }: { label: string; value: number; tone?: string }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
-      <div className="text-sm font-medium text-gray-500">{label}</div>
-      <div className={`mt-2 text-3xl font-semibold ${tone}`}>{value}</div>
+    <div className="rounded bg-gray-50 p-2 text-xs dark:bg-gray-800">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">{issue.projectNo} – {issue.projectName}</div>
+          <div className="text-gray-500">{issue.severity} · {issue.effort}h</div>
+        </div>
+        <select
+          value={currentStage}
+          onChange={(event) => onStageChange(event.target.value as ProjectTrackingStage)}
+          className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs dark:border-gray-600 dark:bg-gray-900"
+        >
+          <option value="open">Open</option>
+          <option value="acknowledged">Acknowledged</option>
+          <option value="corrected">Corrected</option>
+          <option value="resolved">Resolved</option>
+        </select>
+      </div>
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          if (draft !== (status?.feedback ?? '')) onFeedbackChange(draft);
+        }}
+        placeholder="Manager feedback..."
+        className="mt-2 w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-900"
+        rows={2}
+      />
+      {status && status.history.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => setShowHistory((value) => !value)}
+          className="mt-1 text-[11px] text-blue-600 hover:underline dark:text-blue-400"
+        >
+          {showHistory ? 'Hide' : 'Show'} history ({status.history.length})
+        </button>
+      ) : null}
+      {showHistory && status ? (
+        <div className="mt-1 space-y-0.5">
+          {status.history.map((event, index) => (
+            <div key={index} className="text-[11px] text-gray-500">
+              {new Date(event.at).toLocaleString()}: {event.note}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
-  );
-}
-
-function TrackingCard({ entry, active, onClick }: { entry: TrackingEntry; active: boolean; onClick: () => void }) {
-  const percent = trackingPercent(entry);
-  const missingEmail = entry.managerEmail.startsWith('missing-email:');
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full rounded-lg border p-3 text-left transition hover:border-brand/50 hover:shadow-sm ${active ? 'border-brand bg-brand-subtle dark:bg-red-950/20' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`}
-    >
-      <div className="font-semibold leading-tight">{entry.managerName}</div>
-      <div className={missingEmail ? 'truncate text-xs font-medium text-red-600' : 'truncate text-xs text-gray-500'}>{missingEmail ? 'Missing manager email' : entry.managerEmail}</div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs text-violet-800">{entry.flaggedProjectCount} proj</span>
-        {entry.outlookCount ? <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-800">OL {entry.outlookCount}</span> : null}
-        {entry.teamsCount ? <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-800">T {entry.teamsCount}</span> : null}
-      </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-        <div className={entry.resolved ? 'h-full rounded-full bg-green-600' : entry.teamsCount ? 'h-full rounded-full bg-amber-600' : 'h-full rounded-full bg-brand'} style={{ width: `${percent}%` }} />
-      </div>
-      <div className="mt-1 text-right text-xs text-gray-500">{percent}%</div>
-    </button>
   );
 }

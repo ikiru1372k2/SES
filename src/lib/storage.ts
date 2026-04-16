@@ -1,4 +1,12 @@
-import type { AuditProcess, TrackingEntry } from './types';
+import type {
+  AcknowledgmentStatus,
+  AuditProcess,
+  IssueAcknowledgment,
+  NotificationTemplate,
+  ProjectTrackingStage,
+  ProjectTrackingStatus,
+  TrackingEntry,
+} from './types';
 import { getWorkbookRawData } from './blobStore';
 import { detectWorkbookSheets } from './excelParser';
 import { createId } from './id';
@@ -151,6 +159,8 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
     notificationTracking: tracking,
     comments: sanitizeComments(item.comments, processId),
     corrections: sanitizeCorrections(item.corrections, processId),
+    acknowledgments: sanitizeAcknowledgments(item.acknowledgments, processId),
+    savedTemplates: sanitizeSavedTemplates(item.savedTemplates),
   };
 }
 
@@ -195,6 +205,7 @@ function sanitizeTracking(value: unknown, processId: string): Record<string, Tra
         at: String(event.at ?? new Date().toISOString()),
         note: String(event.note ?? ''),
       })) : [],
+      projectStatuses: sanitizeProjectStatuses(entry.projectStatuses),
     } satisfies TrackingEntry];
   }));
 }
@@ -213,4 +224,81 @@ function sanitizeCorrections(value: unknown, processId: string): AuditProcess['c
     };
     return [next.issueKey, next];
   }));
+}
+
+function sanitizeAcknowledgments(value: unknown, processId: string): Record<string, IssueAcknowledgment> {
+  if (!value || typeof value !== 'object') return {};
+  const result: Record<string, IssueAcknowledgment> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Partial<IssueAcknowledgment>;
+    const status: AcknowledgmentStatus =
+      e.status === 'acknowledged' || e.status === 'corrected' ? e.status : 'needs_review';
+    result[key] = {
+      issueKey: String(e.issueKey ?? key),
+      processId,
+      status,
+      updatedAt: String(e.updatedAt ?? new Date().toISOString()),
+    };
+  }
+  return result;
+}
+
+function sanitizeProjectStatuses(value: unknown): Record<string, ProjectTrackingStatus> {
+  if (!value || typeof value !== 'object') return {};
+  const result: Record<string, ProjectTrackingStatus> = {};
+  for (const [projectNo, rawStatus] of Object.entries(value as Record<string, unknown>)) {
+    if (!rawStatus || typeof rawStatus !== 'object') continue;
+    const status = rawStatus as Partial<ProjectTrackingStatus>;
+    const stage: ProjectTrackingStage =
+      status.stage === 'acknowledged' || status.stage === 'corrected' || status.stage === 'resolved'
+        ? status.stage
+        : 'open';
+    result[projectNo] = {
+      projectNo: String(status.projectNo ?? projectNo),
+      stage,
+      feedback: String(status.feedback ?? ''),
+      history: Array.isArray(status.history)
+        ? status.history.map((event) => ({
+            channel: event.channel ?? 'manual',
+            at: String(event.at ?? new Date().toISOString()),
+            note: String(event.note ?? ''),
+          }))
+        : [],
+      updatedAt: String(status.updatedAt ?? new Date().toISOString()),
+    };
+  }
+  return result;
+}
+
+function sanitizeSavedTemplates(value: unknown): AuditProcess['savedTemplates'] {
+  if (!value || typeof value !== 'object') return {};
+  const result: AuditProcess['savedTemplates'] = {};
+  for (const [name, rawTemplate] of Object.entries(value as Record<string, unknown>)) {
+    if (!rawTemplate || typeof rawTemplate !== 'object') continue;
+    const entry = rawTemplate as Partial<AuditProcess['savedTemplates'][string]>;
+    const template = (entry.template ?? {}) as Partial<NotificationTemplate>;
+    result[name] = {
+      name: String(entry.name ?? name),
+      theme:
+        entry.theme === 'Executive Summary' ||
+        entry.theme === 'Compact Update' ||
+        entry.theme === 'Formal' ||
+        entry.theme === 'Urgent' ||
+        entry.theme === 'Friendly Follow-up' ||
+        entry.theme === 'Escalation'
+          ? entry.theme
+          : 'Company Reminder',
+      template: {
+        greeting: String(template.greeting ?? 'Dear'),
+        intro: String(template.intro ?? ''),
+        actionLine: String(template.actionLine ?? ''),
+        deadlineLine: String(template.deadlineLine ?? 'by'),
+        closing: String(template.closing ?? ''),
+        signature1: String(template.signature1 ?? ''),
+        signature2: String(template.signature2 ?? ''),
+      },
+    };
+  }
+  return result;
 }

@@ -6,7 +6,22 @@ import { deleteWorkbookRawData, putWorkbookRawData } from '../lib/blobStore';
 import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
 import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
-import type { AuditPolicy, AuditProcess, AuditResult, IssueComment, IssueCorrection, TrackingChannel, TrackingEntry, WorkbookFile, WorkspaceTab } from '../lib/types';
+import type {
+  AcknowledgmentStatus,
+  AuditPolicy,
+  AuditProcess,
+  AuditResult,
+  IssueAcknowledgment,
+  IssueComment,
+  IssueCorrection,
+  NotificationTemplate,
+  NotificationTheme,
+  ProjectTrackingStatus,
+  TrackingChannel,
+  TrackingEntry,
+  WorkbookFile,
+  WorkspaceTab,
+} from '../lib/types';
 
 type UploadState = {
   fileName: string;
@@ -47,6 +62,18 @@ type AppStore = {
   deleteIssueComment: (processId: string, issueKey: string, commentId: string) => void;
   saveIssueCorrection: (processId: string, issueKey: string, correction: Omit<IssueCorrection, 'issueKey' | 'processId' | 'updatedAt'>) => void;
   clearIssueCorrection: (processId: string, issueKey: string) => void;
+  setIssueAcknowledgment: (processId: string, issueKey: string, status: AcknowledgmentStatus) => void;
+  clearIssueAcknowledgment: (processId: string, issueKey: string) => void;
+  updateProjectStatus: (
+    processId: string,
+    managerEmail: string,
+    projectNo: string,
+    patch: Partial<Pick<ProjectTrackingStatus, 'stage' | 'feedback'>>,
+    note?: string,
+  ) => void;
+  saveTemplate: (processId: string, name: string, theme: NotificationTheme, template: NotificationTemplate) => void;
+  loadTemplate: (processId: string, name: string) => NotificationTemplate | null;
+  deleteTemplate: (processId: string, name: string) => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
 };
 
@@ -107,6 +134,8 @@ export const useAppStore = create<AppStore>()(
           notificationTracking: {},
           comments: {},
           corrections: {},
+          acknowledgments: {},
+          savedTemplates: {},
         };
         set((state) => ({ processes: [process, ...state.processes], activeProcessId: process.id, activeWorkspaceTab: 'preview', currentAuditResult: null }));
         rememberActiveProcess(process.id);
@@ -323,6 +352,7 @@ export const useAppStore = create<AppStore>()(
               stage,
               resolved: current?.resolved ?? false,
               history: [...(current?.history ?? []), { channel, at: now, note }],
+              projectStatuses: current?.projectStatuses ?? {},
             };
             return { ...process, notificationTracking: { ...process.notificationTracking, [key]: entry }, updatedAt: now };
           }),
@@ -347,6 +377,7 @@ export const useAppStore = create<AppStore>()(
               stage: 'Not contacted',
               resolved: false,
               history: [],
+              projectStatuses: {},
             };
             return {
               ...process,
@@ -456,6 +487,102 @@ export const useAppStore = create<AppStore>()(
             const corrections = { ...(process.corrections ?? {}) };
             delete corrections[issueKey];
             return { ...process, corrections, updatedAt: now };
+          }),
+        }));
+      },
+
+      setIssueAcknowledgment: (processId, issueKey, status) => {
+        const now = new Date().toISOString();
+        const entry: IssueAcknowledgment = { issueKey, processId, status, updatedAt: now };
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => ({
+            ...process,
+            acknowledgments: {
+              ...(process.acknowledgments ?? {}),
+              [issueKey]: entry,
+            },
+            updatedAt: now,
+          })),
+        }));
+      },
+
+      clearIssueAcknowledgment: (processId, issueKey) => {
+        const now = new Date().toISOString();
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => {
+            const next = { ...(process.acknowledgments ?? {}) };
+            delete next[issueKey];
+            return { ...process, acknowledgments: next, updatedAt: now };
+          }),
+        }));
+      },
+
+      updateProjectStatus: (processId, managerEmail, projectNo, patch, note) => {
+        const now = new Date().toISOString();
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => {
+            const key = `${processId}:${managerEmail}`;
+            const current = process.notificationTracking[key];
+            if (!current) return process;
+            const existingStatus = current.projectStatuses?.[projectNo] ?? {
+              projectNo,
+              stage: 'open' as const,
+              feedback: '',
+              history: [],
+              updatedAt: now,
+            };
+            const newStage = patch.stage ?? existingStatus.stage;
+            const stageChanged = patch.stage && patch.stage !== existingStatus.stage;
+            const updated: ProjectTrackingStatus = {
+              ...existingStatus,
+              ...patch,
+              history:
+                stageChanged || note
+                  ? [...existingStatus.history, { channel: 'manual' as const, at: now, note: note ?? `Stage: ${newStage}` }]
+                  : existingStatus.history,
+              updatedAt: now,
+            };
+            return {
+              ...process,
+              notificationTracking: {
+                ...process.notificationTracking,
+                [key]: {
+                  ...current,
+                  projectStatuses: { ...(current.projectStatuses ?? {}), [projectNo]: updated },
+                },
+              },
+              updatedAt: now,
+            };
+          }),
+        }));
+      },
+
+      saveTemplate: (processId, name, theme, template) => {
+        const now = new Date().toISOString();
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => ({
+            ...process,
+            savedTemplates: {
+              ...(process.savedTemplates ?? {}),
+              [name]: { name, theme, template },
+            },
+            updatedAt: now,
+          })),
+        }));
+      },
+
+      loadTemplate: (processId, name) => {
+        const process = get().processes.find((item) => item.id === processId);
+        return process?.savedTemplates?.[name]?.template ?? null;
+      },
+
+      deleteTemplate: (processId, name) => {
+        const now = new Date().toISOString();
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => {
+            const next = { ...(process.savedTemplates ?? {}) };
+            delete next[name];
+            return { ...process, savedTemplates: next, updatedAt: now };
           }),
         }));
       },

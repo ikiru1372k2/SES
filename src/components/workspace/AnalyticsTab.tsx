@@ -1,5 +1,6 @@
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { effortAnomalies } from '../../lib/anomaly';
+import { managerStats } from '../../lib/managerAnalytics';
 import type { AuditProcess } from '../../lib/types';
 import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
@@ -14,6 +15,8 @@ export function AnalyticsTab({ process }: { process: AuditProcess }) {
   const low = latest.issues.filter((issue) => issue.severity === 'Low').length;
   const total = Math.max(1, high + medium + low);
   const anomalies = effortAnomalies(process.versions);
+  const stats = managerStats(process);
+  const chronicCount = stats.filter((item) => item.chronicSlowResponder).length;
 
   return (
     <div className="space-y-5">
@@ -47,6 +50,28 @@ export function AnalyticsTab({ process }: { process: AuditProcess }) {
           ))}
           {!anomalies.length ? <div className="p-3 text-sm text-gray-500">No effort anomalies detected.</div> : null}
         </div>
+      </section>
+      <section className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
+        <h2 className="font-semibold">Manager performance</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          {chronicCount} chronic slow responder(s) across the current cycle.
+        </p>
+        <table className="mt-4 min-w-full text-left text-sm">
+          <thead className="bg-gray-50 dark:bg-gray-700">
+            <tr><th className="p-3">Manager</th><th>Response rate</th><th>Avg resolution</th><th>Last contact</th><th></th></tr>
+          </thead>
+          <tbody>
+            {stats.map((item) => (
+              <tr key={item.email} className="border-t border-gray-100 dark:border-gray-700">
+                <td className="p-3">{item.name}</td>
+                <td>{Math.round(item.responseRate * 100)}%</td>
+                <td>{item.averageResolutionDays ? `${item.averageResolutionDays.toFixed(1)}d` : '-'}</td>
+                <td>{item.lastContactAt ? new Date(item.lastContactAt).toLocaleDateString() : 'Never'}</td>
+                <td>{item.chronicSlowResponder ? <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs text-red-700 dark:bg-red-900/40 dark:text-red-300">Chronic</span> : null}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </section>
     </div>
   );

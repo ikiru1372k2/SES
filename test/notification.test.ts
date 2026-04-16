@@ -84,7 +84,7 @@ test('notification drafts include proposed corrections in escaped HTML and plain
   assert.ok(draft);
   assert.equal(draft.pendingCorrectionCount, 1);
   assert.ok(draft.htmlBody.includes('Proposed Effort'));
-  assert.ok(draft.htmlBody.includes('920 -&gt; 850'));
+  assert.ok(draft.htmlBody.includes('920h &rarr; <strong>850h</strong>'));
   assert.ok(draft.htmlBody.includes('Capacity &lt;cap&gt;'));
   assert.ok(notificationPlainText(draft).includes('proposed effort 920 -> 850'));
 });

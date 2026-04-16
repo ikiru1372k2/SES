@@ -2,6 +2,14 @@ export type SheetStatus = 'valid' | 'duplicate' | 'invalid';
 export type Severity = 'High' | 'Medium' | 'Low';
 export type WorkspaceTab = 'preview' | 'results' | 'notifications' | 'tracking' | 'versions' | 'analytics';
 export type IssueCategory = 'Overplanning' | 'Missing Planning' | 'Other' | 'Effort Threshold' | 'Missing Data' | 'Planning Risk' | 'Capacity Risk';
+export type NotificationTheme =
+  | 'Company Reminder'
+  | 'Executive Summary'
+  | 'Compact Update'
+  | 'Formal'
+  | 'Urgent'
+  | 'Friendly Follow-up'
+  | 'Escalation';
 
 export interface AuditPolicy {
   highEffortThreshold: number;
@@ -34,6 +42,8 @@ export interface AuditProcess {
   notificationTracking: Record<string, TrackingEntry>;
   comments: Record<string, IssueComment[]>;
   corrections: Record<string, IssueCorrection>;
+  acknowledgments: Record<string, IssueAcknowledgment>;
+  savedTemplates: Record<string, SavedTemplate>;
 }
 
 export interface WorkbookFile {
@@ -107,6 +117,15 @@ export interface IssueCorrection {
   updatedAt: string;
 }
 
+export type AcknowledgmentStatus = 'needs_review' | 'acknowledged' | 'corrected';
+
+export interface IssueAcknowledgment {
+  issueKey: string;
+  processId: string;
+  status: AcknowledgmentStatus;
+  updatedAt: string;
+}
+
 export interface SheetAuditResult {
   sheetName: string;
   rowCount: number;
@@ -146,6 +165,17 @@ export interface TrackingEntry {
   stage: TrackingStage;
   resolved: boolean;
   history: TrackingEvent[];
+  projectStatuses: Record<string, ProjectTrackingStatus>;
+}
+
+export type ProjectTrackingStage = 'open' | 'acknowledged' | 'corrected' | 'resolved';
+
+export interface ProjectTrackingStatus {
+  projectNo: string;
+  stage: ProjectTrackingStage;
+  feedback: string;
+  history: TrackingEvent[];
+  updatedAt: string;
 }
 
 export interface ComparisonResult {
@@ -165,10 +195,29 @@ export interface NotificationDraft {
   hasValidRecipient: boolean;
   issueCount: number;
   projects: AuditIssue[];
+  corrections: Record<string, IssueCorrection>;
+  comments: Record<string, IssueComment[]>;
+  acknowledgments: Record<string, IssueAcknowledgment>;
+  pendingCorrectionCount: number;
+  unreviewedCount: number;
   stage: 'Reminder 1' | 'Reminder 2' | 'Escalation';
-  theme: 'Company Reminder' | 'Executive Summary' | 'Compact Update';
+  theme: NotificationTheme;
   subject: string;
   htmlBody: string;
-  corrections: Record<string, IssueCorrection>;
-  pendingCorrectionCount: number;
+}
+
+export interface NotificationTemplate {
+  greeting: string;
+  intro: string;
+  actionLine: string;
+  deadlineLine: string;
+  closing: string;
+  signature1: string;
+  signature2: string;
+}
+
+export interface SavedTemplate {
+  name: string;
+  theme: NotificationTheme;
+  template: NotificationTemplate;
 }
