@@ -1,4 +1,5 @@
 import { Navigate, useParams } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
 import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
 import { PreviewTab } from '../components/workspace/PreviewTab';
@@ -6,9 +7,10 @@ import { AuditResultsTab } from '../components/workspace/AuditResultsTab';
 import { NotificationsTab } from '../components/workspace/NotificationsTab';
 import { TrackingTab } from '../components/workspace/TrackingTab';
 import { VersionHistoryTab } from '../components/workspace/VersionHistoryTab';
-import { AnalyticsTab } from '../components/workspace/AnalyticsTab';
 import { AppShell } from '../components/layout/AppShell';
 import { useAppStore } from '../store/useAppStore';
+
+const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
 
 export function Workspace() {
   const { id } = useParams();
@@ -27,7 +29,11 @@ export function Workspace() {
         {tab === 'notifications' ? <NotificationsTab process={process} result={result ?? process.versions[0]?.result ?? null} /> : null}
         {tab === 'tracking' ? <TrackingTab process={process} result={result ?? process.versions[0]?.result ?? null} /> : null}
         {tab === 'versions' ? <VersionHistoryTab process={process} file={activeFile} /> : null}
-        {tab === 'analytics' ? <AnalyticsTab process={process} /> : null}
+        {tab === 'analytics' ? (
+          <Suspense fallback={<div className="p-5 text-sm text-gray-500">Loading analytics...</div>}>
+            <AnalyticsTab process={process} />
+          </Suspense>
+        ) : null}
       </WorkspaceShell>
     </AppShell>
   );

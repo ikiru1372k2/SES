@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import { createId } from './id';
 import type { AuditIssue, AuditResult, SheetInfo, WorkbookFile } from './types';
 
@@ -135,6 +135,7 @@ export function validateWorkbookFile(file: File): void {
 
 export async function parseWorkbook(file: File): Promise<WorkbookFile> {
   validateWorkbookFile(file);
+  const ExcelJS = (await import('exceljs')).default;
   const buffer = await file.arrayBuffer();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
@@ -194,6 +195,7 @@ export function detectWorkbookSheets(rawData: Record<string, unknown[][]>): Shee
 }
 
 export async function downloadAuditedWorkbook(file: WorkbookFile, result: AuditResult): Promise<void> {
+  const ExcelJS = (await import('exceljs')).default;
   const workbook = new ExcelJS.Workbook();
   const auditedSheets = new Set(result.sheets.map((sheet) => sheet.sheetName));
   const usedSheetNames = new Set<string>();
