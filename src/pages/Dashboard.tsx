@@ -36,7 +36,7 @@ export function Dashboard() {
     return [...filtered].sort((a, b) => {
       if (sort === 'alphabetical') return a.name.localeCompare(b.name);
       if (sort === 'overdue') return String(a.nextAuditDue ?? '9999').localeCompare(String(b.nextAuditDue ?? '9999'));
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      return new Date(b.createdAt ?? b.updatedAt).getTime() - new Date(a.createdAt ?? a.updatedAt).getTime();
     });
   }, [processes, search, sort]);
 
@@ -63,7 +63,7 @@ export function Dashboard() {
             <div className="mb-4 flex flex-wrap items-center gap-3">
               <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search processes..." className="min-w-64 flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
               <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900">
-                <option value="recent">Most recent</option>
+                <option value="recent">Newest first</option>
                 <option value="alphabetical">Alphabetical</option>
                 <option value="overdue">Most overdue</option>
               </select>

@@ -55,7 +55,7 @@ export function AppShell({ process, sidebar, children }: { process?: AuditProces
             </aside>
           )
         ) : null}
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
+        <main className={`flex min-w-0 flex-1 flex-col ${sidebar ? 'overflow-hidden' : 'overflow-y-auto'}`}>{children}</main>
       </div>
     </div>
   );

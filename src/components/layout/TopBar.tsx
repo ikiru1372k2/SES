@@ -60,7 +60,16 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
   return (
     <header className="flex h-[52px] items-center justify-between gap-4 border-b border-gray-200 bg-white px-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
       <div className="flex min-w-0 items-center gap-5">
-        <Link to="/" className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white" title="Back to process dashboard">
+        <Link
+          to="/"
+          onClick={(event) => {
+            if (hasUnsavedAudit && !window.confirm('This audit has not been saved as a version. Go back to the dashboard anyway?')) {
+              event.preventDefault();
+            }
+          }}
+          className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white"
+          title="Back to process dashboard"
+        >
           <ArrowLeft size={16} />
           <span className="shrink-0 underline-offset-4 hover:underline">Dashboard</span>
         </Link>

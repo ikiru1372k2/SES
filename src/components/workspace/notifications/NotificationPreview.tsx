@@ -18,14 +18,14 @@ export function NotificationPreview({
       <p className="mt-3">
         The following <strong>{draft.issueCount}</strong> project(s) require your attention:
       </p>
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full border-collapse border border-gray-300 text-xs dark:border-gray-600">
+      <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
+        <table className="w-full min-w-[720px] border-collapse text-xs">
           <thead>
             <tr>
-              {['Project No', 'Project', 'Severity', 'Notes', 'Proposed Effort', 'Correction Note', 'Auditor Comments', 'Status'].map((label) => (
+              {['Project No', 'Project', 'Severity', 'Reason', 'Effort', 'Status'].map((label) => (
                 <th
                   key={label}
-                  className="border border-gray-300 bg-gray-100 p-2 text-left font-semibold dark:border-gray-600 dark:bg-gray-700"
+                  className="border-b border-gray-200 bg-gray-100 p-2 text-left font-semibold dark:border-gray-700 dark:bg-gray-700"
                 >
                   {label}
                 </th>
@@ -49,30 +49,28 @@ export function NotificationPreview({
 
               return (
                 <tr key={issue.id} className={rowBg}>
-                  <td className="border border-gray-200 p-2 align-top dark:border-gray-600">{issue.projectNo}</td>
-                  <td className="border border-gray-200 p-2 align-top dark:border-gray-600">{issue.projectName}</td>
-                  <td className="border border-gray-200 p-2 align-top dark:border-gray-600">
+                  <td className="border-b border-gray-100 p-2 align-top dark:border-gray-700">{issue.projectNo}</td>
+                  <td className="border-b border-gray-100 p-2 align-top dark:border-gray-700">{issue.projectName}</td>
+                  <td className="border-b border-gray-100 p-2 align-top dark:border-gray-700">
                     <span className={`inline-block rounded px-2 py-0.5 text-[11px] font-semibold text-white ${severityBarClass[issue.severity]}`}>
                       {issue.severity}
                     </span>
                   </td>
-                  <td className="border border-gray-200 p-2 align-top dark:border-gray-600">{issue.notes}</td>
-                  <td className="border border-gray-200 p-2 align-top dark:border-gray-600">
+                  <td className="border-b border-gray-100 p-2 align-top dark:border-gray-700">{issue.reason ?? issue.notes}</td>
+                  <td className="border-b border-gray-100 p-2 align-top dark:border-gray-700">
                     {correction ? (
                       <>
-                        {issue.effort}h → <strong>{correction.effort ?? issue.effort}h</strong>
+                        {issue.effort}h -&gt; <strong>{correction.effort ?? issue.effort}h</strong>
                       </>
                     ) : (
                       `${issue.effort}h`
                     )}
                   </td>
-                  <td className="border border-gray-200 p-2 align-top dark:border-gray-600">{correction?.note ?? ''}</td>
-                  <td className="border border-gray-200 p-2 align-top dark:border-gray-600">
-                    {comments.map((c, ci) => (
-                      <div key={ci}>{c.body}</div>
-                    ))}
+                  <td className="border-b border-gray-100 p-2 align-top dark:border-gray-700">
+                    {statusLabel}
+                    {correction?.note ? <div className="mt-1 text-[11px] text-gray-500">{correction.note}</div> : null}
+                    {comments.length ? <div className="mt-1 text-[11px] text-gray-500">{comments.length} auditor comment(s)</div> : null}
                   </td>
-                  <td className="border border-gray-200 p-2 align-top dark:border-gray-600">{statusLabel}</td>
                 </tr>
               );
             })}

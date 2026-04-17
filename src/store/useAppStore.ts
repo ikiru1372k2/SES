@@ -20,6 +20,7 @@ import type {
   ProjectTrackingStatus,
   TrackingChannel,
   TrackingEntry,
+  TrackingStage,
   WorkbookFile,
   WorkspaceTab,
 } from '../lib/types';
@@ -57,6 +58,7 @@ type AppStore = {
   saveVersion: (processId: string, details: { versionName: string; notes: string }) => AuditProcess | undefined;
   loadVersion: (processId: string, versionId: string) => void;
   recordTrackingEvent: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, channel: TrackingChannel, note: string) => void;
+  setTrackingStage: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, stage: TrackingStage) => void;
   markTrackingResolved: (processId: string, managerEmail: string) => void;
   reopenTracking: (processId: string, managerEmail: string) => void;
   addIssueComment: (processId: string, issueKey: string, body: string, author?: string) => void;
@@ -351,6 +353,36 @@ export const useAppStore = create<AppStore>()(
               resolved: current?.resolved ?? false,
               history: [...(current?.history ?? []), { channel, at: now, note }],
               projectStatuses: current?.projectStatuses ?? {},
+            };
+            return { ...process, notificationTracking: { ...process.notificationTracking, [key]: entry }, updatedAt: now };
+          }),
+        }));
+      },
+
+      setTrackingStage: (processId, managerName, managerEmail, flaggedProjectCount, stage) => {
+        const now = new Date().toISOString();
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => {
+            const key = trackingKey(processId, managerEmail);
+            const current = process.notificationTracking[key];
+            const base = current ?? makeDefaultTrackingEntry(processId, managerName, managerEmail, flaggedProjectCount);
+            const countsByStage: Record<TrackingStage, Pick<TrackingEntry, 'outlookCount' | 'teamsCount' | 'resolved'>> = {
+              'Not contacted': { outlookCount: 0, teamsCount: 0, resolved: false },
+              'Reminder 1 sent': { outlookCount: Math.max(base.outlookCount, 1), teamsCount: 0, resolved: false },
+              'Reminder 2 sent': { outlookCount: Math.max(base.outlookCount, 2), teamsCount: 0, resolved: false },
+              'Teams escalated': { outlookCount: Math.max(base.outlookCount, 1), teamsCount: Math.max(base.teamsCount, 1), resolved: false },
+              Resolved: { outlookCount: base.outlookCount, teamsCount: base.teamsCount, resolved: true },
+            };
+            const nextCounts = countsByStage[stage];
+            const entry: TrackingEntry = {
+              ...base,
+              managerName,
+              managerEmail,
+              flaggedProjectCount,
+              ...nextCounts,
+              stage,
+              lastContactAt: stage === 'Not contacted' ? null : now,
+              history: [...base.history, { channel: 'manual', at: now, note: `Moved to ${stage}` }],
             };
             return { ...process, notificationTracking: { ...process.notificationTracking, [key]: entry }, updatedAt: now };
           }),

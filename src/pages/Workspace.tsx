@@ -1,5 +1,5 @@
 import { Navigate, useParams } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
 import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
 import { TabPanel } from '../components/workspace/TabPanel';
@@ -9,6 +9,7 @@ import { NotificationsTab } from '../components/workspace/NotificationsTab';
 import { TrackingTab } from '../components/workspace/TrackingTab';
 import { VersionHistoryTab } from '../components/workspace/VersionHistoryTab';
 import { AppShell } from '../components/layout/AppShell';
+import { selectHasUnsavedAudit } from '../store/selectors';
 import { useAppStore } from '../store/useAppStore';
 
 const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
@@ -19,6 +20,18 @@ export function Workspace() {
   const tab = useAppStore((state) => state.activeWorkspaceTab);
   const result = useAppStore((state) => state.currentAuditResult);
   const process = processes.find((item) => item.id === id);
+  const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
+
+  useEffect(() => {
+    if (!hasUnsavedAudit) return;
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedAudit]);
+
   if (!process) return <Navigate to="/" replace />;
   const activeFile = process.files.find((file) => file.id === process.activeFileId) ?? process.files[0];
 

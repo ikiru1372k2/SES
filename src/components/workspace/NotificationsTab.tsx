@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   buildNotificationDrafts,
@@ -31,6 +31,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
   const [theme, setTheme] = useState<NotificationTheme>('Company Reminder');
   const [deadline, setDeadline] = useState('');
   const [onlyUnreviewed, setOnlyUnreviewed] = useState(false);
+  const [managerSearch, setManagerSearch] = useState('');
   const [selected, setSelected] = useState(0);
   const [broadcastSubject, setBroadcastSubject] = useState(DEFAULT_BROADCAST_SUBJECT);
   const [broadcastBody, setBroadcastBody] = useState(DEFAULT_BROADCAST_BODY);
@@ -55,11 +56,26 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
   );
 
   const visibleDrafts = useMemo(
-    () => (onlyUnreviewed ? drafts.filter((draft) => draft.unreviewedCount > 0) : drafts),
-    [drafts, onlyUnreviewed],
+    () => {
+      const needle = managerSearch.trim().toLowerCase();
+      return drafts
+        .filter((draft) => (onlyUnreviewed ? draft.unreviewedCount > 0 : true))
+        .filter((draft) => {
+          if (!needle) return true;
+          const projectText = draft.projects
+            .map((project) => `${project.projectNo} ${project.projectName} ${project.projectManager} ${project.sheetName}`)
+            .join(' ');
+          return `${draft.pmName} ${draft.email ?? ''} ${draft.recipientKey} ${projectText}`.toLowerCase().includes(needle);
+        });
+    },
+    [drafts, onlyUnreviewed, managerSearch],
   );
   const active = visibleDrafts[selected] ?? visibleDrafts[0];
   const validRecipientCount = visibleDrafts.filter((draft) => draft.email).length;
+
+  useEffect(() => {
+    setSelected(0);
+  }, [managerSearch, onlyUnreviewed, theme, deadline]);
 
   function track(draft: NotificationDraft, channel: 'outlook' | 'eml' | 'teams' | 'sendAll', note: string) {
     recordTrackingEvent(process.id, draft.pmName, draft.recipientKey, draft.issueCount, channel, note);
@@ -171,6 +187,8 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
           setTemplate={setTemplate}
           onlyUnreviewed={onlyUnreviewed}
           setOnlyUnreviewed={setOnlyUnreviewed}
+          search={managerSearch}
+          setSearch={setManagerSearch}
           setSelected={setSelected}
           active={active}
           sendAll={sendAll}

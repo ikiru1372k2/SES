@@ -15,6 +15,10 @@ export function trackingKey(processId: string, managerEmail: string): string {
 
 export function pipelineKey(entry: TrackingEntry): PipelineKey {
   if (entry.resolved) return 'resolved';
+  if (entry.stage === 'Resolved') return 'resolved';
+  if (entry.stage === 'Teams escalated') return 'escalated';
+  if (entry.stage === 'Reminder 1 sent' || entry.stage === 'Reminder 2 sent') return 'notified';
+  if (entry.stage === 'Not contacted') return 'notContacted';
   if (entry.teamsCount > 0 || entry.outlookCount >= 2) return 'escalated';
   if (entry.outlookCount > 0) return 'notified';
   return 'notContacted';

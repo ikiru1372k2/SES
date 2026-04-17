@@ -16,9 +16,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 
 export function TrackingTab({ process, result }: { process: AuditProcess; result: AuditResult | null }) {
-  const recordTrackingEvent = useAppStore((state) => state.recordTrackingEvent);
-  const markTrackingResolved = useAppStore((state) => state.markTrackingResolved);
-  const reopenTracking = useAppStore((state) => state.reopenTracking);
+  const setTrackingStage = useAppStore((state) => state.setTrackingStage);
   const updateProjectStatus = useAppStore((state) => state.updateProjectStatus);
   const [search, setSearch] = useState('');
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
@@ -60,24 +58,15 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
 
   function moveTo(entry: TrackingEntry, target: PipelineKey) {
     if (pipelineKey(entry) === target) return;
-    if (target === 'resolved') {
-      markTrackingResolved(process.id, entry.managerEmail);
-      toast.success(`${entry.managerName} marked resolved`);
-      return;
-    }
-    if (entry.resolved) {
-      reopenTracking(process.id, entry.managerEmail);
-    }
-    if (target === 'notified') {
-      recordTrackingEvent(process.id, entry.managerName, entry.managerEmail, entry.flaggedProjectCount, 'manual', 'Moved to Notified');
-    }
-    if (target === 'escalated') {
-      recordTrackingEvent(process.id, entry.managerName, entry.managerEmail, entry.flaggedProjectCount, 'teams', 'Moved to Escalated');
-    }
-    if (target === 'notContacted') {
-      reopenTracking(process.id, entry.managerEmail);
-    }
-    toast.success(`${entry.managerName} moved to ${target === 'notContacted' ? 'Not contacted' : target[0]!.toUpperCase() + target.slice(1)}`);
+    const stageByColumn = {
+      notContacted: 'Not contacted',
+      notified: 'Reminder 1 sent',
+      escalated: 'Teams escalated',
+      resolved: 'Resolved',
+    } as const;
+    const nextStage = stageByColumn[target];
+    setTrackingStage(process.id, entry.managerName, entry.managerEmail, entry.flaggedProjectCount, nextStage);
+    toast.success(`${entry.managerName} moved to ${nextStage}`);
   }
 
   function onDragStart(event: DragEvent<HTMLDivElement>, key: string) {
