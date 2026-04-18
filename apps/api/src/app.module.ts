@@ -30,6 +30,12 @@ import { TrackingController } from './tracking.controller';
 import { TrackingService } from './tracking.service';
 import { VersionsController } from './versions.controller';
 import { VersionsService } from './versions.service';
+import { PresenceRegistry } from './realtime/presence.registry';
+import { RealtimeGateway } from './realtime/realtime.gateway';
+import { SignedLinkTokenService } from './signed-links/signed-link-token.service';
+import { SignedLinkService } from './signed-links/signed-link.service';
+import { PublicResponseService } from './signed-links/public-response.service';
+import { PublicResponseController } from './signed-links/public-response.controller';
 
 @Module({
   imports: [
@@ -55,6 +61,7 @@ import { VersionsService } from './versions.service';
     ActivityController,
     JobsController,
     ExportsController,
+    PublicResponseController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
@@ -74,7 +81,21 @@ import { VersionsService } from './versions.service';
     TemplatesService,
     ExportsService,
     JobsService,
+    PresenceRegistry,
+    RealtimeGateway,
+    SignedLinkTokenService,
+    SignedLinkService,
+    PublicResponseService,
   ],
-  exports: [PrismaService, ProcessAccessService, IdentifierService, ActivityLogService, AuthService, AuthGuard],
+  exports: [
+    PrismaService,
+    ProcessAccessService,
+    IdentifierService,
+    ActivityLogService,
+    AuthService,
+    AuthGuard,
+    RealtimeGateway,
+    PresenceRegistry,
+  ],
 })
 export class AppModule {}

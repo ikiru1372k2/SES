@@ -48,6 +48,7 @@ model User {
   apiTokens      ApiToken[]
   webhooks       WebhookEndpoint[] @relation("WebhookCreatedBy")
   liveSessions   LiveSession[]
+  signedLinks    SignedLink[]      @relation("SignedLinkCreator")
 }
 
 model Process {
@@ -79,6 +80,7 @@ model Process {
   jobs              Job[]
   webhooks          WebhookEndpoint[]
   liveSessions      LiveSession[]
+  signedLinks       SignedLink[]
 }
 
 model ProcessMember {
@@ -453,4 +455,40 @@ model LiveSession {
   lastHeartbeat DateTime @default(now())
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   process       Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+}
+
+/// One-time / time-boxed signed links embedded in notification emails.
+///
+/// We store the token's SHA-256 hash, NOT the token itself — a DB compromise
+/// should not let an attacker use unredeemed tokens. Verification happens in
+/// two layers: (1) HMAC over the payload with SES_AUTH_SECRET, (2) lookup in
+/// this table for one-time-use and revocation checks.
+///
+/// The managerEmail is the address the link was *sent to*; if the submit is
+/// received from a different email we still accept it (managers forward mail
+/// all the time), but the event is tagged so auditors can see the mismatch.
+model SignedLink {
+  id             String    @id
+  displayCode    String    @unique // LNK-NNNNNNNN
+  purpose        String // "manager_response" for now; future: "share_view", "digest_unsubscribe"
+  processId      String
+  issueKey       String?
+  trackingId     String?
+  managerEmail   String
+  tokenHash      Bytes // SHA-256 of the full token string
+  allowedActions Json // e.g. ["acknowledge","correct","dispute"]
+  singleUse      Boolean   @default(true)
+  usedAt         DateTime?
+  usedFromIp     String?
+  usedUserAgent  String?
+  revokedAt      DateTime?
+  expiresAt      DateTime
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  process        Process   @relation(fields: [processId], references: [id], onDelete: Cascade)
+  createdBy      User?     @relation("SignedLinkCreator", fields: [createdById], references: [id])
+
+  @@index([processId])
+  @@index([issueKey])
+  @@index([expiresAt])
 }

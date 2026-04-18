@@ -1,7 +1,7 @@
-import { ArrowDownToLine, ArrowLeft, Loader2, Play, Save } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { ArrowDownToLine, ArrowLeft, Loader2, LogOut, Play, Save } from 'lucide-react';
+import { FormEvent, useState, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { downloadAuditedWorkbook } from '../../lib/excelParser';
 import { isAuditDueSoon, nextDueDateAfterSave } from '../../lib/scheduleHelpers';
@@ -12,7 +12,17 @@ import { useAppStore } from '../../store/useAppStore';
 import { BrandMark } from '../shared/BrandMark';
 import { Button } from '../shared/Button';
 
-export function TopBar({ process }: { process?: AuditProcess | undefined }) {
+async function signOutAndRedirect(navigate: ReturnType<typeof useNavigate>) {
+  try {
+    await fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include' });
+  } catch {
+    // Network errors shouldn't block the user from leaving.
+  }
+  navigate('/login');
+}
+
+export function TopBar({ process, accessory }: { process?: AuditProcess | undefined; accessory?: ReactNode }) {
+  const navigate = useNavigate();
   const currentAuditResult = useAppStore((state) => state.currentAuditResult);
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const runAudit = useAppStore((state) => state.runAudit);
@@ -52,7 +62,18 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
         <Link to="/" className="min-w-0">
           <BrandMark />
         </Link>
-        <Link to="/compare" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900">Compare Processes</Link>
+        <div className="flex items-center gap-2">
+          <Link to="/compare" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900">Compare Processes</Link>
+          <button
+            type="button"
+            onClick={() => void signOutAndRedirect(navigate)}
+            title="Sign out"
+            className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600"
+          >
+            <LogOut size={14} />
+            <span className="hidden sm:inline">Sign out</span>
+          </button>
+        </div>
       </header>
     );
   }
@@ -79,6 +100,7 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {accessory ? <div className="mr-2">{accessory}</div> : null}
         <div className="text-right">
           <Button
             title={!activeFile ? 'Upload a file first' : selectedSheets === 0 ? 'Select at least one valid sheet' : ''}
@@ -124,6 +146,14 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
             Original
           </button>
         ) : null}
+        <button
+          type="button"
+          onClick={() => void signOutAndRedirect(navigate)}
+          title="Sign out"
+          className="ml-1 flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600 dark:hover:text-gray-200"
+        >
+          <LogOut size={14} />
+        </button>
       </div>
       {versionModalOpen && process && latestResult ? <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} /> : null}
     </header>
