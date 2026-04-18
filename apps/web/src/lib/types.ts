@@ -29,6 +29,11 @@ export interface AuditPolicy {
 
 export interface AuditProcess {
   id: string;
+  /**
+   * Stable human-readable code assigned by the server (PRC-YYYY-NNNN).
+   * Optional because legacy local-only processes may not have one yet.
+   */
+  displayCode?: string;
   name: string;
   description: string;
   createdAt: string;

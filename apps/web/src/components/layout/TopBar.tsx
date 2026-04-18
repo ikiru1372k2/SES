@@ -1,5 +1,5 @@
 import { ArrowDownToLine, ArrowLeft, Loader2, Play, Save } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
@@ -12,7 +12,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { BrandMark } from '../shared/BrandMark';
 import { Button } from '../shared/Button';
 
-export function TopBar({ process }: { process?: AuditProcess | undefined }) {
+export function TopBar({ process, accessory }: { process?: AuditProcess | undefined; accessory?: ReactNode }) {
   const currentAuditResult = useAppStore((state) => state.currentAuditResult);
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const runAudit = useAppStore((state) => state.runAudit);
@@ -79,6 +79,7 @@ export function TopBar({ process }: { process?: AuditProcess | undefined }) {
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {accessory ? <div className="mr-2">{accessory}</div> : null}
         <div className="text-right">
           <Button
             title={!activeFile ? 'Upload a file first' : selectedSheets === 0 ? 'Select at least one valid sheet' : ''}

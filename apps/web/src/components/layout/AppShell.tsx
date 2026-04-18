@@ -6,14 +6,24 @@ import { useAppStore } from '../../store/useAppStore';
 import { ProgressBar } from '../shared/ProgressBar';
 import { TopBar } from './TopBar';
 
-export function AppShell({ process, sidebar, children }: { process?: AuditProcess | undefined; sidebar?: ReactNode; children: ReactNode }) {
+export function AppShell({
+  process,
+  sidebar,
+  topBarAccessory,
+  children,
+}: {
+  process?: AuditProcess | undefined;
+  sidebar?: ReactNode;
+  topBarAccessory?: ReactNode;
+  children: ReactNode;
+}) {
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const progressText = useAppStore((state) => state.auditProgressText);
   const [collapsed, , toggle] = useSidebarCollapsed();
   const documentCount = process?.files.length ?? 0;
   return (
     <div className="flex h-full flex-col bg-slate-50 text-gray-950 dark:bg-gray-950 dark:text-white">
-      <TopBar process={process} />
+      <TopBar process={process} accessory={topBarAccessory} />
       {isAuditRunning ? (
         <div className="border-b border-gray-200 bg-white px-5 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
           <div className="mb-1">{progressText}</div>
