@@ -8,6 +8,7 @@ import { createId } from '../lib/id';
 import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
 import { uploadFileToApi, deleteFileOnApi } from '../lib/api/filesApi';
 import { fetchAuditIssues, runAuditOnApi, type ApiAuditRunIssue, type ApiAuditRunSummary } from '../lib/api/auditsApi';
+import { upsertTrackingOnApi, addTrackingEventOnApi } from '../lib/api/trackingApi';
 import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
 import { makeDefaultTrackingEntry, trackingKey } from '../lib/tracking';
 import type {
@@ -522,6 +523,24 @@ export const useAppStore = create<AppStore>()(
 
       recordTrackingEvent: (processId, managerName, managerEmail, flaggedProjectCount, channel, note) => {
         const now = new Date().toISOString();
+        // Fire-and-forget upsert (to ensure tracking row exists) + event.
+        const proc = get().processes.find((p) => p.id === processId);
+        if (proc?.serverBacked && proc.displayCode) {
+          const managerKey = managerEmail.toLowerCase().trim();
+          (async () => {
+            try {
+              const row = await upsertTrackingOnApi(proc.displayCode!, {
+                managerKey,
+                managerName,
+                managerEmail,
+              });
+              await addTrackingEventOnApi(row.displayCode, { channel, note });
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.warn('[tracking] server event failed', err);
+            }
+          })();
+        }
         set((state) => ({
           processes: patchProcess(state.processes, processId, (process) => {
             const key = trackingKey(processId, managerEmail);
@@ -555,6 +574,22 @@ export const useAppStore = create<AppStore>()(
 
       setTrackingStage: (processId, managerName, managerEmail, flaggedProjectCount, stage) => {
         const now = new Date().toISOString();
+        // Fire-and-forget API mirror so the other user gets a live toast.
+        // We don't await here because the existing optimistic-local update
+        // should feel instant; if the API is slow we still render.
+        const proc = get().processes.find((p) => p.id === processId);
+        if (proc?.serverBacked && proc.displayCode) {
+          void upsertTrackingOnApi(proc.displayCode, {
+            managerKey: managerEmail.toLowerCase().trim(),
+            managerName,
+            managerEmail,
+            stage,
+            resolved: stage === 'Resolved',
+          }).catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn('[tracking] server upsert failed', err);
+          });
+        }
         set((state) => ({
           processes: patchProcess(state.processes, processId, (process) => {
             const key = trackingKey(processId, managerEmail);
