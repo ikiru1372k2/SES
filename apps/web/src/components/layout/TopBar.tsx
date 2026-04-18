@@ -174,7 +174,7 @@ function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose
     if (updated && isAuditDueSoon(updated)) {
       const nextDue = nextDueDateAfterSave(updated);
       if (window.confirm(`Schedule the next audit for ${new Date(`${nextDue}T00:00:00`).toLocaleDateString()}?`)) {
-        updateProcess(process.id, { nextAuditDue: nextDue });
+        void updateProcess(process.id, { nextAuditDue: nextDue }).catch(() => toast.error('Could not update next audit date'));
       }
     }
     toast.success(`${updated?.versions[0]?.versionName ?? versionName} saved`);

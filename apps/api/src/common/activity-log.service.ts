@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { v7 as uuidv7 } from 'uuid';
+import { ulid } from 'ulid';
 import { IdentifierService } from './identifier.service';
 import { requestContext } from './request-context';
 
@@ -29,7 +29,7 @@ export class ActivityLogService {
     const ctx = requestContext.get();
     await tx.activityLog.create({
       data: {
-        id: uuidv7(),
+        id: ulid(),
         displayCode: await this.identifiers.nextActivityCode(tx),
         actorId: input.actorId,
         actorEmail: input.actorEmail,

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import { applySessionUserForLocalWorkspace } from '../../lib/sessionWorkspace';
 
 /**
  * Guard a tree of routes behind the backend session.
@@ -8,9 +9,9 @@ import { Navigate, useLocation } from 'react-router-dom';
  * the children. If it 401s we redirect to /login, remembering where the user
  * was trying to go so we can bounce them back after sign-in.
  *
- * Zero state management beyond this — TanStack Query isn't wired in yet and
- * the app already has its own Zustand store for process data; adding another
- * auth store would overlap. A plain fetch + state is enough at this scale.
+ * When the signed-in user changes, `applySessionUserForLocalWorkspace` clears
+ * browser-only process data so another account cannot see or delete the
+ * previous user's local workspace (same profile / non-incognito).
  */
 
 type SessionState =
@@ -34,7 +35,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
         const body = (await res.json()) as {
           user: { displayCode: string; displayName: string; email: string; role: string };
         };
-        if (!cancelled) setSession({ phase: 'authed', user: body.user });
+        if (!cancelled) {
+          applySessionUserForLocalWorkspace(body.user.email);
+          setSession({ phase: 'authed', user: body.user });
+        }
       } catch {
         if (!cancelled) setSession({ phase: 'unauthed' });
       }

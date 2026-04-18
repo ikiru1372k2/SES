@@ -2,8 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { PrismaClient } from '@prisma/client';
-import { AUDIT_RULE_CATALOG } from '@ses/domain';
-import { createId } from '@ses/domain';
+import { AUDIT_RULE_CATALOG, createDefaultAuditPolicy, createId } from '@ses/domain';
 
 const cwd = process.cwd();
 for (const envPath of [resolve(cwd, '.env'), resolve(cwd, '..', '..', '.env')]) {
@@ -70,6 +69,54 @@ async function main() {
       },
     });
   }
+
+  const DEMO_PROCESS_DISPLAY_CODE = 'PRC-SEED-DEMO';
+  const admin = await prisma.user.findUniqueOrThrow({ where: { email: 'admin@ses.local' } });
+  const auditor = await prisma.user.findUniqueOrThrow({ where: { email: 'auditor@ses.local' } });
+
+  const demoProcess = await prisma.process.upsert({
+    where: { displayCode: DEMO_PROCESS_DISPLAY_CODE },
+    create: {
+      id: createId(),
+      displayCode: DEMO_PROCESS_DISPLAY_CODE,
+      name: 'Demo shared process (seed)',
+      description:
+        'Both seeded users are members (admin owner, auditor editor) for collaboration / realtime testing. Safe to archive or delete later.',
+      auditPolicy: createDefaultAuditPolicy() as object,
+      createdById: admin.id,
+    },
+    update: {
+      name: 'Demo shared process (seed)',
+      description:
+        'Both seeded users are members (admin owner, auditor editor) for collaboration / realtime testing. Safe to archive or delete later.',
+    },
+  });
+
+  await prisma.processMember.upsert({
+    where: { processId_userId: { processId: demoProcess.id, userId: admin.id } },
+    create: {
+      id: createId(),
+      displayCode: `MBR-SEED-${DEMO_PROCESS_DISPLAY_CODE}-ADM`,
+      processId: demoProcess.id,
+      userId: admin.id,
+      permission: 'owner',
+      addedById: admin.id,
+    },
+    update: { permission: 'owner', addedById: admin.id },
+  });
+
+  await prisma.processMember.upsert({
+    where: { processId_userId: { processId: demoProcess.id, userId: auditor.id } },
+    create: {
+      id: createId(),
+      displayCode: `MBR-SEED-${DEMO_PROCESS_DISPLAY_CODE}-AUD`,
+      processId: demoProcess.id,
+      userId: auditor.id,
+      permission: 'editor',
+      addedById: admin.id,
+    },
+    update: { permission: 'editor', addedById: admin.id },
+  });
 }
 
 main()

@@ -148,10 +148,7 @@ export class IssuesService {
         include: { author: true },
       });
       if (!comment) throw new NotFoundException(`Comment ${idOrCode} not found`);
-      await this.processAccess.assertCanAccessProcess(user, comment.processId);
-      if (comment.authorId !== user.id) {
-        await this.processAccess.require(comment.processId, user, 'editor');
-      }
+      await this.processAccess.require(comment.processId, user, 'editor');
       await tx.issueComment.update({
         where: { id: comment.id },
         data: {

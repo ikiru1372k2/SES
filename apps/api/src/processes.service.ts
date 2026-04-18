@@ -204,7 +204,7 @@ export class ProcessesService {
     if (auditPolicy === null || typeof auditPolicy !== 'object' || Array.isArray(auditPolicy)) {
       throw new BadRequestException('Request body must be a JSON object (audit policy)');
     }
-    const allowed = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'editor');
+    const allowed = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'owner');
     return this.prisma.$transaction(async (tx) => {
       const current = await tx.process.findFirst({
         where: { id: allowed.id },

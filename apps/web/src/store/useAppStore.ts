@@ -5,6 +5,7 @@ import { runAuditAsync } from '../lib/auditRunner';
 import { deleteWorkbookRawData, putWorkbookRawData } from '../lib/blobStore';
 import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
+import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
 import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
 import { makeDefaultTrackingEntry, trackingKey } from '../lib/tracking';
 import type {
@@ -41,9 +42,9 @@ type AppStore = {
   auditProgressText: string;
   uploads: Record<string, UploadState>;
   hydrateProcesses: () => Promise<void>;
-  createProcess: (name: string, description: string) => AuditProcess;
-  updateProcess: (id: string, patch: Partial<AuditProcess>) => void;
-  deleteProcess: (id: string) => void;
+  createProcess: (name: string, description: string) => Promise<AuditProcess>;
+  updateProcess: (id: string, patch: Partial<AuditProcess>) => Promise<void>;
+  deleteProcess: (id: string) => Promise<void>;
   setActiveProcess: (id: string) => void;
   uploadFile: (processId: string, file: File) => Promise<void>;
   setActiveFile: (processId: string, fileId: string) => void;
@@ -78,6 +79,7 @@ type AppStore = {
   loadTemplate: (processId: string, name: string) => NotificationTemplate | null;
   deleteTemplate: (processId: string, name: string) => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
+  resetWorkspaceAfterUserSwitch: () => void;
 };
 
 const browserStorage: PersistStorage<AppStore> = {
@@ -95,6 +97,13 @@ function debouncedSaveProcesses(processes: AuditProcess[]): void {
   saveTimer = window.setTimeout(() => {
     void saveProcessesToLocalDb(processes);
   }, 400);
+}
+
+function cancelDebouncedWorkspaceSave(): void {
+  if (saveTimer) {
+    window.clearTimeout(saveTimer);
+    saveTimer = undefined;
+  }
 }
 
 function patchProcess(processes: AuditProcess[], processId: string, updater: (process: AuditProcess) => AuditProcess): AuditProcess[] {
@@ -117,47 +126,93 @@ export const useAppStore = create<AppStore>()(
       uploads: {},
 
       hydrateProcesses: () => {
-        return loadProcessesFromLocalDb().then((processes) => {
-          if (processes.length) set({ processes });
-        });
+        return (async () => {
+          try {
+            const remote = await fetchProcessesFromApi();
+            if (remote !== null) {
+              set({ processes: remote });
+              await saveProcessesToLocalDb(remote);
+              return;
+            }
+          } catch {
+            // fall through to local
+          }
+          return loadProcessesFromLocalDb().then((processes) => {
+            if (processes.length) set({ processes });
+          });
+        })();
       },
 
-      createProcess: (name, description) => {
-        const process: AuditProcess = {
-          id: createId(),
-          name: name.trim(),
-          description: description.trim(),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          nextAuditDue: null,
-          files: [],
-          activeFileId: null,
-          versions: [],
-          auditPolicy: createDefaultAuditPolicy(),
-          notificationTracking: {},
-          comments: {},
-          corrections: {},
-          acknowledgments: {},
-          savedTemplates: {},
-        };
-        set((state) => ({ processes: [process, ...state.processes], activeProcessId: process.id, activeWorkspaceTab: 'preview', currentAuditResult: null }));
-        rememberActiveProcess(process.id);
-        return process;
-      },
-
-      updateProcess: (processId, patch) => {
+      createProcess: async (name, description) => {
+        const created = await createProcessOnApi(name, description);
         set((state) => ({
-          processes: patchProcess(state.processes, processId, (process) => ({ ...process, ...patch, updatedAt: new Date().toISOString() })),
+          processes: [created, ...state.processes],
+          activeProcessId: created.id,
+          activeWorkspaceTab: 'preview',
+          currentAuditResult: null,
+        }));
+        rememberActiveProcess(created.id);
+        await saveProcessesToLocalDb(get().processes);
+        return created;
+      },
+
+      updateProcess: async (processId, patch) => {
+        const proc = get().processes.find((item) => item.id === processId);
+        if (proc?.serverBacked && proc.displayCode && typeof proc.rowVersion === 'number') {
+          const body: { name?: string; description?: string; nextAuditDue?: string | null } = {};
+          if (patch.name !== undefined) body.name = patch.name;
+          if (patch.description !== undefined) body.description = patch.description;
+          if (patch.nextAuditDue !== undefined) body.nextAuditDue = patch.nextAuditDue;
+          if (Object.keys(body).length > 0) {
+            const updated = await updateProcessOnApi(proc.displayCode, proc.rowVersion, body);
+            set((state) => ({
+              processes: state.processes.map((item) =>
+                item.id === processId
+                  ? ({
+                      ...updated,
+                      files: item.files,
+                      activeFileId: item.activeFileId,
+                      versions: item.versions,
+                      ...(item.latestAuditResult !== undefined ? { latestAuditResult: item.latestAuditResult } : {}),
+                      notificationTracking: item.notificationTracking,
+                      comments: item.comments,
+                      corrections: item.corrections,
+                      acknowledgments: item.acknowledgments,
+                      savedTemplates: item.savedTemplates,
+                    } satisfies AuditProcess)
+                  : item,
+              ),
+            }));
+            await saveProcessesToLocalDb(get().processes);
+            return;
+          }
+        }
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => ({
+            ...process,
+            ...patch,
+            updatedAt: new Date().toISOString(),
+          })),
         }));
       },
 
-      deleteProcess: (processId) => {
+      deleteProcess: async (processId) => {
+        const proc = get().processes.find((item) => item.id === processId);
+        if (proc?.serverBacked && (proc.displayCode ?? proc.id)) {
+          await deleteProcessOnApi(proc.displayCode ?? proc.id);
+        }
+        if (proc) {
+          for (const file of proc.files) {
+            void deleteWorkbookRawData(file.id);
+          }
+        }
         set((state) => {
           const processes = state.processes.filter((process) => process.id !== processId);
           const activeProcessId = state.activeProcessId === processId ? processes[0]?.id ?? null : state.activeProcessId;
           rememberActiveProcess(activeProcessId);
           return { processes, activeProcessId, currentAuditResult: null };
         });
+        await saveProcessesToLocalDb(get().processes);
       },
 
       setActiveProcess: (processId) => {
@@ -606,6 +661,20 @@ export const useAppStore = create<AppStore>()(
       },
 
       setWorkspaceTab: (tab) => set({ activeWorkspaceTab: tab }),
+
+      resetWorkspaceAfterUserSwitch: () => {
+        cancelDebouncedWorkspaceSave();
+        rememberActiveProcess(null);
+        set({
+          processes: [],
+          activeProcessId: null,
+          activeWorkspaceTab: 'preview',
+          currentAuditResult: null,
+          isAuditRunning: false,
+          auditProgressText: '',
+          uploads: {},
+        });
+      },
     }),
     {
       name: DATA_KEY,

@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { applySessionUserForLocalWorkspace } from '../lib/sessionWorkspace';
 import { BrandMark } from '../components/shared/BrandMark';
 import { Button } from '../components/shared/Button';
 
@@ -50,7 +51,8 @@ export function Login() {
         toast.error(err.message ?? `Login failed (${res.status})`);
         return;
       }
-      const data = (await res.json()) as { user: { displayName: string } };
+      const data = (await res.json()) as { user: { displayName: string; email: string } };
+      applySessionUserForLocalWorkspace(data.user.email ?? identifier.trim());
       toast.success(`Signed in as ${data.user.displayName}`);
       navigate('/');
     } catch (err) {

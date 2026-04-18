@@ -29,12 +29,21 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   const overdue = scheduleBucket(process) === 'overdue';
   const unsaved = selectHasUnsavedAudit(process);
   const dueLabel = process.nextAuditDue ? auditDueLabel(process.nextAuditDue) : null;
+  const fileCount = process.files.length || (process.serverFilesCount ?? 0);
+  const versionCount = process.versions.length || (process.serverVersionsCount ?? 0);
 
-  function confirmDelete() {
-    const ok = window.confirm(`Delete "${displayName(process.name)}"? This removes its files, versions, and tracking data from this browser.`);
+  async function confirmDelete() {
+    const scope = process.serverBacked ? 'the server (for everyone with access)' : 'this browser';
+    const ok = window.confirm(
+      `Delete "${displayName(process.name)}"? This removes its files, versions, and tracking data from ${scope}.`,
+    );
     if (!ok) return;
-    deleteProcess(process.id);
-    toast.success('Process deleted');
+    try {
+      await deleteProcess(process.id);
+      toast.success('Process deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete process');
+    }
   }
 
   return (
@@ -61,14 +70,14 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
           ) : null}
         </div>
       </div>
-      <div className="mt-5 text-sm text-gray-600 dark:text-gray-300">{process.files.length} files - {process.versions.length} versions</div>
+      <div className="mt-5 text-sm text-gray-600 dark:text-gray-300">{fileCount} files - {versionCount} versions</div>
       <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
         <span>Last audit: {latest ? new Date(latest.runAt).toLocaleDateString() : 'Not audited'}</span>
         {unsaved ? <span title="This audit run has not been saved as a version" className="inline-flex items-center gap-1 text-xs font-medium text-amber-700"><span className="h-2 w-2 rounded-full bg-amber-500" /> Unsaved</span> : null}
       </div>
       <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
-        <div><div className="text-gray-500">Files</div><div className="text-xl font-bold">{process.files.length}</div></div>
-        <div><div className="text-gray-500">Versions</div><div className="text-xl font-bold">{process.versions.length}</div></div>
+        <div><div className="text-gray-500">Files</div><div className="text-xl font-bold">{fileCount}</div></div>
+        <div><div className="text-gray-500">Versions</div><div className="text-xl font-bold">{versionCount}</div></div>
         <div><div className="text-gray-500">Issues</div><div className="text-xl font-bold">{latest?.issues.length ?? 0}</div></div>
       </div>
       <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
@@ -91,13 +100,21 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
   const [name, setName] = useState(process.name);
   const [description, setDescription] = useState(process.description);
   const [nextAuditDue, setNextAuditDue] = useState(process.nextAuditDue ?? '');
+  const [saving, setSaving] = useState(false);
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!name.trim()) return;
-    updateProcess(process.id, { name: name.trim(), description: description.trim(), nextAuditDue: nextAuditDue || null });
-    toast.success('Process updated');
-    onClose();
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    try {
+      await updateProcess(process.id, { name: name.trim(), description: description.trim(), nextAuditDue: nextAuditDue || null });
+      toast.success('Process updated');
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update process');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function close() {
@@ -121,7 +138,7 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
         <input type="date" value={nextAuditDue} onChange={(event) => setNextAuditDue(event.target.value)} className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="secondary" onClick={close}>Cancel</Button>
-          <Button type="submit">Save Changes</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</Button>
         </div>
       </form>
     </div>

@@ -1,6 +1,6 @@
-import { v7 as uuidv7 } from 'uuid';
+import { ulid } from 'ulid';
 
 export function createId(prefix?: string): string {
-  const value = uuidv7();
+  const value = ulid();
   return prefix ? `${prefix}-${value}` : value;
 }
