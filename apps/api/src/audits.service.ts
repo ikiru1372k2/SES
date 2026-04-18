@@ -15,6 +15,7 @@ import { IdentifierService } from './common/identifier.service';
 import { ActivityLogService } from './common/activity-log.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { requestContext } from './common/request-context';
+import { RealtimeGateway } from './realtime/realtime.gateway';
 
 function serializeIssue(issue: {
   id: string;
@@ -122,6 +123,7 @@ export class AuditsService {
     private readonly identifiers: IdentifierService,
     private readonly activity: ActivityLogService,
     private readonly processAccess: ProcessAccessService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   private async getRunWithAccess(user: SessionUser, idOrCode: string) {
@@ -189,7 +191,14 @@ export class AuditsService {
     if (!file) throw new NotFoundException(`File ${body.fileIdOrCode} not found`);
     const domainFile = await this.buildDomainFile(file.id);
 
-    return this.prisma.$transaction(async (tx) => {
+    const actor = {
+      id: user.id,
+      code: user.displayCode,
+      email: user.email,
+      displayName: user.displayName,
+    };
+
+    const result = await this.prisma.$transaction(async (tx) => {
       const runCode = await this.identifiers.nextRunCode(tx, process.displayCode);
       const totalRows = domainFile.sheets.reduce((sum, sheet) => sum + sheet.rowCount, 0);
       const shouldTrackJob = totalRows > 10_000;
@@ -313,6 +322,24 @@ export class AuditsService {
         jobCode: job?.displayCode ?? null,
       };
     });
+
+    // After-commit realtime emissions. We deliberately do NOT emit inside the
+    // transaction: a rollback would leave clients with events for state that
+    // never landed in the DB.
+    this.realtime.emitToProcess(process.displayCode, 'audit.completed', {
+      runCode: result.displayCode,
+      runId: result.id,
+      flaggedRows: result.flaggedRows,
+      scannedRows: result.scannedRows,
+    }, { actor });
+    this.realtime.emitToProcess(process.displayCode, 'activity.appended', {
+      activityCode: '', // activity log code lives in DB; clients refetch the activity feed
+      entityType: 'audit_run',
+      entityCode: result.displayCode,
+      action: 'audit.run_completed',
+    }, { actor });
+
+    return result;
   }
 
   async get(idOrCode: string, user: SessionUser) {

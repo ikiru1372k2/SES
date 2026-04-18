@@ -10,6 +10,7 @@ import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { assertWorkbookUpload } from './common/security/workbook-upload';
 import { requestContext } from './common/request-context';
+import { RealtimeGateway } from './realtime/realtime.gateway';
 
 function serializeSheet(sheet: {
   id: string;
@@ -81,6 +82,7 @@ export class FilesService {
     private readonly identifiers: IdentifierService,
     private readonly activity: ActivityLogService,
     private readonly processAccess: ProcessAccessService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async getFileOrThrow(idOrCode: string, user: SessionUser) {
@@ -117,7 +119,7 @@ export class FilesService {
     }
     const contentSha256 = createHash('sha256').update(buffer).digest();
 
-    return this.prisma.$transaction(async (tx) => {
+    const uploaded = await this.prisma.$transaction(async (tx) => {
       const fileCode = await this.identifiers.nextFileCode(tx, process.displayCode);
       const created = await tx.workbookFile.create({
         data: {
@@ -170,6 +172,16 @@ export class FilesService {
       });
       return serializeFile(withSheets);
     });
+
+    // After-commit emit
+    this.realtime.emitToProcess(process.displayCode, 'file.uploaded', {
+      fileCode: uploaded.displayCode,
+      fileId: uploaded.id,
+      name: uploaded.name,
+      sizeBytes: uploaded.sizeBytes,
+    }, { actor: { id: user.id, code: user.displayCode, email: user.email, displayName: user.displayName } });
+
+    return uploaded;
   }
 
   async get(idOrCode: string, user: SessionUser) {

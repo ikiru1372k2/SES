@@ -5,6 +5,7 @@ import { PrismaService } from './common/prisma.service';
 import { ActivityLogService } from './common/activity-log.service';
 import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
+import { RealtimeGateway } from './realtime/realtime.gateway';
 
 function serializeTrackingEntry(entry: {
   id: string;
@@ -64,6 +65,7 @@ export class TrackingService {
     private readonly identifiers: IdentifierService,
     private readonly activity: ActivityLogService,
     private readonly processAccess: ProcessAccessService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async list(processIdOrCode: string, user: SessionUser) {
@@ -78,7 +80,7 @@ export class TrackingService {
 
   async upsert(processIdOrCode: string, body: UpsertBody, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'editor');
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.trackingEntry.findFirst({
         where: { processId: process.id, managerKey: body.managerKey },
         include: { events: { orderBy: { at: 'asc' } } },
@@ -120,8 +122,21 @@ export class TrackingService {
         action: existing ? 'tracking.updated' : 'tracking.created',
         after: serializeTrackingEntry(entry),
       });
-      return serializeTrackingEntry(entry);
+      return { serialized: serializeTrackingEntry(entry), entry };
     });
+
+    // After-commit emit: every client subscribed to this process room will
+    // invalidate the tracking query and re-render the Kanban.
+    this.realtime.emitToProcess(process.displayCode, 'tracking.updated', {
+      trackingCode: result.entry.displayCode,
+      trackingId: result.entry.id,
+      managerKey: result.entry.managerKey,
+      stage: result.entry.stage,
+      resolved: result.entry.resolved,
+    }, {
+      actor: { id: user.id, code: user.displayCode, email: user.email, displayName: user.displayName },
+    });
+    return result.serialized;
   }
 
   async patchEntry(entryIdOrCode: string, body: UpsertBody, user: SessionUser) {
