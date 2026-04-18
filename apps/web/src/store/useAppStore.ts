@@ -6,6 +6,7 @@ import { deleteWorkbookRawData, putWorkbookRawData } from '../lib/blobStore';
 import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
 import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
+import { uploadFileToApi, deleteFileOnApi } from '../lib/api/filesApi';
 import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
 import { makeDefaultTrackingEntry, trackingKey } from '../lib/tracking';
 import type {
@@ -222,19 +223,55 @@ export const useAppStore = create<AppStore>()(
 
       uploadFile: async (processId, file) => {
         const uploadId = createId(`${processId}-${file.name}`);
+        const target = get().processes.find((p) => p.id === processId);
         set((state) => ({ uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 20, status: 'uploading' } } }));
         try {
-          const workbookFile = await parseWorkbook(file);
-          await putWorkbookRawData(workbookFile.id, workbookFile.rawData);
-          set((state) => ({
-            uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 100, status: 'complete' } },
-            processes: patchProcess(state.processes, processId, (process) => ({
-              ...process,
-              activeFileId: process.activeFileId ?? workbookFile.id,
-              files: [...process.files, workbookFile],
-              updatedAt: new Date().toISOString(),
-            })),
-          }));
+          if (target?.serverBacked && target.displayCode) {
+            // Server-backed: POST the bytes; backend parses + stores + emits
+            // file.uploaded over the realtime channel so other members see it.
+            const apiFile = await uploadFileToApi(target.displayCode, file);
+            // Still parse locally so Preview can render rows without a round
+            // trip to /files/:id/sheets/:sheet/preview. This is redundant work
+            // right now, but cheap and lets the UI keep its current rendering.
+            const parsed = await parseWorkbook(file);
+            await putWorkbookRawData(parsed.id, parsed.rawData);
+            // Merge server metadata (displayCode, sheet codes) onto local shape
+            const mergedSheets = parsed.sheets.map((s) => {
+              const api = apiFile.sheets.find((x) => x.name === s.name);
+              return api
+                ? { ...s, serverDisplayCode: api.displayCode, serverSheetId: api.id }
+                : s;
+            });
+            const merged = {
+              ...parsed,
+              id: apiFile.id,
+              displayCode: apiFile.displayCode,
+              sheets: mergedSheets,
+              serverBacked: true,
+            };
+            set((state) => ({
+              uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 100, status: 'complete' } },
+              processes: patchProcess(state.processes, processId, (process) => ({
+                ...process,
+                activeFileId: process.activeFileId ?? merged.id,
+                files: [...process.files, merged],
+                updatedAt: new Date().toISOString(),
+              })),
+            }));
+          } else {
+            // Local-only path (legacy): everything stays in the browser.
+            const workbookFile = await parseWorkbook(file);
+            await putWorkbookRawData(workbookFile.id, workbookFile.rawData);
+            set((state) => ({
+              uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 100, status: 'complete' } },
+              processes: patchProcess(state.processes, processId, (process) => ({
+                ...process,
+                activeFileId: process.activeFileId ?? workbookFile.id,
+                files: [...process.files, workbookFile],
+                updatedAt: new Date().toISOString(),
+              })),
+            }));
+          }
           window.setTimeout(() => set((state) => {
             const next = { ...state.uploads };
             delete next[uploadId];
@@ -255,6 +292,18 @@ export const useAppStore = create<AppStore>()(
       },
 
       deleteFile: (processId, fileId) => {
+        const target = get().processes.find((p) => p.id === processId);
+        const file = target?.files.find((f) => f.id === fileId);
+        // Fire-and-forget server delete; local state is updated regardless so
+        // the UI stays responsive. If the server delete fails the next page
+        // reload will reveal the file is still there.
+        if (target?.serverBacked && file) {
+          const ref = (file as { displayCode?: string }).displayCode ?? fileId;
+          void deleteFileOnApi(ref).catch((err) => {
+            // eslint-disable-next-line no-console
+            console.warn('[files] server delete failed', err);
+          });
+        }
         void deleteWorkbookRawData(fileId);
         set((state) => ({
           currentAuditResult: state.currentAuditResult?.fileId === fileId ? null : state.currentAuditResult,
