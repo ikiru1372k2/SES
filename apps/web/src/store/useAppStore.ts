@@ -7,6 +7,7 @@ import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
 import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
 import { uploadFileToApi, deleteFileOnApi } from '../lib/api/filesApi';
+import { fetchAuditIssues, runAuditOnApi, type ApiAuditRunIssue, type ApiAuditRunSummary } from '../lib/api/auditsApi';
 import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
 import { makeDefaultTrackingEntry, trackingKey } from '../lib/tracking';
 import type {
@@ -113,6 +114,52 @@ function patchProcess(processes: AuditProcess[], processId: string, updater: (pr
 
 function patchFile(process: AuditProcess, fileId: string, updater: (file: WorkbookFile) => WorkbookFile): AuditProcess {
   return { ...process, files: process.files.map((file) => (file.id === fileId ? updater(file) : file)), updatedAt: new Date().toISOString() };
+}
+
+/**
+ * Convert the backend's audit-run summary + issues into the `AuditResult`
+ * shape the UI already speaks. Kept flat so the downstream Results / Tracking
+ * / Notifications tabs render identically whether the audit ran locally or on
+ * the server.
+ *
+ * The backend uses `ruleCode` / `displayCode`; the UI uses `ruleId` / `id`.
+ * We map both directions so saved versions keep working.
+ */
+function mapApiAuditToResult(
+  fileId: string,
+  run: ApiAuditRunSummary,
+  issues: ApiAuditRunIssue[],
+): AuditResult {
+  const mapped = issues.map((issue) => ({
+    id: issue.displayCode,
+    projectNo: issue.projectNo ?? '',
+    projectName: issue.projectName ?? '',
+    sheetName: issue.sheetName ?? '',
+    severity: issue.severity,
+    projectManager: issue.projectManager ?? '',
+    projectState: issue.projectState ?? '',
+    effort: issue.effort ?? 0,
+    auditStatus: '',
+    notes: '',
+    rowIndex: issue.rowIndex ?? 0,
+    email: issue.email ?? '',
+    ruleId: issue.ruleCode,
+    ruleCode: issue.ruleCode,
+    ruleName: issue.rule?.name,
+    category: issue.rule?.category,
+    reason: issue.reason ?? '',
+    thresholdLabel: issue.thresholdLabel ?? '',
+    recommendedAction: issue.recommendedAction ?? '',
+  })) as AuditResult['issues'];
+  const sheetSummary = (run.summary as { sheets?: Array<{ sheetName: string; rowCount: number; flaggedCount: number }> }).sheets ?? [];
+  return {
+    fileId,
+    runAt: run.completedAt ?? run.startedAt,
+    scannedRows: run.scannedRows,
+    flaggedRows: run.flaggedRows,
+    issues: mapped,
+    sheets: sheetSummary,
+  };
 }
 
 export const useAppStore = create<AppStore>()(
@@ -360,16 +407,59 @@ export const useAppStore = create<AppStore>()(
         const selected = file.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected);
         if (!selected.length) return;
         set({ isAuditRunning: true, auditProgressText: `Auditing sheet 1 of ${selected.length}...` });
-        const result = await runAuditAsync(file, process.auditPolicy);
-        set((state) => ({
-          isAuditRunning: false,
-          auditProgressText: '',
-          currentAuditResult: result,
-          activeWorkspaceTab: 'results',
-          processes: patchProcess(state.processes, processId, (item) =>
-            patchFile({ ...item, latestAuditResult: result }, fileId, (currentFile) => ({ ...currentFile, isAudited: true, lastAuditedAt: result.runAt })),
-          ),
-        }));
+
+        // When the process and file are both server-backed we run the audit on
+        // the backend. That lets the RealtimeGateway emit 'audit.completed' to
+        // every connected member of the process room, and keeps the audit_runs
+        // / audit_issues rows as the source of truth. The local engine result
+        // is still computed in parallel below so the UI can render instantly
+        // even if the server round-trip takes a second.
+        const fileDisplayCode = (file as { displayCode?: string }).displayCode;
+        const useServer = Boolean(process.serverBacked && process.displayCode && fileDisplayCode);
+        try {
+          if (useServer) {
+            try {
+              const apiResult = await runAuditOnApi(process.displayCode!, fileDisplayCode!);
+              const apiIssues = await fetchAuditIssues(apiResult.displayCode);
+              const mapped = mapApiAuditToResult(file.id, apiResult, apiIssues);
+              set((state) => ({
+                isAuditRunning: false,
+                auditProgressText: '',
+                currentAuditResult: mapped,
+                activeWorkspaceTab: 'results',
+                processes: patchProcess(state.processes, processId, (item) =>
+                  patchFile({ ...item, latestAuditResult: mapped }, fileId, (currentFile) => ({
+                    ...currentFile,
+                    isAudited: true,
+                    lastAuditedAt: mapped.runAt,
+                  })),
+                ),
+              }));
+              return;
+            } catch (err) {
+              // Fall through to the local engine so the user still sees issues.
+              // eslint-disable-next-line no-console
+              console.warn('[audit] server-side run failed, falling back to local engine', err);
+            }
+          }
+          const result = await runAuditAsync(file, process.auditPolicy);
+          set((state) => ({
+            isAuditRunning: false,
+            auditProgressText: '',
+            currentAuditResult: result,
+            activeWorkspaceTab: 'results',
+            processes: patchProcess(state.processes, processId, (item) =>
+              patchFile({ ...item, latestAuditResult: result }, fileId, (currentFile) => ({
+                ...currentFile,
+                isAudited: true,
+                lastAuditedAt: result.runAt,
+              })),
+            ),
+          }));
+        } catch (err) {
+          set({ isAuditRunning: false, auditProgressText: '' });
+          throw err;
+        }
       },
 
       updateAuditPolicy: (processId, patch) => {
