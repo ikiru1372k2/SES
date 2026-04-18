@@ -1,0 +1,456 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model IdentifierCounter {
+  id           String   @id
+  prefix       String
+  scopeKey     String
+  year         Int
+  currentValue Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([prefix, scopeKey, year])
+}
+
+model User {
+  id             String            @id
+  displayCode    String            @unique
+  email          String            @unique
+  displayName    String
+  ssoSubject     String?           @unique
+  role           String            @default("auditor")
+  isActive       Boolean           @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  processes      Process[]         @relation("ProcessCreatedBy")
+  memberships    ProcessMember[]
+  uploads        WorkbookFile[]    @relation("WorkbookUploadedBy")
+  auditRuns      AuditRun[]        @relation("AuditRunBy")
+  versions       SavedVersion[]    @relation("SavedVersionBy")
+  comments       IssueComment[]    @relation("IssueCommentBy")
+  corrections    IssueCorrection[] @relation("IssueCorrectionBy")
+  acknowledgments IssueAcknowledgment[] @relation("IssueAcknowledgmentBy")
+  trackingEvents TrackingEvent[]   @relation("TrackingEventBy")
+  templates      NotificationTemplate[] @relation("TemplateOwner")
+  notifications  Notification[]    @relation("NotificationBy")
+  activities     ActivityLog[]     @relation("ActivityActor")
+  exports        Export[]          @relation("ExportRequestedBy")
+  jobs           Job[]             @relation("JobCreatedBy")
+  preferences    UserPreference?
+  apiTokens      ApiToken[]
+  webhooks       WebhookEndpoint[] @relation("WebhookCreatedBy")
+  liveSessions   LiveSession[]
+}
+
+model Process {
+  id                String                 @id
+  displayCode       String                 @unique
+  name              String
+  description       String                 @default("")
+  nextAuditDue      DateTime?
+  auditPolicy       Json
+  policyVersion     Int                    @default(1)
+  createdById       String
+  rowVersion        Int                    @default(1)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  archivedAt        DateTime?
+  createdBy         User                   @relation("ProcessCreatedBy", fields: [createdById], references: [id])
+  members           ProcessMember[]
+  files             WorkbookFile[]
+  auditRuns         AuditRun[]
+  versions          SavedVersion[]
+  comments          IssueComment[]
+  corrections       IssueCorrection[]
+  acknowledgments   IssueAcknowledgment[]
+  trackingEntries   TrackingEntry[]
+  notificationTemplates NotificationTemplate[]
+  notifications     Notification[]
+  activities        ActivityLog[]
+  exports           Export[]
+  jobs              Job[]
+  webhooks          WebhookEndpoint[]
+  liveSessions      LiveSession[]
+}
+
+model ProcessMember {
+  id         String   @id
+  displayCode String  @unique
+  processId  String
+  userId     String
+  permission String
+  addedById  String?
+  addedAt    DateTime @default(now())
+  process    Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([processId, userId])
+}
+
+model WorkbookFile {
+  id            String         @id
+  displayCode   String         @unique
+  processId     String
+  name          String
+  sizeBytes     Int
+  contentSha256 Bytes
+  mimeType      String
+  storageKind   String
+  content       Bytes?
+  parsedSheets  Json?
+  uploadedById  String
+  uploadedAt    DateTime       @default(now())
+  lastAuditedAt DateTime?
+  rowVersion    Int            @default(1)
+  process       Process        @relation(fields: [processId], references: [id], onDelete: Cascade)
+  uploadedBy    User           @relation("WorkbookUploadedBy", fields: [uploadedById], references: [id])
+  sheets        WorkbookSheet[]
+  auditRuns     AuditRun[]
+
+  @@index([processId])
+}
+
+model WorkbookSheet {
+  id               String   @id
+  displayCode      String   @unique
+  fileId           String
+  sheetName        String
+  status           String
+  rowCount         Int
+  isSelected       Boolean  @default(true)
+  headerRowIx      Int?
+  rows             Json
+  originalHeaders  Json?
+  normalizedHeaders Json?
+  file             WorkbookFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, sheetName])
+}
+
+model AuditRule {
+  id               String   @id
+  ruleCode         String   @unique
+  name             String
+  category         String
+  description      String
+  defaultSeverity  String
+  isEnabledDefault Boolean  @default(true)
+  paramsSchema     Json
+  version          Int      @default(1)
+  createdAt        DateTime @default(now())
+  issues           AuditIssue[]
+}
+
+model AuditRun {
+  id             String      @id
+  displayCode    String      @unique
+  processId      String
+  fileId         String
+  requestId      String
+  status         String      @default("completed")
+  source         String      @default("inline")
+  policySnapshot Json
+  rulesSnapshot  Json
+  scannedRows    Int         @default(0)
+  flaggedRows    Int         @default(0)
+  summary        Json
+  ranById        String
+  startedAt      DateTime    @default(now())
+  completedAt    DateTime?
+  process        Process     @relation(fields: [processId], references: [id], onDelete: Cascade)
+  file           WorkbookFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  ranBy          User        @relation("AuditRunBy", fields: [ranById], references: [id])
+  issues         AuditIssue[]
+  versions       SavedVersion[]
+  exports        Export[]
+
+  @@index([processId])
+}
+
+model SavedVersion {
+  id            String   @id
+  displayCode   String   @unique
+  processId     String
+  auditRunId    String
+  versionNumber Int
+  versionName   String
+  notes         String   @default("")
+  createdById   String
+  createdAt     DateTime @default(now())
+  process       Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  auditRun      AuditRun @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  createdBy     User     @relation("SavedVersionBy", fields: [createdById], references: [id])
+  exports       Export[]
+
+  @@unique([processId, versionNumber])
+}
+
+model AuditIssue {
+  id                String   @id
+  displayCode       String   @unique
+  issueKey          String
+  auditRunId        String
+  ruleCode          String
+  projectNo         String?
+  projectName       String?
+  sheetName         String?
+  projectManager    String?
+  projectState      String?
+  effort            Float?
+  severity          String
+  reason            String?
+  thresholdLabel    String?
+  recommendedAction String?
+  email             String?
+  rowIndex          Int?
+  auditRun          AuditRun @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  rule              AuditRule @relation(fields: [ruleCode], references: [ruleCode])
+
+  @@index([auditRunId])
+  @@index([issueKey])
+  @@index([ruleCode])
+}
+
+model IssueComment {
+  id          String   @id
+  displayCode String   @unique
+  processId   String
+  issueKey    String
+  authorId    String
+  body        String
+  createdAt   DateTime @default(now())
+  editedAt    DateTime?
+  deletedAt   DateTime?
+  rowVersion  Int      @default(1)
+  process     Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  author      User     @relation("IssueCommentBy", fields: [authorId], references: [id])
+
+  @@index([processId, issueKey])
+}
+
+model IssueCorrection {
+  id               String   @id
+  displayCode      String   @unique
+  processId        String
+  issueKey         String
+  correctedEffort  Float?
+  correctedState   String?
+  correctedManager String?
+  note             String   @default("")
+  updatedById      String
+  updatedAt        DateTime @default(now())
+  rowVersion       Int      @default(1)
+  process          Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  updatedBy        User     @relation("IssueCorrectionBy", fields: [updatedById], references: [id])
+
+  @@unique([processId, issueKey])
+}
+
+model IssueAcknowledgment {
+  id          String   @id
+  displayCode String   @unique
+  processId   String
+  issueKey    String
+  status      String
+  updatedById String
+  updatedAt   DateTime @default(now())
+  rowVersion  Int      @default(1)
+  process     Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  updatedBy   User     @relation("IssueAcknowledgmentBy", fields: [updatedById], references: [id])
+
+  @@unique([processId, issueKey])
+}
+
+model TrackingEntry {
+  id            String   @id
+  displayCode   String   @unique
+  processId      String
+  managerKey     String
+  managerName    String
+  managerEmail   String?
+  stage          String
+  outlookCount   Int      @default(0)
+  teamsCount     Int      @default(0)
+  lastContactAt  DateTime?
+  resolved       Boolean  @default(false)
+  slaDueAt       DateTime?
+  projectStatuses Json?
+  rowVersion     Int      @default(1)
+  updatedAt      DateTime @updatedAt
+  process        Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  events         TrackingEvent[]
+  notifications  Notification[]
+
+  @@unique([processId, managerKey])
+}
+
+model TrackingEvent {
+  id          String   @id
+  displayCode String   @unique
+  trackingId  String
+  channel     String
+  note        String?
+  triggeredById String?
+  requestId   String?
+  at          DateTime @default(now())
+  tracking    TrackingEntry @relation(fields: [trackingId], references: [id], onDelete: Cascade)
+  triggeredBy User?    @relation("TrackingEventBy", fields: [triggeredById], references: [id])
+}
+
+model NotificationTemplate {
+  id          String   @id
+  displayCode String   @unique
+  processId   String?
+  ownerId     String?
+  name        String
+  theme       String
+  template    Json
+  createdAt   DateTime @default(now())
+  process     Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
+  owner       User?    @relation("TemplateOwner", fields: [ownerId], references: [id])
+  notifications Notification[]
+}
+
+model Notification {
+  id          String   @id
+  displayCode String   @unique
+  processId   String
+  trackingId  String?
+  templateId  String?
+  channel     String
+  subject     String?
+  body        String?
+  sentById    String?
+  sentAt      DateTime?
+  status      String
+  process     Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+  tracking    TrackingEntry? @relation(fields: [trackingId], references: [id])
+  template    NotificationTemplate? @relation(fields: [templateId], references: [id])
+  sentBy      User?    @relation("NotificationBy", fields: [sentById], references: [id])
+}
+
+model ActivityLog {
+  id         String   @id
+  displayCode String  @unique
+  occurredAt DateTime @default(now())
+  actorId    String?
+  actorEmail String?
+  processId  String?
+  entityType String
+  entityId   String?
+  entityCode String?
+  action     String
+  before     Json?
+  after      Json?
+  requestId  String?
+  traceId    String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  actor      User?    @relation("ActivityActor", fields: [actorId], references: [id])
+  process    Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
+}
+
+model Export {
+  id            String   @id
+  displayCode   String   @unique
+  processId     String?
+  auditRunId    String?
+  savedVersionId String?
+  kind          String
+  format        String
+  requestedById String?
+  requestId     String?
+  status        String
+  fileSha256    Bytes?
+  sizeBytes     Int?
+  content       Bytes?
+  contentType   String?
+  downloadedAt  DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime @default(now())
+  process       Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
+  auditRun      AuditRun? @relation(fields: [auditRunId], references: [id])
+  savedVersion  SavedVersion? @relation(fields: [savedVersionId], references: [id])
+  requestedBy   User?    @relation("ExportRequestedBy", fields: [requestedById], references: [id])
+}
+
+model Job {
+  id          String   @id
+  displayCode String   @unique
+  kind        String
+  processId   String?
+  requestId   String?
+  state       String
+  attempts    Int      @default(0)
+  payload     Json?
+  result      Json?
+  error       String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  process     Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
+  createdBy   User?    @relation("JobCreatedBy", fields: [createdById], references: [id])
+}
+
+model UserPreference {
+  id            String   @id
+  userId        String   @unique
+  lastProcessId String?
+  defaultTab    String?
+  data          Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApiToken {
+  id          String   @id
+  displayCode String   @unique
+  ownerId     String
+  name        String
+  tokenHash   Bytes
+  scopes      Json
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model WebhookEndpoint {
+  id            String   @id
+  displayCode   String   @unique
+  processId     String?
+  url           String
+  events        Json
+  signingSecret Bytes
+  isEnabled     Boolean  @default(true)
+  createdById   String?
+  createdAt     DateTime @default(now())
+  process       Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
+  createdBy     User?    @relation("WebhookCreatedBy", fields: [createdById], references: [id])
+}
+
+model LiveSession {
+  id            String   @id
+  displayCode   String   @unique
+  userId        String
+  processId     String
+  socketId      String
+  currentTab    String?
+  currentFocus  String?
+  connectedAt   DateTime @default(now())
+  lastHeartbeat DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  process       Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+}

@@ -1,55 +1,30 @@
 {
-  "name": "effort-workbook-auditor",
-  "version": "1.0.0",
+  "name": "ses",
   "private": true,
-  "type": "module",
   "engines": {
     "node": ">=20"
   },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "dev:lan": "vite --host 0.0.0.0",
-    "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1",
-    "test": "tsx --test test/**/*.test.ts",
-    "test:components": "vitest run",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "exceljs": "4.4.0",
-    "idb-keyval": "^6.2.2",
-    "lucide-react": "^1.8.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-hot-toast": "^2.6.0",
-    "react-router-dom": "7.14.1",
-    "recharts": "^3.8.1",
-    "zustand": "^5.0.12"
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "build": "npm run build --workspace @ses/domain && npm run build --workspace @ses/api && npm run build --workspace @ses/web",
+    "typecheck": "npm run build --workspace @ses/domain && npm run typecheck --workspace @ses/api && npm run typecheck --workspace @ses/web",
+    "lint": "npm run lint --workspace @ses/web",
+    "test": "npm run test --workspace @ses/domain && npm run test --workspace @ses/web",
+    "test:components": "npm run test:components --workspace @ses/web",
+    "dev:web": "npm run build --workspace @ses/domain && npm run dev --workspace @ses/web",
+    "dev:api": "npm run build --workspace @ses/domain && npm run start:dev --workspace @ses/api",
+    "prisma:generate": "npm run prisma:generate --workspace @ses/api",
+    "prisma:seed": "npm run prisma:seed --workspace @ses/api",
+    "format": "prettier --write ."
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^24.6.0",
-    "@types/react": "^18.2.79",
-    "@types/react-dom": "^18.2.25",
-    "@vitejs/plugin-react": "6.0.1",
-    "autoprefixer": "^10.5.0",
-    "esbuild": "0.28.0",
-    "eslint": "^9.39.4",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "jsdom": "^29.0.2",
-    "postcss": "^8.5.9",
     "prettier": "^3.8.3",
-    "tailwindcss": "^3.4.17",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.58.2",
-    "vite": "8.0.8",
-    "vitest": "^4.1.4"
+    "typescript": "^5.9.3"
   }
 }

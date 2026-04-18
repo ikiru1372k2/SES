@@ -6,6 +6,7 @@ import type {
   ProjectTrackingStage,
   ProjectTrackingStatus,
   TrackingEntry,
+  WorkbookFile,
 } from './types';
 import { getWorkbookRawData } from './blobStore';
 import { detectWorkbookSheets } from './excelParser';
@@ -35,7 +36,9 @@ export function saveProcesses(processes: AuditProcess[]): void {
 export async function loadProcessesFromLocalDb(): Promise<AuditProcess[]> {
   try {
     const response = await fetch('/api/local-db', { cache: 'no-store' });
-    if (!response.ok) return loadProcesses();
+    if (!response.ok) {
+      return hydrateWorkbookRawData(loadProcesses());
+    }
     const parsed = await response.json();
     const processes = parsed.processes ?? [];
     return hydrateWorkbookRawData(sanitizeProcesses(processes));
@@ -65,13 +68,28 @@ export function sanitizeProcesses(value: unknown): AuditProcess[] {
   return Array.isArray(value) ? value.map(sanitizeProcess).filter(Boolean) as AuditProcess[] : [];
 }
 
+function sheetsFromRawData(file: WorkbookFile, rawData: Record<string, unknown[][]>) {
+  const redetectedSheets = Object.keys(rawData).length ? detectWorkbookSheets(rawData) : [];
+  const previousSelection = new Map(
+    (Array.isArray(file.sheets) ? file.sheets : []).map((sheet) => [sheet.name, sheet.isSelected]),
+  );
+  return redetectedSheets.map((sheet) => ({
+    ...sheet,
+    isSelected: sheet.status === 'valid' ? previousSelection.get(sheet.name) ?? true : false,
+  }));
+}
+
 export async function hydrateWorkbookRawData(processes: AuditProcess[]): Promise<AuditProcess[]> {
   return Promise.all(processes.map(async (process) => ({
     ...process,
-    files: await Promise.all(process.files.map(async (file) => ({
-      ...file,
-      rawData: Object.keys(file.rawData).length ? file.rawData : await getWorkbookRawData(file.id) ?? {},
-    }))),
+    files: await Promise.all(process.files.map(async (file) => {
+      const rawData =
+        Object.keys(file.rawData).length > 0
+          ? file.rawData
+          : (await getWorkbookRawData(file.id)) ?? {};
+      const sheets = sheetsFromRawData(file, rawData);
+      return { ...file, rawData, sheets };
+    })),
   })));
 }
 
@@ -131,8 +149,10 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
     files: Array.isArray(item.files)
       ? item.files.map((file) => {
           const rawData = file.rawData && typeof file.rawData === 'object' ? file.rawData as Record<string, unknown[][]> : {};
-          const redetectedSheets = Object.keys(rawData).length ? detectWorkbookSheets(rawData) : [];
-          const previousSelection = new Map((Array.isArray(file.sheets) ? file.sheets : []).map((sheet) => [sheet.name, sheet.isSelected]));
+          const sheets = sheetsFromRawData(
+            { sheets: Array.isArray(file.sheets) ? file.sheets : [] } as WorkbookFile,
+            rawData,
+          );
           return {
             ...file,
             id: String(file.id ?? createId()),
@@ -140,7 +160,7 @@ function sanitizeProcess(value: unknown): AuditProcess | null {
             uploadedAt: String(file.uploadedAt ?? now),
             lastAuditedAt: file.lastAuditedAt ? String(file.lastAuditedAt) : null,
             isAudited: Boolean(file.isAudited),
-            sheets: redetectedSheets.map((sheet) => ({ ...sheet, isSelected: sheet.status === 'valid' ? previousSelection.get(sheet.name) ?? true : false })),
+            sheets,
             rawData,
           };
         })
