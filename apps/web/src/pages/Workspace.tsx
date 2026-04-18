@@ -22,12 +22,30 @@ const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').t
 export function Workspace() {
   const { id } = useParams();
   const processes = useAppStore((state) => state.processes);
+  const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
   const tab = useAppStore((state) => state.activeWorkspaceTab);
   const result = useAppStore((state) => state.currentAuditResult);
   const process = processes.find((item) => item.id === id);
   const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
   const currentUser = useCurrentUser();
   const [membersOpen, setMembersOpen] = useState(false);
+  const [hydrating, setHydrating] = useState<boolean>(!process);
+  const [hydrateAttempted, setHydrateAttempted] = useState(false);
+
+  // If the user hard-refreshed /workspace/<id> in a tab that has no cached
+  // process (incognito, different logged-in user, cleared storage) the store
+  // will briefly be empty. Fetch once before deciding whether the process
+  // really doesn't exist — otherwise we redirect to Dashboard and the user
+  // loses their deep link.
+  useEffect(() => {
+    if (process) {
+      setHydrating(false);
+      return;
+    }
+    if (hydrateAttempted) return;
+    setHydrateAttempted(true);
+    void hydrateProcesses().finally(() => setHydrating(false));
+  }, [process, hydrateAttempted, hydrateProcesses]);
 
   // Subscribe to realtime updates for this process. The hook accepts either
   // a PRC-* display code or a UUID; the server resolves either. When the
@@ -46,6 +64,13 @@ export function Workspace() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedAudit]);
 
+  if (hydrating) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-gray-500 dark:bg-gray-950">
+        Loading workspace…
+      </div>
+    );
+  }
   if (!process) return <Navigate to="/" replace />;
   const activeFile = process.files.find((file) => file.id === process.activeFileId) ?? process.files[0] ?? undefined;
   const canManageMembers = currentUser?.role === 'admin'; // Owners are verified server-side too; admin is the quick client-side hint.
