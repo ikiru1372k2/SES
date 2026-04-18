@@ -1,6 +1,8 @@
 import { Navigate, useParams } from 'react-router-dom';
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { Users } from 'lucide-react';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
+import { MembersPanel } from '../components/workspace/MembersPanel';
 import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
 import { TabPanel } from '../components/workspace/TabPanel';
 import { PreviewTab } from '../components/workspace/PreviewTab';
@@ -10,6 +12,7 @@ import { TrackingTab } from '../components/workspace/TrackingTab';
 import { VersionHistoryTab } from '../components/workspace/VersionHistoryTab';
 import { AppShell } from '../components/layout/AppShell';
 import { PresenceBar } from '../components/shared/PresenceBar';
+import { useCurrentUser } from '../components/auth/AuthGate';
 import { selectHasUnsavedAudit } from '../store/selectors';
 import { useAppStore } from '../store/useAppStore';
 import { useRealtime } from '../realtime/useRealtime';
@@ -23,6 +26,8 @@ export function Workspace() {
   const result = useAppStore((state) => state.currentAuditResult);
   const process = processes.find((item) => item.id === id);
   const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
+  const currentUser = useCurrentUser();
+  const [membersOpen, setMembersOpen] = useState(false);
 
   // Subscribe to realtime updates for this process. The hook accepts either
   // a PRC-* display code or a UUID; the server resolves either. When the
@@ -43,13 +48,27 @@ export function Workspace() {
 
   if (!process) return <Navigate to="/" replace />;
   const activeFile = process.files.find((file) => file.id === process.activeFileId) ?? process.files[0] ?? undefined;
+  const canManageMembers = currentUser?.role === 'admin'; // Owners are verified server-side too; admin is the quick client-side hint.
+
+  const accessory = (
+    <div className="flex items-center gap-2">
+      <PresenceBar members={members} selfCode={currentUser?.displayCode} />
+      {process.serverBacked ? (
+        <button
+          type="button"
+          onClick={() => setMembersOpen(true)}
+          className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300"
+          title="Members"
+        >
+          <Users size={14} />
+          <span className="hidden sm:inline">Members</span>
+        </button>
+      ) : null}
+    </div>
+  );
 
   return (
-    <AppShell
-      process={process}
-      sidebar={<FilesSidebar process={process} />}
-      topBarAccessory={<PresenceBar members={members} />}
-    >
+    <AppShell process={process} sidebar={<FilesSidebar process={process} />} topBarAccessory={accessory}>
       <WorkspaceShell>
         {tab === 'preview' ? (
           <TabPanel>
@@ -84,6 +103,14 @@ export function Workspace() {
           </TabPanel>
         ) : null}
       </WorkspaceShell>
+      {membersOpen && process.serverBacked ? (
+        <MembersPanel
+          processIdOrCode={process.displayCode ?? process.id}
+          currentUserCode={currentUser?.displayCode}
+          canManage={canManageMembers}
+          onClose={() => setMembersOpen(false)}
+        />
+      ) : null}
     </AppShell>
   );
 }

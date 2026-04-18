@@ -247,4 +247,128 @@ export class ProcessesService {
       };
     });
   }
+
+  // ----- Members -----------------------------------------------------------
+  //
+  // Membership controls who can see a process and what they can do inside it.
+  // Listing is allowed to any member (viewer+); adding/removing requires owner
+  // because a member who can add others can grant themselves privileges.
+  // Admins bypass the membership check via findAccessibleProcessOrThrow.
+
+  async listMembers(idOrCode: string, user: SessionUser) {
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');
+    const members = await this.prisma.processMember.findMany({
+      where: { processId: process.id },
+      orderBy: { addedAt: 'asc' },
+      include: { user: { select: { id: true, displayCode: true, email: true, displayName: true, role: true } } },
+    });
+    return members.map((m) => ({
+      id: m.id,
+      displayCode: m.displayCode,
+      userId: m.user.id,
+      userCode: m.user.displayCode,
+      email: m.user.email,
+      displayName: m.user.displayName,
+      globalRole: m.user.role,
+      permission: m.permission,
+      addedAt: m.addedAt.toISOString(),
+    }));
+  }
+
+  async addMember(
+    idOrCode: string,
+    body: { email?: string; userCode?: string; permission?: 'viewer' | 'editor' | 'owner' },
+    user: SessionUser,
+  ) {
+    const permission = body.permission ?? 'editor';
+    if (permission !== 'viewer' && permission !== 'editor' && permission !== 'owner') {
+      throw new BadRequestException('permission must be viewer | editor | owner');
+    }
+    const lookup = body.email?.trim().toLowerCase() || body.userCode?.trim();
+    if (!lookup) throw new BadRequestException('email or userCode is required');
+
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'owner');
+    const target = await this.prisma.user.findFirst({
+      where: { OR: [{ email: lookup }, { displayCode: lookup }], isActive: true },
+    });
+    if (!target) throw new NotFoundException(`User ${lookup} not found`);
+
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.processMember.findFirst({
+        where: { processId: process.id, userId: target.id },
+      });
+      if (existing) {
+        // Already a member — treat as idempotent upsert of the permission level.
+        const updated = await tx.processMember.update({
+          where: { id: existing.id },
+          data: { permission },
+        });
+        await this.activity.append(tx, {
+          actorId: user.id,
+          actorEmail: user.email,
+          processId: process.id,
+          entityType: 'process_member',
+          entityId: updated.id,
+          entityCode: updated.displayCode,
+          action: 'process.member_updated',
+          after: { userCode: target.displayCode, permission },
+        });
+        return { id: updated.id, displayCode: updated.displayCode, changed: permission !== existing.permission };
+      }
+      const created = await tx.processMember.create({
+        data: {
+          id: createId(),
+          displayCode: await this.identifiers.nextMemberCode(tx, process.displayCode),
+          processId: process.id,
+          userId: target.id,
+          permission,
+          addedById: user.id,
+        },
+      });
+      await this.activity.append(tx, {
+        actorId: user.id,
+        actorEmail: user.email,
+        processId: process.id,
+        entityType: 'process_member',
+        entityId: created.id,
+        entityCode: created.displayCode,
+        action: 'process.member_added',
+        after: { userCode: target.displayCode, email: target.email, permission },
+      });
+      return { id: created.id, displayCode: created.displayCode, changed: true };
+    });
+  }
+
+  async removeMember(idOrCode: string, memberIdOrCode: string, user: SessionUser) {
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'owner');
+    const member = await this.prisma.processMember.findFirst({
+      where: {
+        processId: process.id,
+        OR: [{ id: memberIdOrCode }, { displayCode: memberIdOrCode }],
+      },
+    });
+    if (!member) throw new NotFoundException(`Member ${memberIdOrCode} not found`);
+    if (member.permission === 'owner') {
+      const ownerCount = await this.prisma.processMember.count({
+        where: { processId: process.id, permission: 'owner' },
+      });
+      if (ownerCount <= 1) {
+        throw new BadRequestException('Cannot remove the last owner');
+      }
+    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.processMember.delete({ where: { id: member.id } });
+      await this.activity.append(tx, {
+        actorId: user.id,
+        actorEmail: user.email,
+        processId: process.id,
+        entityType: 'process_member',
+        entityId: member.id,
+        entityCode: member.displayCode,
+        action: 'process.member_removed',
+        before: { userId: member.userId },
+      });
+      return { ok: true };
+    });
+  }
 }
