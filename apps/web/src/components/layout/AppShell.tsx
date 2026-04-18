@@ -20,7 +20,7 @@ export function AppShell({
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const progressText = useAppStore((state) => state.auditProgressText);
   const [collapsed, , toggle] = useSidebarCollapsed();
-  const documentCount = process?.files.length ?? 0;
+  const documentCount = process ? process.files.length || process.serverFilesCount || 0 : 0;
   return (
     <div className="flex h-full flex-col bg-slate-50 text-gray-950 dark:bg-gray-950 dark:text-white">
       <TopBar process={process} accessory={topBarAccessory} />

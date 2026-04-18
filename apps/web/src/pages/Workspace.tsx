@@ -42,7 +42,7 @@ export function Workspace() {
   }, [hasUnsavedAudit]);
 
   if (!process) return <Navigate to="/" replace />;
-  const activeFile = process.files.find((file) => file.id === process.activeFileId) ?? process.files[0];
+  const activeFile = process.files.find((file) => file.id === process.activeFileId) ?? process.files[0] ?? undefined;
 
   return (
     <AppShell

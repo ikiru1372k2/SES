@@ -34,6 +34,13 @@ export interface AuditProcess {
    * Optional because legacy local-only processes may not have one yet.
    */
   displayCode?: string;
+  /** When true, process metadata is owned by the API; list/create/delete use Postgres. */
+  serverBacked?: boolean;
+  /** Optimistic concurrency for PATCH /policy (from API). */
+  rowVersion?: number;
+  /** From GET /processes when `files` is not loaded yet (dashboard counts). */
+  serverFilesCount?: number;
+  serverVersionsCount?: number;
   name: string;
   description: string;
   createdAt: string;

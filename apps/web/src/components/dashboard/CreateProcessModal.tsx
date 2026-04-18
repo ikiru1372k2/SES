@@ -10,14 +10,22 @@ export function CreateProcessModal({ onClose }: { onClose: () => void }) {
   const createProcess = useAppStore((state) => state.createProcess);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!name.trim()) return;
-    const process = createProcess(name, description);
-    toast.success('Process saved');
-    onClose();
-    void navigate(`/workspace/${process.id}`);
+    if (!name.trim() || saving) return;
+    setSaving(true);
+    try {
+      const process = await createProcess(name, description);
+      toast.success('Process created');
+      onClose();
+      void navigate(`/workspace/${process.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not create process');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function close() {
@@ -38,7 +46,7 @@ export function CreateProcessModal({ onClose }: { onClose: () => void }) {
         <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Optional context for this audit cycle" className="mt-2 h-24 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="secondary" onClick={close}>Cancel</Button>
-          <Button type="submit">Create Process</Button>
+          <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create Process'}</Button>
         </div>
       </form>
     </div>

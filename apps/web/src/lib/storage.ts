@@ -8,6 +8,7 @@ import type {
   TrackingEntry,
   WorkbookFile,
 } from './types';
+import { clear } from 'idb-keyval';
 import { getWorkbookRawData } from './blobStore';
 import { detectWorkbookSheets } from './excelParser';
 import { createId } from './id';
@@ -16,6 +17,16 @@ import { trackingKey } from './tracking';
 
 export const DATA_KEY = 'effort-auditor-data';
 export const UI_KEY = 'effort-auditor-ui';
+
+export function clearBrowserWorkspace(): void {
+  try {
+    localStorage.removeItem(DATA_KEY);
+    localStorage.removeItem(UI_KEY);
+  } catch {
+    // ignore
+  }
+  void clear().catch(() => {});
+}
 
 export function loadProcesses(): AuditProcess[] {
   try {

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma, PrismaClient } from '@prisma/client';
-import { v7 as uuidv7 } from 'uuid';
+import { ulid } from 'ulid';
 
 type TxLike = Prisma.TransactionClient | PrismaClient;
 
@@ -18,7 +18,7 @@ export class IdentifierService {
   ): Promise<number> {
     const result = await tx.$queryRaw<Array<{ currentValue: number }>>`
       INSERT INTO "IdentifierCounter" ("id", "prefix", "scopeKey", "year", "currentValue", "createdAt", "updatedAt")
-      VALUES (${uuidv7()}, ${prefix}, ${scopeKey}, ${year}, 1, NOW(), NOW())
+      VALUES (${ulid()}, ${prefix}, ${scopeKey}, ${year}, 1, NOW(), NOW())
       ON CONFLICT ("prefix", "scopeKey", "year")
       DO UPDATE SET "currentValue" = "IdentifierCounter"."currentValue" + 1, "updatedAt" = NOW()
       RETURNING "currentValue"
@@ -111,6 +111,6 @@ export class IdentifierService {
   }
 
   async nextUserPreferenceId(tx: TxLike): Promise<string> {
-    return uuidv7();
+    return ulid();
   }
 }

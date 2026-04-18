@@ -5,7 +5,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
-    "start:dev": "tsx watch src/main.ts",
+    "start:dev": "ts-node --transpile-only src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
     "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
@@ -32,8 +32,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "socket.io": "^4.8.3",
-    "ulid": "^3.0.1",
-    "uuid": "^13.0.0"
+    "ulid": "^3.0.1"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.9",
@@ -42,6 +41,7 @@
     "@types/multer": "^2.0.0",
     "@types/node": "^24.6.0",
     "prisma": "^6.8.2",
+    "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
