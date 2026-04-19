@@ -2,6 +2,7 @@ import './load-env';
 import 'reflect-metadata';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { NestFactory } from '@nestjs/core';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
@@ -38,6 +39,10 @@ async function bootstrap() {
     origin: corsOrigins(),
     credentials: true,
   });
+  app.use(helmet({
+    contentSecurityPolicy: false, // Vite injects scripts inline in dev; tighten in Phase 1
+    crossOriginEmbedderPolicy: false,
+  }));
   app.use(cookieParser(process.env.SES_AUTH_SECRET || 'ses-dev-secret'));
   app.use((request: Request, response: Response, next: NextFunction) => {
     const requestId = createRequestId(request.headers['x-request-id']);
