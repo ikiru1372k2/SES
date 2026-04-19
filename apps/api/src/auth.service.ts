@@ -66,6 +66,13 @@ export class AuthService implements OnModuleInit {
     return 'lax';
   }
 
+  private cookieSecure(): boolean {
+    const raw = process.env.SES_COOKIE_SECURE?.toLowerCase();
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    return process.env.NODE_ENV === 'production';
+  }
+
   private requireJwtString(value: unknown, maxLen: number, field: string): string {
     if (typeof value !== 'string' || value.length < 1 || value.length > maxLen) {
       throw new UnauthorizedException(`Invalid token payload: ${field}`);
@@ -103,13 +110,10 @@ export class AuthService implements OnModuleInit {
   }
 
   private setCookie(response: Response, token: string): void {
-    const secure =
-      process.env.SES_COOKIE_SECURE === 'true' ||
-      process.env.NODE_ENV === 'production';
     response.cookie('ses_auth', token, {
       httpOnly: true,
       sameSite: this.cookieSameSite(),
-      secure,
+      secure: this.cookieSecure(),
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
@@ -179,12 +183,9 @@ export class AuthService implements OnModuleInit {
   }
 
   logout(response: Response): void {
-    const secure =
-      process.env.SES_COOKIE_SECURE === 'true' ||
-      process.env.NODE_ENV === 'production';
     response.clearCookie('ses_auth', {
       path: '/',
-      secure,
+      secure: this.cookieSecure(),
       sameSite: this.cookieSameSite(),
     });
   }
