@@ -9,6 +9,13 @@ import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updatePr
 import { uploadFileToApi, deleteFileOnApi } from '../lib/api/filesApi';
 import { fetchAuditIssues, runAuditOnApi, type ApiAuditRunIssue, type ApiAuditRunSummary } from '../lib/api/auditsApi';
 import { upsertTrackingOnApi, addTrackingEventOnApi } from '../lib/api/trackingApi';
+import {
+  addIssueCommentOnApi,
+  deleteIssueCommentOnApi,
+  saveIssueCorrectionOnApi,
+  clearIssueCorrectionOnApi,
+  saveIssueAcknowledgmentOnApi,
+} from '../lib/api/issuesApi';
 import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
 import { makeDefaultTrackingEntry, trackingKey } from '../lib/tracking';
 import type {
@@ -672,8 +679,9 @@ export const useAppStore = create<AppStore>()(
         const trimmed = body.trim();
         if (!trimmed) return;
         const now = new Date().toISOString();
+        const tempId = createId('comment');
         const comment: IssueComment = {
-          id: createId('comment'),
+          id: tempId,
           issueKey,
           processId,
           author: author.trim() || 'Auditor',
@@ -690,6 +698,26 @@ export const useAppStore = create<AppStore>()(
             updatedAt: now,
           })),
         }));
+        const proc = get().processes.find((p) => p.id === processId);
+        if (proc?.serverBacked && proc.displayCode) {
+          void addIssueCommentOnApi(proc.displayCode, issueKey, trimmed)
+            .then((apiComment) => {
+              set((state) => ({
+                processes: patchProcess(state.processes, processId, (process) => ({
+                  ...process,
+                  comments: {
+                    ...(process.comments ?? {}),
+                    [issueKey]: (process.comments?.[issueKey] ?? []).map((c) =>
+                      c.id === tempId ? { ...c, id: apiComment.displayCode } : c,
+                    ),
+                  },
+                })),
+              }));
+            })
+            .catch((err: unknown) => {
+              console.warn('[issues] comment add failed', err);
+            });
+        }
       },
 
       deleteIssueComment: (processId, issueKey, commentId) => {
@@ -704,6 +732,12 @@ export const useAppStore = create<AppStore>()(
             updatedAt: now,
           })),
         }));
+        const proc = get().processes.find((p) => p.id === processId);
+        if (proc?.serverBacked) {
+          void deleteIssueCommentOnApi(commentId).catch((err: unknown) => {
+            console.warn('[issues] comment delete failed', err);
+          });
+        }
       },
 
       saveIssueCorrection: (processId, issueKey, correction) => {
@@ -724,6 +758,12 @@ export const useAppStore = create<AppStore>()(
             updatedAt: now,
           })),
         }));
+        const proc = get().processes.find((p) => p.id === processId);
+        if (proc?.serverBacked && proc.displayCode) {
+          void saveIssueCorrectionOnApi(proc.displayCode, issueKey, correction).catch((err: unknown) => {
+            console.warn('[issues] correction save failed', err);
+          });
+        }
       },
 
       clearIssueCorrection: (processId, issueKey) => {
@@ -735,6 +775,12 @@ export const useAppStore = create<AppStore>()(
             return { ...process, corrections, updatedAt: now };
           }),
         }));
+        const proc = get().processes.find((p) => p.id === processId);
+        if (proc?.serverBacked && proc.displayCode) {
+          void clearIssueCorrectionOnApi(proc.displayCode, issueKey).catch((err: unknown) => {
+            console.warn('[issues] correction clear failed', err);
+          });
+        }
       },
 
       setIssueAcknowledgment: (processId, issueKey, status) => {
@@ -750,6 +796,12 @@ export const useAppStore = create<AppStore>()(
             updatedAt: now,
           })),
         }));
+        const proc = get().processes.find((p) => p.id === processId);
+        if (proc?.serverBacked && proc.displayCode) {
+          void saveIssueAcknowledgmentOnApi(proc.displayCode, issueKey, { status }).catch((err: unknown) => {
+            console.warn('[issues] acknowledgment save failed', err);
+          });
+        }
       },
 
       clearIssueAcknowledgment: (processId, issueKey) => {

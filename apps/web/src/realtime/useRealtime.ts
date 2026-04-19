@@ -149,6 +149,27 @@ function handleEnvelope(
       toast(`${actor} uploaded ${payload.name}`, { icon: '📎' });
       return;
     }
+    case 'issue.comment.added': {
+      if (isSelf) return;
+      const actor = envelope.actor?.displayName ?? 'Someone';
+      const payload = envelope.payload as { issueKey: string };
+      toast(`${actor} commented on ${payload.issueKey}`, { icon: '💬' });
+      return;
+    }
+    case 'issue.correction.saved': {
+      if (isSelf) return;
+      const actor = envelope.actor?.displayName ?? 'Someone';
+      const payload = envelope.payload as { issueKey: string };
+      toast(`${actor} saved a correction for ${payload.issueKey}`, { icon: '✏️' });
+      return;
+    }
+    case 'issue.acknowledgment.saved': {
+      if (isSelf) return;
+      const actor = envelope.actor?.displayName ?? 'Someone';
+      const payload = envelope.payload as { issueKey: string; status: string };
+      toast(`${actor} acknowledged ${payload.issueKey} (${payload.status})`, { icon: '✅' });
+      return;
+    }
     default:
       // Unhandled events are fine — they're broadcast for future features.
       return;
