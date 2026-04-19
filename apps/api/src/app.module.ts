@@ -36,6 +36,8 @@ import { SignedLinkTokenService } from './signed-links/signed-link-token.service
 import { SignedLinkService } from './signed-links/signed-link.service';
 import { PublicResponseService } from './signed-links/public-response.service';
 import { PublicResponseController } from './signed-links/public-response.controller';
+import { NotificationsController } from './notifications/notifications.controller';
+import { NotificationsService } from './notifications/notifications.service';
 
 @Module({
   imports: [
@@ -62,6 +64,7 @@ import { PublicResponseController } from './signed-links/public-response.control
     JobsController,
     ExportsController,
     PublicResponseController,
+    NotificationsController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
@@ -86,6 +89,7 @@ import { PublicResponseController } from './signed-links/public-response.control
     SignedLinkTokenService,
     SignedLinkService,
     PublicResponseService,
+    NotificationsService,
   ],
   exports: [
     PrismaService,
