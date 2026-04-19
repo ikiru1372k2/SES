@@ -1,5 +1,5 @@
 import { Navigate, useParams } from 'react-router-dom';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Users } from 'lucide-react';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
 import { MembersPanel } from '../components/workspace/MembersPanel';
@@ -29,8 +29,11 @@ export function Workspace() {
   const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
   const currentUser = useCurrentUser();
   const [membersOpen, setMembersOpen] = useState(false);
-  const [hydrating, setHydrating] = useState<boolean>(!process);
-  const [hydrateAttempted, setHydrateAttempted] = useState(false);
+  const hydrateAttemptedRef = useRef(false);
+  const [hydrateFinished, setHydrateFinished] = useState(false);
+  // hydrating is true only while we're waiting for hydrateProcesses() to complete.
+  // Derived rather than stored so we never need setState in an effect's sync path.
+  const hydrating = !process && !hydrateFinished;
 
   // If the user hard-refreshed /workspace/<id> in a tab that has no cached
   // process (incognito, different logged-in user, cleared storage) the store
@@ -38,14 +41,10 @@ export function Workspace() {
   // really doesn't exist — otherwise we redirect to Dashboard and the user
   // loses their deep link.
   useEffect(() => {
-    if (process) {
-      setHydrating(false);
-      return;
-    }
-    if (hydrateAttempted) return;
-    setHydrateAttempted(true);
-    void hydrateProcesses().finally(() => setHydrating(false));
-  }, [process, hydrateAttempted, hydrateProcesses]);
+    if (process || hydrateAttemptedRef.current) return;
+    hydrateAttemptedRef.current = true;
+    void hydrateProcesses().finally(() => setHydrateFinished(true));
+  }, [process, hydrateProcesses]);
 
   // Subscribe to realtime updates for this process. The hook accepts either
   // a PRC-* display code or a UUID; the server resolves either. When the

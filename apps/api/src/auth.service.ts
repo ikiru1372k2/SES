@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, InternalServerErrorException, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import type { SessionUser } from '@ses/domain';
@@ -14,8 +14,24 @@ type TokenPayload = {
 };
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
+
+  onModuleInit(): void {
+    const secret = process.env.SES_AUTH_SECRET;
+    // Refuse startup if a secret IS provided but is too short (wrong in any env).
+    // No secret = dev fallback; non-production dev is allowed to omit it entirely.
+    if (secret !== undefined && secret.length < 32) {
+      throw new InternalServerErrorException(
+        'SES_AUTH_SECRET is set but shorter than 32 characters. Use a cryptographically random string.',
+      );
+    }
+    if (process.env.NODE_ENV === 'production' && (!secret || secret.length < 32)) {
+      throw new InternalServerErrorException(
+        'SES_AUTH_SECRET must be a cryptographically random string of at least 32 characters in production.',
+      );
+    }
+  }
 
   private secret(): string {
     const value = process.env.SES_AUTH_SECRET;
@@ -100,7 +116,8 @@ export class AuthService {
   }
 
   async devLogin(response: Response, identifier: string): Promise<SessionUser> {
-    if (process.env.NODE_ENV === 'production' && process.env.SES_ALLOW_DEV_LOGIN !== 'true') {
+    // Block in production always (defense-in-depth), and in any env unless explicitly enabled.
+    if (process.env.NODE_ENV === 'production' || process.env.SES_ALLOW_DEV_LOGIN !== 'true') {
       throw new ForbiddenException('Dev login is disabled in this environment');
     }
     const user = await this.prisma.user.findFirst({

@@ -58,7 +58,7 @@ export interface PresenceSnapshotPayload {
   members: PresenceMember[];
 }
 
-export interface PresenceJoinedPayload extends PresenceMember {}
+export type PresenceJoinedPayload = PresenceMember;
 
 export interface PresenceLeftPayload {
   userCode: string;

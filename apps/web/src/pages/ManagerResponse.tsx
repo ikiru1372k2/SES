@@ -55,7 +55,7 @@ export function ManagerResponse() {
       return;
     }
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch(`/api/v1/public/respond/${encodeURIComponent(token)}`, {
           headers: { Accept: 'application/json' },

@@ -38,13 +38,14 @@ export class ActivityLogService {
         entityId: input.entityId ?? undefined,
         entityCode: input.entityCode ?? undefined,
         action: input.action,
+        // PRISMA-JSON: before/after/metadata are Json columns; `as never` + `as any` suppress JsonValue mismatch
         before: input.before as never,
         after: input.after as never,
         requestId: ctx.requestId,
         ipAddress: input.ipAddress ?? undefined,
         userAgent: input.userAgent ?? undefined,
         metadata: input.metadata as never,
-      } as any,
+      } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
     });
   }
 }

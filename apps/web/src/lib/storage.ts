@@ -28,7 +28,7 @@ export function clearBrowserWorkspace(): void {
   void clear().catch(() => {});
 }
 
-export function loadProcesses(): AuditProcess[] {
+function loadProcesses(): AuditProcess[] {
   try {
     const raw = localStorage.getItem(DATA_KEY);
     if (!raw) return [];
@@ -40,7 +40,7 @@ export function loadProcesses(): AuditProcess[] {
   }
 }
 
-export function saveProcesses(processes: AuditProcess[]): void {
+function saveProcesses(processes: AuditProcess[]): void {
   localStorage.setItem(DATA_KEY, JSON.stringify({ processes: stripRawDataFromProcesses(processes), version: 1 }));
 }
 
@@ -90,7 +90,7 @@ function sheetsFromRawData(file: WorkbookFile, rawData: Record<string, unknown[]
   }));
 }
 
-export async function hydrateWorkbookRawData(processes: AuditProcess[]): Promise<AuditProcess[]> {
+async function hydrateWorkbookRawData(processes: AuditProcess[]): Promise<AuditProcess[]> {
   return Promise.all(processes.map(async (process) => ({
     ...process,
     files: await Promise.all(process.files.map(async (file) => {

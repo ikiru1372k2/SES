@@ -53,6 +53,7 @@ async function main() {
         description: rule.description,
         defaultSeverity: rule.defaultSeverity,
         isEnabledDefault: rule.isEnabledDefault,
+        // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
         paramsSchema: rule.paramsSchema as any,
         version: rule.version,
       },
@@ -64,6 +65,7 @@ async function main() {
         description: rule.description,
         defaultSeverity: rule.defaultSeverity,
         isEnabledDefault: rule.isEnabledDefault,
+        // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
         paramsSchema: rule.paramsSchema as any,
         version: rule.version,
       },

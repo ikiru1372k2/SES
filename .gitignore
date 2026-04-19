@@ -3,16 +3,34 @@ dist/
 output/
 certs/
 data/
+coverage/
+*.tsbuildinfo
+
+# Logs
 *.log
+npm-debug.log*
+
+# Excel temp files (lock files created by Office while a file is open)
 ~$*.xlsx
+~$*.xlsm
+~$*.xls
+
+# Excel binaries — keep test fixtures
 *.xlsx
 *.xlsm
 *.xls
 !test/fixtures/**/*.xlsx
 !test/fixtures/**/*.xlsm
 !test/fixtures/**/*.xls
+
+# Environment — never commit secrets
 .env
 .env.*
 !.env.example
+
+# OS / editor
 .DS_Store
 Thumbs.db
+.idea/
+*.suo
+*.user

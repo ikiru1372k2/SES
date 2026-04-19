@@ -89,6 +89,7 @@ function serializeVersion(version: {
       flaggedRows: version.auditRun.flaggedRows,
       issues,
       sheets: ((version.auditRun.summary as { sheets?: AuditResult['sheets'] } | null)?.sheets ?? []),
+      // PRISMA-JSON: policySnapshot is stored as Json; double-cast recovers the domain type
       policySnapshot: version.auditRun.policySnapshot as unknown as AuditResult['policySnapshot'],
     },
   };
@@ -152,7 +153,7 @@ export class VersionsService {
           versionName: body.versionName.trim(),
           notes: body.notes?.trim() ?? '',
           createdById: user.id,
-        } as any,
+        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
         include: {
           auditRun: {
             include: {

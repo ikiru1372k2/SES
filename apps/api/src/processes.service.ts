@@ -86,9 +86,10 @@ export class ProcessesService {
           name: body.name.trim(),
           description: body.description?.trim() ?? '',
           nextAuditDue: fromDateOnly(body.nextAuditDue),
+          // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           auditPolicy: createDefaultAuditPolicy() as any,
           createdById: user.id,
-        } as any,
+        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
       await tx.processMember.create({
         data: {
@@ -158,7 +159,7 @@ export class ProcessesService {
           description: body.description?.trim() ?? current.description,
           ...(body.nextAuditDue === undefined ? {} : { nextAuditDue: fromDateOnly(body.nextAuditDue) ?? null }),
           rowVersion: { increment: 1 },
-        } as any,
+        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
       if (!updated.count) {
         const latest = await tx.process.findUniqueOrThrow({ where: { id: current.id } });
@@ -213,10 +214,11 @@ export class ProcessesService {
       const updated = await tx.process.updateMany({
         where: { id: current.id, rowVersion: expectedRowVersion },
         data: {
+          // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           auditPolicy: auditPolicy as any,
           policyVersion: { increment: 1 },
           rowVersion: { increment: 1 },
-        } as any,
+        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
       if (!updated.count) {
         const latest = await tx.process.findUniqueOrThrow({ where: { id: current.id } });

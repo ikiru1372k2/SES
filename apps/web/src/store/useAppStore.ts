@@ -348,7 +348,7 @@ export const useAppStore = create<AppStore>()(
         if (target?.serverBacked && file) {
           const ref = (file as { displayCode?: string }).displayCode ?? fileId;
           void deleteFileOnApi(ref).catch((err) => {
-            // eslint-disable-next-line no-console
+            // Recovery: local state is already updated; server file will reappear on next reload.
             console.warn('[files] server delete failed', err);
           });
         }
@@ -438,8 +438,7 @@ export const useAppStore = create<AppStore>()(
               }));
               return;
             } catch (err) {
-              // Fall through to the local engine so the user still sees issues.
-              // eslint-disable-next-line no-console
+              // Recovery: execution continues with the local in-browser audit engine.
               console.warn('[audit] server-side run failed, falling back to local engine', err);
             }
           }
@@ -527,7 +526,7 @@ export const useAppStore = create<AppStore>()(
         const proc = get().processes.find((p) => p.id === processId);
         if (proc?.serverBacked && proc.displayCode) {
           const managerKey = managerEmail.toLowerCase().trim();
-          (async () => {
+          void (async () => {
             try {
               const row = await upsertTrackingOnApi(proc.displayCode!, {
                 managerKey,
@@ -536,7 +535,7 @@ export const useAppStore = create<AppStore>()(
               });
               await addTrackingEventOnApi(row.displayCode, { channel, note });
             } catch (err) {
-              // eslint-disable-next-line no-console
+              // Recovery: local state already updated; event will be missing from server timeline.
               console.warn('[tracking] server event failed', err);
             }
           })();
@@ -586,7 +585,7 @@ export const useAppStore = create<AppStore>()(
             stage,
             resolved: stage === 'Resolved',
           }).catch((err) => {
-            // eslint-disable-next-line no-console
+            // Recovery: local store is already patched; re-sync on next page load.
             console.warn('[tracking] server upsert failed', err);
           });
         }

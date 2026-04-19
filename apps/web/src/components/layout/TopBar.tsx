@@ -18,7 +18,7 @@ async function signOutAndRedirect(navigate: ReturnType<typeof useNavigate>) {
   } catch {
     // Network errors shouldn't block the user from leaving.
   }
-  navigate('/login');
+  void navigate('/login');
 }
 
 export function TopBar({ process, accessory }: { process?: AuditProcess | undefined; accessory?: ReactNode }) {

@@ -54,7 +54,7 @@ export function Login() {
       const data = (await res.json()) as { user: { displayName: string; email: string } };
       applySessionUserForLocalWorkspace(data.user.email ?? identifier.trim());
       toast.success(`Signed in as ${data.user.displayName}`);
-      navigate('/');
+      void navigate('/');
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
