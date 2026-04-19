@@ -8,6 +8,13 @@ function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+// ISO date-only strings ("YYYY-MM-DD") are parsed as UTC midnight by the Date constructor,
+// which shifts the local date by the UTC offset. Parse explicitly as local to avoid the drift.
+function parseLocalDateStr(dateStr: string): Date {
+  const parts = dateStr.split('-').map(Number);
+  return new Date(parts[0]!, parts[1]! - 1, parts[2]!);
+}
+
 function toDateInputValue(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -15,7 +22,7 @@ function toDateInputValue(date: Date): string {
 }
 
 export function daysUntilDue(nextAuditDue: string, now = new Date()): number {
-  const due = startOfDay(new Date(nextAuditDue));
+  const due = parseLocalDateStr(nextAuditDue);
   const today = startOfDay(now);
   return Math.round((due.getTime() - today.getTime()) / DAY_MS);
 }
