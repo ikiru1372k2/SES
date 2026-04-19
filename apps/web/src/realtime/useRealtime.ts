@@ -149,6 +149,13 @@ function handleEnvelope(
       toast(`${actor} uploaded ${payload.name}`, { icon: '📎' });
       return;
     }
+    case 'notification.sent': {
+      if (isSelf) return;
+      const actor = envelope.actor?.displayName ?? 'Someone';
+      const payload = envelope.payload as { managerEmail: string; channel: string };
+      toast(`${actor} sent reminder to ${payload.managerEmail} (${payload.channel})`, { icon: '📧' });
+      return;
+    }
     case 'issue.comment.added': {
       if (isSelf) return;
       const actor = envelope.actor?.displayName ?? 'Someone';

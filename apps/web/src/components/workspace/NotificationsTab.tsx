@@ -8,11 +8,13 @@ import {
   openMailDraft,
   openTeamsMessage,
 } from '../../lib/notificationBuilder';
+import { recordSendOnApi } from '../../lib/api/notificationsApi';
 import type { AuditProcess, AuditResult, NotificationDraft, NotificationTemplate, NotificationTheme } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 import { BroadcastComposer } from './notifications/BroadcastComposer';
 import { PerManagerDrafts } from './notifications/PerManagerDrafts';
+import { SendLogPanel } from './SendLogPanel';
 
 const DEFAULT_BROADCAST_SUBJECT = 'QGC audit cycle summary';
 const DEFAULT_BROADCAST_BODY = [
@@ -86,6 +88,31 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
     recordTrackingEvent(process.id, draft.pmName, draft.recipientKey, draft.issueCount, channel, note);
   }
 
+  function worstSeverity(draft: NotificationDraft): 'High' | 'Medium' | 'Low' | undefined {
+    const severities = draft.projects.map((p) => p.severity);
+    if (severities.includes('High')) return 'High';
+    if (severities.includes('Medium')) return 'Medium';
+    if (severities.includes('Low')) return 'Low';
+    return undefined;
+  }
+
+  function recordSend(draft: NotificationDraft, channel: 'outlook' | 'teams' | 'eml') {
+    if (!process.serverBacked || !process.displayCode || !draft.email) return;
+    const bodyPreview = notificationPlainText(draft).slice(0, 500);
+    const severity = worstSeverity(draft);
+    void recordSendOnApi(process.displayCode, {
+      managerEmail: draft.email,
+      managerName: draft.pmName,
+      channel,
+      subject: draft.subject,
+      bodyPreview,
+      issueCount: draft.issueCount,
+      ...(severity !== undefined ? { severity } : {}),
+    }).catch((err: unknown) => {
+      console.warn('[notifications] record send failed', err);
+    });
+  }
+
   function copyDraft(draft: NotificationDraft) {
     void navigator.clipboard.writeText(notificationPlainText(draft));
     toast.success('Draft copied');
@@ -98,6 +125,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
     }
     openMailDraft([draft.email], draft.subject, notificationPlainText(draft));
     track(draft, 'outlook', 'Opened Outlook mail draft');
+    recordSend(draft, 'outlook');
   }
 
   function downloadDraft(draft: NotificationDraft) {
@@ -107,6 +135,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
     }
     downloadEml(draft);
     track(draft, 'eml', 'Downloaded .eml draft');
+    recordSend(draft, 'eml');
     toast.success('Draft downloaded and tracking updated');
   }
 
@@ -117,6 +146,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
     }
     openTeamsMessage(draft.email, notificationPlainText(draft));
     track(draft, 'teams', 'Opened Teams escalation');
+    recordSend(draft, 'teams');
   }
 
   function sendAll() {
@@ -128,7 +158,10 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
     }
     const body = visibleDrafts.map((draft) => notificationPlainText(draft)).join('\n\n---\n\n');
     openMailDraft(recipients, `${theme}: audit summary`, body);
-    visibleDrafts.filter((draft) => draft.email).forEach((draft) => track(draft, 'sendAll', 'Included in Send All'));
+    visibleDrafts.filter((draft) => draft.email).forEach((draft) => {
+      track(draft, 'sendAll', 'Included in Send All');
+      recordSend(draft, 'outlook');
+    });
     toast.success(`Draft opened for ${recipients.length} manager(s)`);
   }
 
@@ -173,7 +206,10 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
           onBodyChange={setBroadcastBody}
           onSend={(recipients, subject, body) => {
             openMailDraft(recipients, subject, body);
-            drafts.filter((draft) => draft.email).forEach((draft) => track(draft, 'sendAll', 'Included in Global broadcast'));
+            drafts.filter((draft) => draft.email).forEach((draft) => {
+              track(draft, 'sendAll', 'Included in Global broadcast');
+              recordSend(draft, 'outlook');
+            });
             toast.success(`Broadcast opened for ${recipients.length} manager(s)`);
           }}
         />
@@ -208,6 +244,9 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
           }}
         />
       )}
+      {process.serverBacked && process.displayCode ? (
+        <SendLogPanel processCode={process.displayCode} />
+      ) : null}
     </div>
   );
 }
