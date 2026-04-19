@@ -49,6 +49,7 @@ model User {
   webhooks       WebhookEndpoint[] @relation("WebhookCreatedBy")
   liveSessions   LiveSession[]
   signedLinks    SignedLink[]      @relation("SignedLinkCreator")
+  notificationLogs NotificationLog[]
 }
 
 model Process {
@@ -81,6 +82,7 @@ model Process {
   webhooks          WebhookEndpoint[]
   liveSessions      LiveSession[]
   signedLinks       SignedLink[]
+  notificationLogs  NotificationLog[]
 }
 
 model ProcessMember {
@@ -491,4 +493,26 @@ model SignedLink {
   @@index([processId])
   @@index([issueKey])
   @@index([expiresAt])
+}
+
+model NotificationLog {
+  id           String   @id @default(cuid())
+  displayCode  String   @unique
+  processId    String
+  actorUserId  String
+  managerEmail String
+  managerName  String?
+  channel      String
+  subject      String
+  bodyPreview  String
+  severity     String?
+  issueCount   Int      @default(0)
+  sentAt       DateTime @default(now())
+
+  process Process @relation(fields: [processId], references: [id], onDelete: Cascade)
+  actor   User    @relation(fields: [actorUserId], references: [id])
+
+  @@index([processId, sentAt])
+  @@index([managerEmail, sentAt])
+  @@map("notification_log")
 }

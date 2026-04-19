@@ -95,3 +95,11 @@ export interface ConflictPayload {
   expected: number;
   current: number;
 }
+
+export interface NotificationSentPayload {
+  managerEmail: string;
+  managerName: string | null;
+  channel: string;
+  subject: string;
+  issueCount: number;
+}
