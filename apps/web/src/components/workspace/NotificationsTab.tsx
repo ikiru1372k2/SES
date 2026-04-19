@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
   buildNotificationDrafts,
@@ -70,12 +70,17 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
     },
     [drafts, onlyUnreviewed, managerSearch],
   );
+  // Reset selected to 0 when any filter changes (render-time state adjustment,
+  // avoids the extra re-render cycle caused by an equivalent useEffect).
+  const filterKey = `${managerSearch}|${String(onlyUnreviewed)}|${theme}|${deadline}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setSelected(0);
+  }
+
   const active = visibleDrafts[selected] ?? visibleDrafts[0];
   const validRecipientCount = visibleDrafts.filter((draft) => draft.email).length;
-
-  useEffect(() => {
-    setSelected(0);
-  }, [managerSearch, onlyUnreviewed, theme, deadline]);
 
   function track(draft: NotificationDraft, channel: 'outlook' | 'eml' | 'teams' | 'sendAll', note: string) {
     recordTrackingEvent(process.id, draft.pmName, draft.recipientKey, draft.issueCount, channel, note);

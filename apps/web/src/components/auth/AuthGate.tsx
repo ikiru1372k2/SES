@@ -43,7 +43,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       try {
         const res = await fetch('/api/v1/auth/me', { credentials: 'include' });
         if (!res.ok) {

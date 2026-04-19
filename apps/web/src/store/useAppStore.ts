@@ -526,7 +526,7 @@ export const useAppStore = create<AppStore>()(
         const proc = get().processes.find((p) => p.id === processId);
         if (proc?.serverBacked && proc.displayCode) {
           const managerKey = managerEmail.toLowerCase().trim();
-          (async () => {
+          void (async () => {
             try {
               const row = await upsertTrackingOnApi(proc.displayCode!, {
                 managerKey,

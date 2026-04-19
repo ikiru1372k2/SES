@@ -40,7 +40,7 @@ export function useRealtime(processCode: string | null | undefined, currentUserC
   const [members, setMembers] = useState<PresenceMember[]>([]);
   const [connected, setConnected] = useState(false);
   const selfCodeRef = useRef<string | undefined>(currentUserCode);
-  selfCodeRef.current = currentUserCode;
+  useEffect(() => { selfCodeRef.current = currentUserCode; });
 
   useEffect(() => {
     if (!processCode) return;

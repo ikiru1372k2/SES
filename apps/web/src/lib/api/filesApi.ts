@@ -1,4 +1,3 @@
-const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
 export interface ApiFileSummary {
   id: string;
