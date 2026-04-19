@@ -26,7 +26,7 @@ const STATE_FIELDS = ['projectState', 'Project State', 'State'];
 const EFFORT_FIELDS = ['effort', 'Effort', 'Hours', 'Effort (H)', 'Effort H', 'Planned Effort'];
 const EMAIL_FIELDS = ['email', 'Email', 'Manager Email', 'Project Manager Email'];
 
-export function buildAuditRules(policy: AuditPolicy): AuditRule[] {
+function buildAuditRules(policy: AuditPolicy): AuditRule[] {
   const rules: AuditRule[] = [
     {
       id: 'HIGH_EFFORT',

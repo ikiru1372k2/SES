@@ -181,10 +181,10 @@ The following exported symbols have zero references outside their declaring file
 |--------|------|------|
 | `normalizeProjectNo` | `packages/domain/src/auditEngine.ts` | **[domain-public]** Exported but never called outside its file |
 | `validateWorkbookDescriptor` | `packages/domain/src/workbook.ts` | **[domain-public]** Exported but never called outside its file |
-| `buildAuditRules` | `apps/web/src/lib/auditEngine.ts` | Only used internally; not imported by any component |
-| `loadProcesses` | `apps/web/src/lib/storage.ts` | Only called within `storage.ts` itself as an internal helper |
-| `saveProcesses` | `apps/web/src/lib/storage.ts` | Only called within `storage.ts` itself as an internal helper |
-| `hydrateWorkbookRawData` | `apps/web/src/lib/storage.ts` | Only called within `storage.ts` itself as an internal helper |
+| `buildAuditRules` | `apps/web/src/lib/auditEngine.ts` | ~~`export` removed~~ — used only within `runAudit`; was never imported externally |
+| `loadProcesses` | `apps/web/src/lib/storage.ts` | ~~`export` removed~~ — internal fallback helper, not imported anywhere else |
+| `saveProcesses` | `apps/web/src/lib/storage.ts` | ~~`export` removed~~ — internal helper, not imported anywhere else |
+| `hydrateWorkbookRawData` | `apps/web/src/lib/storage.ts` | ~~`export` removed~~ — internal helper, not imported anywhere else |
 
 **Notable structural duplication (not dead, but fragile):** Eight files under `apps/web/src/lib/` are verbatim or near-verbatim copies of their counterparts in `packages/domain/src/`. The web bundle does not import from `@ses/domain` at all. This is a latent divergence risk and should be addressed in a future refactor session (not this cleanup).
 
