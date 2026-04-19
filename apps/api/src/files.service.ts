@@ -131,10 +131,11 @@ export class FilesService {
           contentSha256,
           mimeType: file.mimetype || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           storageKind: 'postgres',
+          // PRISMA-JSON: content is Bytes; parsedSheets is Json — both unavoidable until Prisma 6
           content: buffer as any,
           parsedSheets: workbook.sheets as any,
           uploadedById: user.id,
-        } as any,
+        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
 
       for (const sheet of workbook.sheets) {
@@ -148,10 +149,11 @@ export class FilesService {
             rowCount: sheet.rowCount,
             isSelected: sheet.isSelected,
             headerRowIx: sheet.headerRowIndex,
+            // PRISMA-JSON: rows/originalHeaders/normalizedHeaders are Json columns
             rows: (workbook.rawData[sheet.name] ?? []) as any,
             originalHeaders: (sheet.originalHeaders ?? undefined) as any,
             normalizedHeaders: (sheet.normalizedHeaders ?? undefined) as any,
-          } as any,
+          } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
         });
       }
 

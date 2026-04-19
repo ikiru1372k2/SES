@@ -226,13 +226,15 @@ export class AuditsService {
           requestId: requestContext.get().requestId,
           status: 'running',
           source: job ? 'job' : 'inline',
+          // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           policySnapshot: process.auditPolicy as any,
           rulesSnapshot: AUDIT_RULE_CATALOG.map((rule) => ({ ruleCode: rule.ruleCode, version: rule.version })),
           summary: {},
           ranById: user.id,
-        } as any,
+        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
 
+      // PRISMA-JSON: auditPolicy is stored as Json; cast satisfies domain runAudit signature
       const result = runAudit(domainFile, process.auditPolicy as any, {
         issueScope: process.displayCode,
         runCode,
@@ -272,7 +274,7 @@ export class AuditsService {
             recommendedAction: issue.recommendedAction,
             email: issue.email,
             rowIndex: issue.rowIndex,
-          } as any,
+          } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
         });
       }
 
@@ -282,9 +284,10 @@ export class AuditsService {
           status: 'completed',
           scannedRows: result.scannedRows,
           flaggedRows: result.flaggedRows,
+          // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           summary: summary as any,
           completedAt: new Date(result.runAt),
-        } as any,
+        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
         include: {
           issues: { include: { auditRun: true, rule: true }, orderBy: { displayCode: 'asc' } },
         },
@@ -373,9 +376,10 @@ export class AuditsService {
           requestId: requestContext.get().requestId,
           status: 'ready',
           sizeBytes: content.byteLength,
+          // PRISMA-JSON: content is Bytes in Prisma schema; Buffer satisfies at runtime but type is opaque
           content: content as any,
           contentType,
-        } as any,
+        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
     });
   }
@@ -414,6 +418,7 @@ export class AuditsService {
       flaggedRows: run.flaggedRows,
       issues,
       sheets: ((run.summary as { sheets?: AuditResult['sheets'] } | null)?.sheets ?? []),
+      // PRISMA-JSON: policySnapshot is stored as Json; double-cast recovers the domain type
       policySnapshot: run.policySnapshot as unknown as AuditResult['policySnapshot'],
     };
 

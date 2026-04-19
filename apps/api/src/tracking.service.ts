@@ -93,6 +93,7 @@ export class TrackingService {
               managerEmail: body.managerEmail ?? existing.managerEmail,
               stage: body.stage ?? existing.stage,
               resolved: body.resolved ?? existing.resolved,
+              // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
               projectStatuses: (body.projectStatuses as any) ?? existing.projectStatuses,
               rowVersion: { increment: 1 },
             },
@@ -108,6 +109,7 @@ export class TrackingService {
               managerEmail: body.managerEmail ?? '',
               stage: body.stage ?? 'Not contacted',
               resolved: body.resolved ?? false,
+              // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
               projectStatuses: (body.projectStatuses ?? {}) as any,
             },
             include: { events: { orderBy: { at: 'asc' } } },
@@ -156,6 +158,7 @@ export class TrackingService {
           managerEmail: body.managerEmail ?? prior.managerEmail,
           stage: body.stage ?? prior.stage,
           resolved: body.resolved ?? prior.resolved,
+          // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           projectStatuses: (body.projectStatuses as any) ?? prior.projectStatuses,
           rowVersion: { increment: 1 },
         },

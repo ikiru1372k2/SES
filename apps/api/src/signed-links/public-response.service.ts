@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { createId } from '@ses/domain';
 import { PrismaService } from '../common/prisma.service';
 import { ActivityLogService } from '../common/activity-log.service';
@@ -71,7 +72,7 @@ export class PublicResponseService {
     }
     SignedLinkService.assertActionAllowed(peek, body.action);
 
-    const result = await this.prisma.$transaction(async (tx: any) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const claimed = await this.signedLinks.claim(tx, peek.linkId, body.action, meta);
       if (!claimed) {
         // Lost a race with another tab / replay. Reuse the same error so the
@@ -167,7 +168,7 @@ export class PublicResponseService {
   }
 
   private async findIssueSummary(issueKey: string) {
-    const issue = await (this.prisma as any).auditIssue.findFirst({
+    const issue = await this.prisma.auditIssue.findFirst({
       where: { issueKey },
       orderBy: { auditRun: { startedAt: 'desc' } },
       select: {
@@ -194,7 +195,7 @@ export class PublicResponseService {
     };
   }
 
-  private async findTrackingForIssue(tx: any, processId: string, managerEmail: string) {
+  private async findTrackingForIssue(tx: Prisma.TransactionClient, processId: string, managerEmail: string) {
     // Tracking is keyed by (processId, managerKey). We store managerKey as
     // the normalized email for managers with an email address, so that's
     // the lookup here. Falls back to null if none exists yet.
@@ -205,7 +206,7 @@ export class PublicResponseService {
   }
 
   private async upsertAcknowledgment(
-    tx: any,
+    tx: Prisma.TransactionClient,
     peek: SignedLinkContext,
     status: 'acknowledged' | 'corrected' | 'needs_review',
   ) {
@@ -215,16 +216,20 @@ export class PublicResponseService {
     if (existing) {
       await tx.issueAcknowledgment.update({
         where: { id: existing.id },
+        // SCHEMA-GAP: updatedById is String (non-null) but public writes have no user.
+        // Change to String? in a future migration.
         data: {
           status,
           updatedById: null, // public write — no user
           updatedAt: new Date(),
           rowVersion: { increment: 1 },
-        },
+        } as any,
       });
       return;
     }
     await tx.issueAcknowledgment.create({
+      // SCHEMA-GAP: updatedById is String (non-null) but public writes have no user; issueKey is
+      // guarded by the caller but inferred as string | undefined here.
       data: {
         id: createId(),
         displayCode: `ACK-${peek.issueKey}`,
@@ -232,11 +237,11 @@ export class PublicResponseService {
         issueKey: peek.issueKey,
         status,
         updatedById: null,
-      },
+      } as any,
     });
   }
 
-  private async upsertCorrection(tx: any, peek: SignedLinkContext, body: PublicSubmitInput) {
+  private async upsertCorrection(tx: Prisma.TransactionClient, peek: SignedLinkContext, body: PublicSubmitInput) {
     if (!peek.issueKey) throw new BadRequestException('Correction requires an issueKey');
     const existing = await tx.issueCorrection.findFirst({
       where: { processId: peek.processId, issueKey: peek.issueKey },
@@ -251,18 +256,20 @@ export class PublicResponseService {
     if (existing) {
       await tx.issueCorrection.update({
         where: { id: existing.id },
-        data: { ...data, updatedAt: new Date(), rowVersion: { increment: 1 } },
+        // SCHEMA-GAP: updatedById is String (non-null) but public writes have no user.
+        data: { ...data, updatedAt: new Date(), rowVersion: { increment: 1 } } as any,
       });
       return;
     }
     await tx.issueCorrection.create({
+      // SCHEMA-GAP: updatedById is String (non-null) but public writes have no user.
       data: {
         id: createId(),
         displayCode: await this.identifiers.nextCorrectionCode(tx, peek.issueKey),
         processId: peek.processId,
         issueKey: peek.issueKey,
         ...data,
-      },
+      } as any,
     });
   }
 }

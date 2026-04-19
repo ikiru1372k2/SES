@@ -1,4 +1,5 @@
 import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { createId } from '@ses/domain';
 import { PrismaService } from '../common/prisma.service';
 import { IdentifierService } from '../common/identifier.service';
@@ -65,7 +66,7 @@ export class SignedLinkService {
 
   async issue(input: IssueTokenInput & { createdByUserId?: string }): Promise<IssuedToken & { linkId: string; linkCode: string }> {
     // Resolve processId from the displayCode so the DB has a hard FK.
-    const process = await (this.prisma as any).process.findFirst({
+    const process = await this.prisma.process.findFirst({
       where: { displayCode: input.processCode },
       select: { id: true, displayCode: true },
     });
@@ -74,10 +75,10 @@ export class SignedLinkService {
     }
     const issued = this.tokens.issue(input);
     const linkId = createId();
-    const linkCode = await this.identifiers.nextSequence(this.prisma as any, 'LNK').then((n: number) =>
+    const linkCode = await this.identifiers.nextSequence(this.prisma, 'LNK').then((n) =>
       `LNK-${String(n).padStart(8, '0')}`,
     );
-    await (this.prisma as any).signedLink.create({
+    await this.prisma.signedLink.create({
       data: {
         id: linkId,
         displayCode: linkCode,
@@ -85,8 +86,9 @@ export class SignedLinkService {
         processId: process.id,
         issueKey: input.issueKey ?? null,
         managerEmail: input.managerEmail.toLowerCase().trim(),
-        tokenHash: issued.tokenHash,
-        allowedActions: input.allowedActions as unknown,
+        // Buffer satisfies Uint8Array<ArrayBuffer> at runtime; generic variance requires cast
+        tokenHash: issued.tokenHash as unknown as Uint8Array<ArrayBuffer>,
+        allowedActions: input.allowedActions,
         singleUse: true,
         expiresAt: issued.expiresAt,
         createdById: input.createdByUserId ?? null,
@@ -108,8 +110,9 @@ export class SignedLinkService {
       return { rejection: 'invalid_signature' };
     }
     const hash = this.tokens.hashFor(token);
-    const row = await (this.prisma as any).signedLink.findFirst({
-      where: { tokenHash: hash },
+    const row = await this.prisma.signedLink.findFirst({
+      // Buffer satisfies Uint8Array<ArrayBuffer> at runtime; generic variance requires cast
+      where: { tokenHash: hash as unknown as Uint8Array<ArrayBuffer> },
       include: { process: { select: { id: true, displayCode: true } } },
     });
     if (!row) return { rejection: 'unknown_jti' };
@@ -141,13 +144,12 @@ export class SignedLinkService {
    * race-lost error and surface GoneException to the HTTP caller.
    */
   async claim(
-    tx: unknown, // Prisma.TransactionClient — left as unknown because the Prisma stub in this env has no typed namespace
+    tx: Prisma.TransactionClient,
     linkId: string,
     action: 'acknowledge' | 'correct' | 'dispute',
     meta: { ip?: string; userAgent?: string },
   ): Promise<boolean> {
-    const ctx = tx as any;
-    const result = await ctx.signedLink.updateMany({
+    const result = await tx.signedLink.updateMany({
       where: {
         id: linkId,
         usedAt: null,
@@ -161,7 +163,7 @@ export class SignedLinkService {
     });
     const consumed = result.count === 1;
     if (consumed) {
-      await this.activity.append(tx as any, {
+      await this.activity.append(tx, {
         entityType: 'signed_link',
         entityId: linkId,
         action: `signed_link.${action}`,

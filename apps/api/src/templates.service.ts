@@ -76,6 +76,7 @@ export class TemplatesService {
           ownerId: user.id,
           name: body.name.trim(),
           theme: body.theme,
+          // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           template: body.template as any,
         },
       });
