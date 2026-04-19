@@ -1,0 +1,14 @@
+services:
+  migrate:
+    command:
+      - sh
+      - -lc
+      - >
+        npm exec --workspace @ses/api prisma migrate deploy --schema apps/api/prisma/schema.prisma
+        && npm run prisma:seed --workspace @ses/api
+
+  api:
+    environment:
+      SES_ALLOW_DEV_LOGIN: 'true'
+      SES_ALLOW_DEMO_DEV_LOGIN: 'true'
+

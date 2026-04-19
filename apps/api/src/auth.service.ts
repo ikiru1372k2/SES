@@ -115,9 +115,19 @@ export class AuthService implements OnModuleInit {
     });
   }
 
+  private devLoginEnabled(): boolean {
+    if (process.env.SES_ALLOW_DEV_LOGIN !== 'true') {
+      return false;
+    }
+    if (process.env.NODE_ENV !== 'production') {
+      return true;
+    }
+    return process.env.SES_ALLOW_DEMO_DEV_LOGIN === 'true';
+  }
+
   async devLogin(response: Response, identifier: string): Promise<SessionUser> {
-    // Block in production always (defense-in-depth), and in any env unless explicitly enabled.
-    if (process.env.NODE_ENV === 'production' || process.env.SES_ALLOW_DEV_LOGIN !== 'true') {
+    // Production keeps this off by default; demos must opt in explicitly.
+    if (!this.devLoginEnabled()) {
       throw new ForbiddenException('Dev login is disabled in this environment');
     }
     const user = await this.prisma.user.findFirst({

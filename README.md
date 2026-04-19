@@ -153,6 +153,49 @@ npm run dev:web
 
 Frontend runs on `http://localhost:3210` and proxies `/api` to port 3000.
 
+### Production-style Docker smoke test
+
+Build and boot the full stack locally:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build -d
+```
+
+This stack starts:
+- `web` on `http://localhost:3210`
+- `api` on the internal Docker network at `api:3211`
+- `postgres` on the internal Docker network at `postgres:5432`
+- `redis` on the internal Docker network at `redis:6379`
+
+Useful commands:
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml down
+```
+
+The compose file uses a dedicated bridge network named `ses-network`, runs Prisma migrations before the API starts, and only publishes the web port to the host. For EC2, set `SES_AUTH_SECRET` to a long random value and switch `SES_BASE_URL` / `SES_COOKIE_SECURE` to your HTTPS hostname.
+For the included production compose file, set `SES_AUTH_SECRET_DOCKER` so your local dev `.env` does not override it with the shorter development secret.
+
+### Demo Docker stack with dev login
+
+For demos, use the override file so the API seeds the demo users and allows `/api/v1/auth/dev-login`:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.demo.yml up --build -d
+```
+
+That enables one-click login for:
+- `admin@ses.local`
+- `auditor@ses.local`
+
+Use the matching shutdown command:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.demo.yml down
+```
+
 ---
 
 ## Environment variables
@@ -165,7 +208,7 @@ See [`.env.example`](.env.example) for the full list with comments. Key variable
 | `REDIS_URL` | Yes | redis://127.0.0.1:6380 | Redis for Socket.IO adapter |
 | `SES_AUTH_SECRET` | Yes in prod | — | Cookie signing secret (≥ 32 chars in production) |
 | `SES_CORS_ORIGINS` | No | localhost:3210 | Comma-separated allowed origins |
-| `SES_ALLOW_DEV_LOGIN` | No | — | Set to `true` in dev to enable password-free login |
+| `SES_ALLOW_DEV_LOGIN` | No | — | Set to `true` in dev, or pair with `SES_ALLOW_DEMO_DEV_LOGIN=true` for a production-mode demo stack |
 | `SES_COOKIE_SECURE` | No | false | Set to `true` behind HTTPS |
 
 ---

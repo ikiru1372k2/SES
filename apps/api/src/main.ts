@@ -32,6 +32,19 @@ function corsOrigins(): string[] {
   return ['http://127.0.0.1:3210', 'http://localhost:3210'];
 }
 
+function listenPort(): number {
+  const raw = process.env.PORT;
+  if (!raw) {
+    return 3211;
+  }
+  const port = Number.parseInt(raw, 10);
+  return Number.isFinite(port) && port > 0 ? port : 3211;
+}
+
+function listenHost(): string {
+  return process.env.HOST?.trim() || '127.0.0.1';
+}
+
 async function bootstrap() {
   assertProductionSecrets();
   const app = await NestFactory.create(AppModule, { cors: false });
@@ -59,7 +72,7 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  await app.listen(3211, '127.0.0.1');
+  await app.listen(listenPort(), listenHost());
 }
 
 void bootstrap();

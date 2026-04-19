@@ -1,0 +1,101 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ses-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ses
+      POSTGRES_PASSWORD: ses
+      POSTGRES_DB: ses
+    volumes:
+      - ses_pg_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ses -d ses']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - ses-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ses-redis-prod
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - ses_redis_data_prod:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - ses-network
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api-build
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://ses:ses@postgres:5432/ses
+      SES_AUTH_SECRET: ${SES_AUTH_SECRET_DOCKER:-change-me-change-me-change-me-change-me-123456}
+    command: ['npm', 'exec', '--workspace', '@ses/api', 'prisma', 'migrate', 'deploy', '--schema', 'apps/api/prisma/schema.prisma']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+    networks:
+      - ses-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api-runtime
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3211
+      DATABASE_URL: postgresql://ses:ses@postgres:5432/ses
+      REDIS_URL: redis://redis:6379
+      SES_AUTH_SECRET: ${SES_AUTH_SECRET_DOCKER:-change-me-change-me-change-me-change-me-123456}
+      SES_CORS_ORIGINS: ${SES_CORS_ORIGINS:-http://localhost:3210,http://127.0.0.1:3210}
+      SES_BASE_URL: ${SES_BASE_URL:-http://localhost:3210}
+      SES_COOKIE_SECURE: ${SES_COOKIE_SECURE:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    expose:
+      - '3211'
+    networks:
+      - ses-network
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web-runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - '3210:3210'
+    networks:
+      - ses-network
+
+volumes:
+  ses_pg_data_prod:
+  ses_redis_data_prod:
+
+networks:
+  ses-network:
+    name: ses-network
+    driver: bridge

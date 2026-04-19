@@ -10,7 +10,7 @@ import { Button } from '../components/shared/Button';
  *
  * This exists so a developer (or a tester on a fresh install) can get an
  * authenticated cookie without running OIDC. It calls /api/v1/auth/dev-login
- * which the backend only honours when SES_ALLOW_DEV_LOGIN=true in .env.
+ * which the backend only honours when dev login is explicitly enabled.
  *
  * The page deliberately lists the two seeded users with one-click buttons so
  * you can open two browser profiles / incognito windows and be logged in as
@@ -119,7 +119,7 @@ export function Login() {
 
         <p className="mt-5 text-[11px] text-gray-400">
           Dev login requires <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">SES_ALLOW_DEV_LOGIN=true</code>{' '}
-          in your server <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">.env</code>.
+          on the server, or the Docker demo stack override.
         </p>
       </div>
     </div>

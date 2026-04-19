@@ -19,6 +19,7 @@ import { IssuesController } from './issues.controller';
 import { IssuesService } from './issues.service';
 import { JobsController } from './jobs.controller';
 import { JobsService } from './jobs.service';
+import { HealthController } from './health.controller';
 import { ProcessesController } from './processes.controller';
 import { ProcessActivityController } from './process-activity.controller';
 import { ProcessesService } from './processes.service';
@@ -51,6 +52,7 @@ import { NotificationsService } from './notifications/notifications.service';
     ]),
   ],
   controllers: [
+    HealthController,
     AuthController,
     RulesController,
     ProcessesController,
