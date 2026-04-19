@@ -1,7 +1,9 @@
+import { Link } from 'lucide-react';
 import { MoreVertical } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import toast from 'react-hot-toast';
+import { createSignedLink } from '../../lib/api/signedLinksApi';
 import { buildNotificationDrafts, isValidEmail, managerKey } from '../../lib/notificationBuilder';
 import { makeDefaultTrackingEntry, PIPELINE_COLUMNS, type PipelineKey, pipelineKey, trackingKey } from '../../lib/tracking';
 import type {
@@ -144,6 +146,7 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
                     entry={entry}
                     draft={draft}
                     processId={process.id}
+                    {...(process.serverBacked && process.displayCode ? { processCode: process.displayCode } : {})}
                     dragging={draggingKey === entry.key}
                     expanded={expandedKey === entry.key}
                     onDragStart={(event) => onDragStart(event, entry.key)}
@@ -173,6 +176,7 @@ function ManagerCard({
   entry,
   draft,
   processId,
+  processCode,
   dragging,
   expanded,
   onDragStart,
@@ -184,6 +188,7 @@ function ManagerCard({
   entry: TrackingEntry;
   draft: ReturnType<typeof buildNotificationDrafts>[number] | undefined;
   processId: string;
+  processCode?: string;
   dragging: boolean;
   expanded: boolean;
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
@@ -196,6 +201,33 @@ function ManagerCard({
   ) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [signedLinkUrl, setSignedLinkUrl] = useState<string | null>(null);
+
+  async function onSignedLink() {
+    if (!processCode || !entry.managerEmail) return;
+    try {
+      const result = await createSignedLink(processCode, {
+        managerEmail: entry.managerEmail,
+        managerName: entry.managerName,
+        flaggedProjectCount: entry.flaggedProjectCount,
+        expiresInDays: 7,
+      });
+      setSignedLinkUrl(result.url);
+      try {
+        await navigator.clipboard.writeText(result.url);
+        const exp = new Date(result.expiresAt).toLocaleDateString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+        });
+        toast.success(`Signed link copied — valid until ${exp}`);
+      } catch {
+        toast(`Signed link created — copy URL below`, { icon: '🔗' });
+      }
+    } catch (err: unknown) {
+      toast.error((err as Error).message ?? 'Failed to create signed link');
+    }
+  }
 
   return (
     <div
@@ -211,17 +243,30 @@ function ManagerCard({
           <div className="truncate font-medium">{entry.managerName}</div>
           <div className="truncate text-xs text-gray-500">{draft?.email ?? 'No email'}</div>
         </div>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setMenuOpen((value) => !value);
-          }}
-          className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-          aria-label="Move menu"
-        >
-          <MoreVertical size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          {processCode ? (
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); void onSignedLink(); }}
+              className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+              title="Signed link"
+              aria-label="Copy signed link"
+            >
+              <Link size={14} />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen((value) => !value);
+            }}
+            className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+            aria-label="Move menu"
+          >
+            <MoreVertical size={14} />
+          </button>
+        </div>
         {menuOpen ? (
           <div className="absolute right-2 top-8 z-10 w-40 rounded-lg border border-gray-200 bg-white p-1 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-800">
             <button type="button" onClick={() => { onMove('notContacted'); setMenuOpen(false); }} className="block w-full rounded px-2 py-1.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700">
@@ -244,6 +289,24 @@ function ManagerCard({
       </div>
       {entry.lastContactAt ? (
         <div className="mt-1 text-xs text-gray-400">Last: {new Date(entry.lastContactAt).toLocaleDateString()}</div>
+      ) : null}
+      {signedLinkUrl ? (
+        <div className="mt-2 flex items-center gap-1 rounded bg-gray-50 p-1.5 dark:bg-gray-800">
+          <input
+            readOnly
+            value={signedLinkUrl}
+            className="min-w-0 flex-1 bg-transparent text-xs text-gray-700 dark:text-gray-300"
+            onFocus={(e) => e.target.select()}
+          />
+          <button
+            type="button"
+            onClick={() => setSignedLinkUrl(null)}
+            className="shrink-0 text-xs text-gray-400 hover:text-gray-600"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
       ) : null}
       <button
         type="button"

@@ -4,6 +4,7 @@ import { createId } from '@ses/domain';
 import { PrismaService } from '../common/prisma.service';
 import { IdentifierService } from '../common/identifier.service';
 import { ActivityLogService } from '../common/activity-log.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import {
   SignedLinkPayload,
   SignedLinkTokenService,
@@ -62,6 +63,7 @@ export class SignedLinkService {
     private readonly tokens: SignedLinkTokenService,
     private readonly identifiers: IdentifierService,
     private readonly activity: ActivityLogService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async issue(input: IssueTokenInput & { createdByUserId?: string }): Promise<IssuedToken & { linkId: string; linkCode: string }> {
@@ -93,6 +95,11 @@ export class SignedLinkService {
         expiresAt: issued.expiresAt,
         createdById: input.createdByUserId ?? null,
       },
+    });
+    this.realtime.emitToProcess(input.processCode, 'signed_link.created', {
+      linkCode,
+      managerEmail: input.managerEmail.toLowerCase().trim(),
+      expiresAt: issued.expiresAt.toISOString(),
     });
     return { ...issued, linkId, linkCode };
   }

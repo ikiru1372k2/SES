@@ -110,6 +110,11 @@ export class IdentifierService {
     return `JOB-${pad(value, 8)}`;
   }
 
+  async nextNotificationLogCode(tx: TxLike, processCode: string): Promise<string> {
+    const value = await this.nextSequence(tx, 'NTL', processCode);
+    return `NTL-${processCode}-${pad(value, 4)}`;
+  }
+
   async nextUserPreferenceId(tx: TxLike): Promise<string> {
     return ulid();
   }

@@ -90,6 +90,8 @@ type AppStore = {
   deleteTemplate: (processId: string, name: string) => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
   resetWorkspaceAfterUserSwitch: () => void;
+  reconcileProcessesFromServer: (remote: AuditProcess[]) => void;
+  evictProcess: (id: string) => void;
 };
 
 const browserStorage: PersistStorage<AppStore> = {
@@ -898,6 +900,56 @@ export const useAppStore = create<AppStore>()(
           isAuditRunning: false,
           auditProgressText: '',
           uploads: {},
+        });
+      },
+
+      evictProcess: (processId) => {
+        set((state) => {
+          const processes = state.processes.filter((p) => p.id !== processId);
+          const activeProcessId = state.activeProcessId === processId ? (processes[0]?.id ?? null) : state.activeProcessId;
+          rememberActiveProcess(activeProcessId);
+          void saveProcessesToLocalDb(processes);
+          return { processes, activeProcessId, ...(state.activeProcessId === processId ? { currentAuditResult: null } : {}) };
+        });
+      },
+
+      reconcileProcessesFromServer: (remote) => {
+        set((state) => {
+          const remoteById = new Map(remote.map((p) => [p.id, p]));
+          // Merge: keep local files/versions for known processes; drop server-backed ones absent from remote.
+          const merged = state.processes
+            .filter((local) => !local.serverBacked || remoteById.has(local.id))
+            .map((local) => {
+              const fromServer = remoteById.get(local.id);
+              if (!fromServer) return local;
+              return {
+                ...fromServer,
+                files: local.files,
+                activeFileId: local.activeFileId,
+                versions: local.versions,
+                ...(local.latestAuditResult !== undefined ? { latestAuditResult: local.latestAuditResult } : {}),
+                notificationTracking: local.notificationTracking,
+                comments: local.comments,
+                corrections: local.corrections,
+                acknowledgments: local.acknowledgments,
+                savedTemplates: local.savedTemplates,
+              } satisfies AuditProcess;
+            });
+          // Append server-backed processes not yet in local store.
+          for (const p of remote) {
+            if (!merged.some((m) => m.id === p.id)) {
+              merged.push(p);
+            }
+          }
+          const activeStillPresent = merged.some((p) => p.id === state.activeProcessId);
+          const nextActive = activeStillPresent ? state.activeProcessId : (merged[0]?.id ?? null);
+          if (nextActive !== state.activeProcessId) rememberActiveProcess(nextActive);
+          void saveProcessesToLocalDb(merged);
+          return {
+            processes: merged,
+            activeProcessId: nextActive,
+            ...(activeStillPresent ? {} : { currentAuditResult: null }),
+          };
         });
       },
     }),

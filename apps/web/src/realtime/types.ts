@@ -23,8 +23,11 @@ export type RealtimeEventName =
   | 'tracking.updated'
   | 'tracking.event_added'
   | 'notification.sent'
+  | 'signed_link.created'
   | 'activity.appended'
-  | 'conflict.row_version';
+  | 'conflict.row_version'
+  | 'process.member_removed'
+  | 'process.deleted';
 
 export interface RealtimeActor {
   id: string;
