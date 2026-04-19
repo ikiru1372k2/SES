@@ -26,7 +26,9 @@ export type RealtimeEventName =
   | 'notification.sent'
   | 'signed_link.created'
   | 'activity.appended'
-  | 'conflict.row_version';
+  | 'conflict.row_version'
+  | 'process.member_removed'
+  | 'process.deleted';
 
 export interface RealtimeEnvelope<T = unknown> {
   event: RealtimeEventName;
@@ -109,4 +111,15 @@ export interface NotificationSentPayload {
   channel: string;
   subject: string;
   issueCount: number;
+}
+
+export interface ProcessMemberRemovedPayload {
+  processCode: string;
+  processName: string;
+  removedUserCode: string;
+}
+
+export interface ProcessDeletedPayload {
+  processCode: string;
+  processName: string;
 }

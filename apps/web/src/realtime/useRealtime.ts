@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { getSocket, onRealtimeEvent } from './socket';
+import { useAppStore } from '../store/useAppStore';
 import type {
   PresenceJoinedPayload,
   PresenceLeftPayload,
@@ -20,6 +21,11 @@ interface UseRealtimeReturn {
   move: (patch: { tab?: string; focusCode?: string }) => void;
 }
 
+interface UseRealtimeOptions {
+  /** Called when the current user is removed from the process or the process is deleted. */
+  onEvicted?: (reason: 'removed' | 'deleted', processName: string) => void;
+}
+
 /**
  * Subscribe to a process's realtime room.
  *
@@ -36,11 +42,17 @@ interface UseRealtimeReturn {
  * (the PRC-* display code or UUID — the gateway accepts either) and use
  * the returned `members` for the PresenceBar.
  */
-export function useRealtime(processCode: string | null | undefined, currentUserCode?: string): UseRealtimeReturn {
+export function useRealtime(
+  processCode: string | null | undefined,
+  currentUserCode?: string,
+  options?: UseRealtimeOptions,
+): UseRealtimeReturn {
   const [members, setMembers] = useState<PresenceMember[]>([]);
   const [connected, setConnected] = useState(false);
   const selfCodeRef = useRef<string | undefined>(currentUserCode);
+  const onEvictedRef = useRef(options?.onEvicted);
   useEffect(() => { selfCodeRef.current = currentUserCode; });
+  useEffect(() => { onEvictedRef.current = options?.onEvicted; });
 
   useEffect(() => {
     if (!processCode) return;
@@ -58,7 +70,7 @@ export function useRealtime(processCode: string | null | undefined, currentUserC
 
     const off = onRealtimeEvent((envelope) => {
       if (envelope.processCode && envelope.processCode !== processCode) return;
-      handleEnvelope(envelope, selfCodeRef.current, setMembers, setConnected);
+      handleEnvelope(envelope, selfCodeRef.current, setMembers, setConnected, onEvictedRef);
     });
 
     // Heartbeat
@@ -97,6 +109,7 @@ function handleEnvelope(
   selfCode: string | undefined,
   setMembers: React.Dispatch<React.SetStateAction<PresenceMember[]>>,
   setConnected: React.Dispatch<React.SetStateAction<boolean>>,
+  onEvictedRef: { current: ((reason: 'removed' | 'deleted', processName: string) => void) | undefined },
 ) {
   const isSelf = envelope.actor?.code && envelope.actor.code === selfCode;
 
@@ -182,6 +195,25 @@ function handleEnvelope(
       const actor = envelope.actor?.displayName ?? 'Someone';
       const payload = envelope.payload as { issueKey: string; status: string };
       toast(`${actor} acknowledged ${payload.issueKey} (${payload.status})`, { icon: '✅' });
+      return;
+    }
+    case 'process.member_removed': {
+      const payload = envelope.payload as { processCode: string; processName: string; removedUserCode: string };
+      if (payload.removedUserCode !== selfCode) return;
+      const removedProc = useAppStore.getState().processes.find((p) => p.displayCode === payload.processCode);
+      if (removedProc) useAppStore.getState().evictProcess(removedProc.id);
+      toast(`You were removed from "${payload.processName}"`, { icon: '🚫', duration: 6000 });
+      onEvictedRef.current?.('removed', payload.processName);
+      return;
+    }
+    case 'process.deleted': {
+      const payload = envelope.payload as { processCode: string; processName: string };
+      const deletedProc = useAppStore.getState().processes.find((p) => p.displayCode === payload.processCode);
+      if (deletedProc) useAppStore.getState().evictProcess(deletedProc.id);
+      if (!isSelf) {
+        toast(`"${payload.processName}" was deleted`, { icon: '🗑️', duration: 6000 });
+      }
+      onEvictedRef.current?.('deleted', payload.processName);
       return;
     }
     default:

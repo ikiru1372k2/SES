@@ -6,6 +6,7 @@ import { PrismaService } from './common/prisma.service';
 import { IdentifierService } from './common/identifier.service';
 import { ActivityLogService } from './common/activity-log.service';
 import { ProcessAccessService } from './common/process-access.service';
+import { RealtimeGateway } from './realtime/realtime.gateway';
 import { requestContext } from './common/request-context';
 import { fromDateOnly, toDateOnly } from './common/http';
 
@@ -44,6 +45,7 @@ export class ProcessesService {
     private readonly identifiers: IdentifierService,
     private readonly activity: ActivityLogService,
     private readonly processAccess: ProcessAccessService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async list(user: SessionUser) {
@@ -120,7 +122,7 @@ export class ProcessesService {
 
   async delete(idOrCode: string, user: SessionUser) {
     const allowed = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'owner');
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const process = await tx.process.findFirst({
         where: { id: allowed.id },
       });
@@ -138,6 +140,11 @@ export class ProcessesService {
       await tx.process.delete({ where: { id: process.id } });
       return { ok: true };
     });
+    this.realtime.emitToProcess(allowed.displayCode, 'process.deleted', {
+      processCode: allowed.displayCode,
+      processName: allowed.name,
+    });
+    return result;
   }
 
   async update(
@@ -348,6 +355,7 @@ export class ProcessesService {
         processId: process.id,
         OR: [{ id: memberIdOrCode }, { displayCode: memberIdOrCode }],
       },
+      include: { user: { select: { displayCode: true } } },
     });
     if (!member) throw new NotFoundException(`Member ${memberIdOrCode} not found`);
     if (member.permission === 'owner') {
@@ -358,7 +366,7 @@ export class ProcessesService {
         throw new BadRequestException('Cannot remove the last owner');
       }
     }
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.processMember.delete({ where: { id: member.id } });
       await this.activity.append(tx, {
         actorId: user.id,
@@ -372,5 +380,11 @@ export class ProcessesService {
       });
       return { ok: true };
     });
+    this.realtime.emitToProcess(process.displayCode, 'process.member_removed', {
+      processCode: process.displayCode,
+      processName: process.name,
+      removedUserCode: member.user.displayCode,
+    });
+    return result;
   }
 }

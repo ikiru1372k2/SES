@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { applySessionUserForLocalWorkspace } from '../../lib/sessionWorkspace';
+import { fetchProcessesFromApi } from '../../lib/api/processesApi';
+import { useAppStore } from '../../store/useAppStore';
 
 /**
  * Guard a tree of routes behind the backend session, and expose the session
@@ -40,6 +42,17 @@ export function useCurrentUserOrThrow(): SessionUserInfo {
 export function AuthGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [session, setSession] = useState<SessionState>({ phase: 'checking' });
+  const reconcileProcessesFromServer = useAppStore((state) => state.reconcileProcessesFromServer);
+  const lastFocusRefreshAt = useRef(0);
+
+  async function refreshProcesses() {
+    try {
+      const remote = await fetchProcessesFromApi();
+      if (remote !== null) reconcileProcessesFromServer(remote);
+    } catch {
+      // Network issue — keep local state as-is.
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +67,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         if (!cancelled) {
           applySessionUserForLocalWorkspace(body.user.email);
           setSession({ phase: 'authed', user: body.user });
+          void refreshProcesses();
         }
       } catch {
         if (!cancelled) setSession({ phase: 'unauthed' });
@@ -62,7 +76,20 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (session.phase !== 'authed') return;
+    function onFocus() {
+      if (Date.now() - lastFocusRefreshAt.current < 30_000) return;
+      lastFocusRefreshAt.current = Date.now();
+      void refreshProcesses();
+    }
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.phase]);
 
   if (session.phase === 'checking') {
     return (

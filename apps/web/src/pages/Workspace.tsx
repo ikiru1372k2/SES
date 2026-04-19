@@ -1,4 +1,4 @@
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Users } from 'lucide-react';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
@@ -21,6 +21,7 @@ const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').t
 
 export function Workspace() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const processes = useAppStore((state) => state.processes);
   const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
   const tab = useAppStore((state) => state.activeWorkspaceTab);
@@ -51,7 +52,9 @@ export function Workspace() {
   // process is legacy-local (no backend record yet), presence.join returns
   // forbidden and we stay silent — no toast spam.
   const processRealtimeKey = process?.displayCode ?? process?.id ?? null;
-  const { members } = useRealtime(processRealtimeKey);
+  const { members } = useRealtime(processRealtimeKey, currentUser?.displayCode, {
+    onEvicted: () => navigate('/'),
+  });
 
   useEffect(() => {
     if (!hasUnsavedAudit) return;
