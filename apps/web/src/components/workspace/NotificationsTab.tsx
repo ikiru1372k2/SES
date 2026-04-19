@@ -9,6 +9,7 @@ import {
   openTeamsMessage,
 } from '../../lib/notificationBuilder';
 import { recordSendOnApi } from '../../lib/api/notificationsApi';
+import { createSignedLink } from '../../lib/api/signedLinksApi';
 import type { AuditProcess, AuditResult, NotificationDraft, NotificationTemplate, NotificationTheme } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
@@ -37,6 +38,7 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
   const [selected, setSelected] = useState(0);
   const [broadcastSubject, setBroadcastSubject] = useState(DEFAULT_BROADCAST_SUBJECT);
   const [broadcastBody, setBroadcastBody] = useState(DEFAULT_BROADCAST_BODY);
+  const [includeSignedLink, setIncludeSignedLink] = useState(false);
   const [template, setTemplate] = useState<NotificationTemplate>({
     greeting: 'Dear',
     deadlineLine: 'by',
@@ -118,12 +120,35 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
     toast.success('Draft copied');
   }
 
-  function openOutlook(draft: NotificationDraft) {
+  async function openOutlook(draft: NotificationDraft) {
     if (!draft.email) {
       toast.error('Add a project manager email in the workbook before opening Outlook');
       return;
     }
-    openMailDraft([draft.email], draft.subject, notificationPlainText(draft));
+    let body = notificationPlainText(draft);
+    if (includeSignedLink && process.serverBacked && process.displayCode) {
+      try {
+        const link = await createSignedLink(process.displayCode, {
+          managerEmail: draft.email,
+          managerName: draft.pmName,
+          expiresInDays: 7,
+        });
+        const amended = `${body}\n\nRespond here without signing in: ${link.url}`;
+        if (encodeURIComponent(amended).length > 1800) {
+          try {
+            await navigator.clipboard.writeText(link.url);
+            toast('URL too long for Outlook — signed link copied to clipboard instead', { icon: '🔗' });
+          } catch {
+            toast(`Signed link: ${link.url}`, { icon: '🔗', duration: 8000 });
+          }
+        } else {
+          body = amended;
+        }
+      } catch (err: unknown) {
+        console.warn('[signed-link] embed failed', err);
+      }
+    }
+    openMailDraft([draft.email], draft.subject, body);
     track(draft, 'outlook', 'Opened Outlook mail draft');
     recordSend(draft, 'outlook');
   }
@@ -197,6 +222,17 @@ export function NotificationsTab({ process, result }: { process: AuditProcess; r
           Per-manager drafts
         </button>
       </div>
+      {mode === 'perManager' && process.serverBacked && process.displayCode ? (
+        <label className="mb-3 flex shrink-0 items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+          <input
+            type="checkbox"
+            checked={includeSignedLink}
+            onChange={(e) => setIncludeSignedLink(e.target.checked)}
+            className="rounded"
+          />
+          Include self-service link in Outlook drafts
+        </label>
+      ) : null}
       {mode === 'broadcast' ? (
         <BroadcastComposer
           drafts={drafts}
