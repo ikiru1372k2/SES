@@ -24,6 +24,7 @@ export type RealtimeEventName =
   | 'tracking.updated'
   | 'tracking.event_added'
   | 'notification.sent'
+  | 'signed_link.created'
   | 'activity.appended'
   | 'conflict.row_version';
 
@@ -94,6 +95,12 @@ export interface ConflictPayload {
   entityCode: string;
   expected: number;
   current: number;
+}
+
+export interface SignedLinkCreatedPayload {
+  linkCode: string;
+  managerEmail: string;
+  expiresAt: string;
 }
 
 export interface NotificationSentPayload {

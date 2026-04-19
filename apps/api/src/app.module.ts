@@ -34,6 +34,7 @@ import { PresenceRegistry } from './realtime/presence.registry';
 import { RealtimeGateway } from './realtime/realtime.gateway';
 import { SignedLinkTokenService } from './signed-links/signed-link-token.service';
 import { SignedLinkService } from './signed-links/signed-link.service';
+import { SignedLinkController } from './signed-links/signed-link.controller';
 import { PublicResponseService } from './signed-links/public-response.service';
 import { PublicResponseController } from './signed-links/public-response.controller';
 import { NotificationsController } from './notifications/notifications.controller';
@@ -64,6 +65,7 @@ import { NotificationsService } from './notifications/notifications.service';
     JobsController,
     ExportsController,
     PublicResponseController,
+    SignedLinkController,
     NotificationsController,
   ],
   providers: [

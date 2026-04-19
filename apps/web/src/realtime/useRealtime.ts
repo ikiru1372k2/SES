@@ -156,6 +156,13 @@ function handleEnvelope(
       toast(`${actor} sent reminder to ${payload.managerEmail} (${payload.channel})`, { icon: '📧' });
       return;
     }
+    case 'signed_link.created': {
+      if (isSelf) return;
+      const actor = envelope.actor?.displayName ?? 'Someone';
+      const payload = envelope.payload as { managerEmail: string };
+      toast(`${actor} generated a signed link for ${payload.managerEmail}`, { icon: '🔗' });
+      return;
+    }
     case 'issue.comment.added': {
       if (isSelf) return;
       const actor = envelope.actor?.displayName ?? 'Someone';
