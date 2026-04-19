@@ -55,4 +55,27 @@ export class ProcessesController {
   ) {
     return this.processesService.updatePolicy(idOrCode, parseIfMatch(ifMatch), body, user);
   }
+
+  @Get(':idOrCode/members')
+  listMembers(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
+    return this.processesService.listMembers(idOrCode, user);
+  }
+
+  @Post(':idOrCode/members')
+  addMember(
+    @Param('idOrCode') idOrCode: string,
+    @Body() body: { email?: string; userCode?: string; permission?: 'viewer' | 'editor' | 'owner' },
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.processesService.addMember(idOrCode, body, user);
+  }
+
+  @Delete(':idOrCode/members/:memberIdOrCode')
+  removeMember(
+    @Param('idOrCode') idOrCode: string,
+    @Param('memberIdOrCode') memberIdOrCode: string,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.processesService.removeMember(idOrCode, memberIdOrCode, user);
+  }
 }

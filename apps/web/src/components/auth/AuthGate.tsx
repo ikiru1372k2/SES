@@ -1,23 +1,41 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { applySessionUserForLocalWorkspace } from '../../lib/sessionWorkspace';
 
 /**
- * Guard a tree of routes behind the backend session.
+ * Guard a tree of routes behind the backend session, and expose the session
+ * user via React context so downstream components don't all refetch /auth/me.
  *
- * We call /api/v1/auth/me on mount. If it 200s we have a cookie and render
- * the children. If it 401s we redirect to /login, remembering where the user
- * was trying to go so we can bounce them back after sign-in.
- *
- * When the signed-in user changes, `applySessionUserForLocalWorkspace` clears
- * browser-only process data so another account cannot see or delete the
- * previous user's local workspace (same profile / non-incognito).
+ * On mount: call /api/v1/auth/me. If 200 → authed, provide user. If 401 →
+ * redirect to /login with a 'from' state. When the signed-in user changes,
+ * clear browser-only workspace data so a second account can't inherit the
+ * first account's local cache.
  */
+
+export interface SessionUserInfo {
+  displayCode: string;
+  displayName: string;
+  email: string;
+  role: 'admin' | 'auditor' | 'viewer';
+}
 
 type SessionState =
   | { phase: 'checking' }
-  | { phase: 'authed'; user: { displayCode: string; displayName: string; email: string; role: string } }
+  | { phase: 'authed'; user: SessionUserInfo }
   | { phase: 'unauthed' };
+
+const CurrentUserContext = createContext<SessionUserInfo | null>(null);
+
+export function useCurrentUser(): SessionUserInfo | null {
+  return useContext(CurrentUserContext);
+}
+
+/** Non-null variant for code paths that are only mounted inside AuthGate. */
+export function useCurrentUserOrThrow(): SessionUserInfo {
+  const user = useContext(CurrentUserContext);
+  if (!user) throw new Error('useCurrentUserOrThrow called outside AuthGate');
+  return user;
+}
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -32,9 +50,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           if (!cancelled) setSession({ phase: 'unauthed' });
           return;
         }
-        const body = (await res.json()) as {
-          user: { displayCode: string; displayName: string; email: string; role: string };
-        };
+        const body = (await res.json()) as { user: SessionUserInfo };
         if (!cancelled) {
           applySessionUserForLocalWorkspace(body.user.email);
           setSession({ phase: 'authed', user: body.user });
@@ -58,5 +74,5 @@ export function AuthGate({ children }: { children: ReactNode }) {
   if (session.phase === 'unauthed') {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-  return <>{children}</>;
+  return <CurrentUserContext.Provider value={session.user}>{children}</CurrentUserContext.Provider>;
 }

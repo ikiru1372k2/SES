@@ -30,7 +30,7 @@ function colorFor(userCode: string): string {
 
 interface PresenceBarProps {
   members: PresenceMember[];
-  selfCode?: string;
+  selfCode: string | undefined;
   /** Cap shown avatars; overflow rendered as "+N". */
   max?: number;
 }
