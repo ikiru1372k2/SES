@@ -18,6 +18,8 @@ jobs:
           npm install --package-lock-only --ignore-scripts
           git diff --exit-code package-lock.json
       - run: npm ci
+      - name: Generate Prisma client
+        run: npm run prisma:generate --workspace @ses/api
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
