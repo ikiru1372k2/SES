@@ -51,10 +51,7 @@ export function useRealtime(processCode: string | null | undefined, currentUserC
     socket.emit('presence.join', { processCode }, (ack: { ok: boolean; reason?: string } | undefined) => {
       if (!active) return;
       if (!ack?.ok) {
-        // If access is denied we stay silent — user likely isn't a member yet,
-        // and a toast every mount would be noise. Dev log only.
-        // eslint-disable-next-line no-console
-        console.info(`[realtime] not joining ${processCode}: ${ack?.reason ?? 'unknown'}`);
+        // Access denied or unknown process — UI stays disconnected, no toast needed.
         setConnected(false);
       }
     });

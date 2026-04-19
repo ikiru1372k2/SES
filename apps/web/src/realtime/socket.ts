@@ -37,16 +37,14 @@ function ensureSocket(): Socket {
       try {
         listener(envelope);
       } catch (err) {
-        // A faulty listener shouldn't take down the whole event bus.
-        // eslint-disable-next-line no-console
+        // Recovery: remaining listeners still run; faulty listener is skipped.
         console.error('[realtime] listener threw', err);
       }
     }
   });
 
   socket.on('ses.error', (reason: { reason: string }) => {
-    // Surface is up to the caller; we log it here so it's visible in devtools.
-    // eslint-disable-next-line no-console
+    // Recovery: socket.io will auto-reconnect; this surfaces the reason in devtools.
     console.warn('[realtime] server error:', reason);
   });
 

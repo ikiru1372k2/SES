@@ -9,6 +9,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
+    // Recovery: error boundary renders a fallback UI and offers a data-reset button.
     console.error('Workbook Auditor crashed', error, info);
     recordDebugEvent({
       message: error.message,
