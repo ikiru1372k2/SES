@@ -16,6 +16,7 @@ interface Props {
 
 export function FilesSidebar({ process, functionId }: Props) {
   const uploadFile = useAppStore((state) => state.uploadFile);
+  const saveFileDraft = useAppStore((state) => state.saveFileDraft);
   const setActiveFile = useAppStore((state) => state.setActiveFile);
   const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
   const deleteFile = useAppStore((state) => state.deleteFile);
@@ -31,6 +32,11 @@ export function FilesSidebar({ process, functionId }: Props) {
       } catch (error) {
         toast.error(error instanceof Error ? error.message : `${file.name} is not a supported workbook`);
         continue;
+      }
+      if (process.serverBacked) {
+        await saveFileDraft(process.id, scopedFid, file).catch((error: unknown) => {
+          console.warn('[drafts] upload draft save failed', error);
+        });
       }
       void uploadFile(process.id, file, scopedFid)
         .then(() => toast.success(`${file.name} uploaded`))

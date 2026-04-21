@@ -3,11 +3,13 @@ import { persist, type PersistStorage, type StorageValue } from 'zustand/middlew
 import { DEFAULT_FUNCTION_ID, type FunctionId } from '@ses/domain';
 import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../lib/auditPolicy';
 import { runAuditAsync } from '../lib/auditRunner';
-import { deleteWorkbookRawData, putWorkbookRawData, renameWorkbookRawDataKey } from '../lib/blobStore';
+import { deleteWorkbookRawData, getWorkbookRawData, putWorkbookRawData, renameWorkbookRawDataKey } from '../lib/blobStore';
 import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
 import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
-import { uploadFileToApi, deleteFileOnApi } from '../lib/api/filesApi';
+import { uploadFileToApi, deleteFileOnApi, listFilesOnApi, type ApiFileSummary } from '../lib/api/filesApi';
+import { listFileVersionsOnApi } from '../lib/api/fileVersionsApi';
+import { deleteFileDraftOnApi, getFileDraftOnApi, promoteFileDraftOnApi, saveFileDraftOnApi } from '../lib/api/fileDraftsApi';
 import { fetchAuditIssues, runAuditOnApi, type ApiAuditRunIssue, type ApiAuditRunSummary } from '../lib/api/auditsApi';
 import { upsertTrackingOnApi, addTrackingEventOnApi } from '../lib/api/trackingApi';
 import {
@@ -24,6 +26,7 @@ import type {
   AuditPolicy,
   AuditProcess,
   AuditResult,
+  FileDraftMetadata,
   IssueAcknowledgment,
   IssueComment,
   IssueCorrection,
@@ -52,12 +55,17 @@ type AppStore = {
   isAuditRunning: boolean;
   auditProgressText: string;
   uploads: Record<string, UploadState>;
+  fileDrafts: Record<string, FileDraftMetadata>;
   hydrateProcesses: () => Promise<void>;
+  hydrateFunctionWorkspace: (processId: string, functionId: FunctionId) => Promise<void>;
   createProcess: (name: string, description: string) => Promise<AuditProcess>;
   updateProcess: (id: string, patch: Partial<AuditProcess>) => Promise<void>;
   deleteProcess: (id: string) => Promise<void>;
   setActiveProcess: (id: string) => void;
   uploadFile: (processId: string, file: File, functionId?: FunctionId) => Promise<void>;
+  saveFileDraft: (processId: string, functionId: FunctionId, file: File, opts?: { beacon?: boolean }) => Promise<void>;
+  discardFileDraft: (processId: string, functionId: FunctionId) => Promise<void>;
+  promoteFileDraft: (processId: string, functionId: FunctionId, note?: string) => Promise<void>;
   setActiveFile: (processId: string, fileId: string) => void;
   deleteFile: (processId: string, fileId: string) => void;
   toggleSheet: (processId: string, fileId: string, sheetName: string) => void;
@@ -173,6 +181,39 @@ function mapApiAuditToResult(
   };
 }
 
+async function mapApiFileToWorkbookFile(file: ApiFileSummary): Promise<WorkbookFile> {
+  const rawData = (await getWorkbookRawData(file.id)) ?? {};
+  return {
+    id: file.id,
+    displayCode: file.displayCode,
+    functionId: file.functionId,
+    rowVersion: file.rowVersion,
+    currentVersion: file.currentVersion ?? 1,
+    state: file.state ?? 'completed',
+    name: file.name,
+    uploadedAt: file.uploadedAt,
+    lastAuditedAt: file.lastAuditedAt,
+    isAudited: Boolean(file.lastAuditedAt),
+    serverBacked: true,
+    sizeBytes: file.sizeBytes,
+    mimeType: file.mimeType,
+    sheets: file.sheets.map((sheet) => ({
+      name: sheet.name,
+      status: sheet.status,
+      rowCount: sheet.rowCount,
+      isSelected: sheet.isSelected,
+      ...(sheet.headerRowIndex !== null ? { headerRowIndex: sheet.headerRowIndex } : {}),
+      ...(sheet.originalHeaders !== undefined ? { originalHeaders: sheet.originalHeaders } : {}),
+      ...(sheet.normalizedHeaders !== undefined ? { normalizedHeaders: sheet.normalizedHeaders } : {}),
+    })),
+    rawData,
+  };
+}
+
+function draftKey(processId: string, functionId: FunctionId): string {
+  return `${processId}:${functionId}`;
+}
+
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
@@ -183,14 +224,14 @@ export const useAppStore = create<AppStore>()(
       isAuditRunning: false,
       auditProgressText: '',
       uploads: {},
+      fileDrafts: {},
 
       hydrateProcesses: () => {
         return (async () => {
           try {
             const remote = await fetchProcessesFromApi();
             if (remote !== null) {
-              set({ processes: remote });
-              await saveProcessesToLocalDb(remote);
+              get().reconcileProcessesFromServer(remote);
               return;
             }
           } catch {
@@ -200,6 +241,34 @@ export const useAppStore = create<AppStore>()(
             if (processes.length) set({ processes });
           });
         })();
+      },
+
+      hydrateFunctionWorkspace: async (processId, functionId) => {
+        const process = get().processes.find((item) => item.id === processId || item.displayCode === processId);
+        if (!process) return;
+        const processRef = process.displayCode ?? process.id;
+        const [apiFiles, draft] = await Promise.all([
+          listFilesOnApi(processRef, functionId),
+          getFileDraftOnApi(processRef, functionId).catch(() => ({ hasDraft: false } satisfies FileDraftMetadata)),
+        ]);
+        const mapped = await Promise.all(apiFiles.map(async (file) => {
+          const base = await mapApiFileToWorkbookFile(file);
+          const versions = await listFileVersionsOnApi(file.displayCode ?? file.id).catch(() => []);
+          return { ...base, fileVersions: versions };
+        }));
+        set((state) => ({
+          fileDrafts: { ...state.fileDrafts, [draftKey(process.id, functionId)]: draft },
+          processes: patchProcess(state.processes, process.id, (current) => {
+            const otherFiles = current.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) !== functionId);
+            const activeStillPresent = mapped.some((file) => file.id === current.activeFileId);
+            return {
+              ...current,
+              files: [...otherFiles, ...mapped],
+              activeFileId: activeStillPresent ? current.activeFileId : (mapped[0]?.id ?? current.activeFileId),
+            };
+          }),
+        }));
+        await saveProcessesToLocalDb(get().processes);
       },
 
       createProcess: async (name, description) => {
@@ -318,6 +387,7 @@ export const useAppStore = create<AppStore>()(
             };
             set((state) => ({
               uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 100, status: 'complete' } },
+              fileDrafts: Object.fromEntries(Object.entries(state.fileDrafts).filter(([key]) => key !== draftKey(processId, fid))),
               processes: patchProcess(state.processes, processId, (process) => ({
                 ...process,
                 activeFileId: process.activeFileId ?? merged.id,
@@ -348,6 +418,37 @@ export const useAppStore = create<AppStore>()(
           set((state) => ({ uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 100, status: 'failed', error: error instanceof Error ? error.message : 'Upload failed' } } }));
           throw error;
         }
+      },
+
+      saveFileDraft: async (processId, functionId, file, opts) => {
+        const process = get().processes.find((item) => item.id === processId || item.displayCode === processId);
+        if (!process?.serverBacked) return;
+        const draft = await saveFileDraftOnApi(process.displayCode ?? process.id, functionId, file, file.name, opts);
+        if ('ok' in draft) return;
+        set((state) => ({ fileDrafts: { ...state.fileDrafts, [draftKey(process.id, functionId)]: draft } }));
+      },
+
+      discardFileDraft: async (processId, functionId) => {
+        const process = get().processes.find((item) => item.id === processId || item.displayCode === processId);
+        if (!process?.serverBacked) return;
+        await deleteFileDraftOnApi(process.displayCode ?? process.id, functionId);
+        set((state) => {
+          const next = { ...state.fileDrafts };
+          delete next[draftKey(process.id, functionId)];
+          return { fileDrafts: next };
+        });
+      },
+
+      promoteFileDraft: async (processId, functionId, note = '') => {
+        const process = get().processes.find((item) => item.id === processId || item.displayCode === processId);
+        if (!process?.serverBacked) return;
+        await promoteFileDraftOnApi(process.displayCode ?? process.id, functionId, note);
+        await get().hydrateFunctionWorkspace(process.id, functionId);
+        set((state) => {
+          const next = { ...state.fileDrafts };
+          delete next[draftKey(process.id, functionId)];
+          return { fileDrafts: next };
+        });
       },
 
       setActiveFile: (processId, fileId) => {
@@ -910,6 +1011,7 @@ export const useAppStore = create<AppStore>()(
           isAuditRunning: false,
           auditProgressText: '',
           uploads: {},
+          fileDrafts: {},
         });
       },
 

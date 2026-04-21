@@ -11,6 +11,7 @@ import { AuditResultsTab } from '../components/workspace/AuditResultsTab';
 import { NotificationsTab } from '../components/workspace/NotificationsTab';
 import { TrackingTab } from '../components/workspace/TrackingTab';
 import { VersionHistoryTab } from '../components/workspace/VersionHistoryTab';
+import { DraftRestoreBanner } from '../components/workspace/DraftRestoreBanner';
 import { AppShell } from '../components/layout/AppShell';
 import { PresenceBar } from '../components/shared/PresenceBar';
 import { useCurrentUser } from '../components/auth/AuthGate';
@@ -29,6 +30,10 @@ export function Workspace() {
   const navigate = useNavigate();
   const processes = useAppStore((state) => state.processes);
   const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
+  const hydrateFunctionWorkspace = useAppStore((state) => state.hydrateFunctionWorkspace);
+  const fileDrafts = useAppStore((state) => state.fileDrafts);
+  const promoteFileDraft = useAppStore((state) => state.promoteFileDraft);
+  const discardFileDraft = useAppStore((state) => state.discardFileDraft);
   const tab = useAppStore((state) => state.activeWorkspaceTab);
   const result = useAppStore((state) => state.currentAuditResult);
   const process = processes.find((item) => item.id === processId || item.displayCode === processId);
@@ -51,6 +56,11 @@ export function Workspace() {
     hydrateAttemptedRef.current = true;
     void hydrateProcesses().finally(() => setHydrateFinished(true));
   }, [process, hydrateProcesses]);
+
+  useEffect(() => {
+    if (!process) return;
+    void hydrateFunctionWorkspace(process.id, functionId);
+  }, [functionId, hydrateFunctionWorkspace, process]);
 
   // Subscribe to realtime updates for this process. The hook accepts either
   // a PRC-* display code or a UUID; the server resolves either. When the
@@ -83,6 +93,7 @@ export function Workspace() {
   const functionFiles = process.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId);
   const scopedProcess = { ...process, files: functionFiles };
   const activeFile = functionFiles.find((file) => file.id === process.activeFileId) ?? functionFiles[0] ?? undefined;
+  const draft = fileDrafts[`${process.id}:${functionId}`];
   const canManageMembers = currentUser?.role === 'admin'; // Owners are verified server-side too; admin is the quick client-side hint.
 
   const accessory = (
@@ -112,6 +123,14 @@ export function Workspace() {
 
   return (
     <AppShell process={process} sidebar={<FilesSidebar process={scopedProcess} functionId={functionId} />} topBarAccessory={accessory}>
+      <DraftRestoreBanner
+        draft={draft}
+        currentFile={activeFile}
+        processId={process.id}
+        functionId={functionId}
+        onRestore={promoteFileDraft}
+        onDiscard={discardFileDraft}
+      />
       <WorkspaceShell>
         {tab === 'preview' ? (
           <TabPanel>

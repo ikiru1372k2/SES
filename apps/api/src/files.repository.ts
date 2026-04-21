@@ -161,6 +161,10 @@ export class FilesRepository {
       });
     }
 
+    await tx.fileDraft.deleteMany({
+      where: { userId: input.uploadedById, processId: input.processId, functionId: input.functionId },
+    });
+
     return tx.workbookFile.findUniqueOrThrow({
       where: { id: created.id },
       include: { sheets: { orderBy: { sheetName: 'asc' } } },
