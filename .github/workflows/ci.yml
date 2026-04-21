@@ -38,6 +38,8 @@ jobs:
         run: npm run prisma:generate --workspace @ses/api
       - name: Apply database migrations
         run: npm run prisma:migrate:deploy --workspace @ses/api
+      - name: Build domain and seed database
+        run: npm run build --workspace @ses/domain && npm run prisma:seed --workspace @ses/api
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
