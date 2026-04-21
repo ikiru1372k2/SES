@@ -1,6 +1,7 @@
 import { Toaster } from 'react-hot-toast';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { DEFAULT_FUNCTION_ID } from '@ses/domain';
 import { AuthGate } from './components/auth/AuthGate';
 import { CompareProcesses } from './components/dashboard/CompareProcesses';
 import { Dashboard } from './pages/Dashboard';
@@ -10,7 +11,7 @@ import { ManagerResponse } from './pages/ManagerResponse';
 import { ProcessTiles } from './pages/ProcessTiles';
 import { VersionCompare } from './pages/VersionCompare';
 import { Workspace } from './pages/Workspace';
-import { DEFAULT_FUNCTION_ID } from '@ses/domain';
+import { isTilesDashboardEnabled } from './lib/processRoutes';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,30 +22,173 @@ const queryClient = new QueryClient({
   },
 });
 
-/** Preserve deep links made before the tile flow shipped. */
 function LegacyWorkspaceRedirect() {
-  const { id } = useParams<{ id: string }>();
-  if (!id) return <Navigate to="/" replace />;
-  return <Navigate to={`/processes/${encodeURIComponent(id)}/${DEFAULT_FUNCTION_ID}`} replace />;
+  const { processId } = useParams<{ processId: string }>();
+  if (!processId) return <Navigate to="/" replace />;
+  return <Navigate to={`/processes/${encodeURIComponent(processId)}/${DEFAULT_FUNCTION_ID}`} replace />;
 }
 
-/** Same — for /workspace/:id/compare. */
 function LegacyCompareRedirect() {
-  const { id } = useParams<{ id: string }>();
-  if (!id) return <Navigate to="/" replace />;
-  return <Navigate to={`/processes/${encodeURIComponent(id)}/${DEFAULT_FUNCTION_ID}/compare`} replace />;
+  const { processId } = useParams<{ processId: string }>();
+  if (!processId) return <Navigate to="/" replace />;
+  return <Navigate to={`/processes/${encodeURIComponent(processId)}/${DEFAULT_FUNCTION_ID}/compare`} replace />;
+}
+
+function WorkspaceShallowCompareRedirect() {
+  const { processId } = useParams<{ processId: string }>();
+  if (!processId) return <Navigate to="/" replace />;
+  return (
+    <Navigate to={`/workspace/${encodeURIComponent(processId)}/${DEFAULT_FUNCTION_ID}/compare`} replace />
+  );
+}
+
+function ProcessesDashboardRedirect() {
+  const { processId } = useParams<{ processId: string }>();
+  if (!processId) return <Navigate to="/" replace />;
+  return <Navigate to={`/workspace/${encodeURIComponent(processId)}`} replace />;
+}
+
+function ProcessesWorkspaceRedirect() {
+  const { processId, functionId } = useParams<{ processId: string; functionId: string }>();
+  if (!processId || !functionId) return <Navigate to="/" replace />;
+  return (
+    <Navigate
+      to={`/workspace/${encodeURIComponent(processId)}/${encodeURIComponent(functionId)}`}
+      replace
+    />
+  );
+}
+
+function ProcessesCompareRedirect() {
+  const { processId, functionId } = useParams<{ processId: string; functionId: string }>();
+  if (!processId || !functionId) return <Navigate to="/" replace />;
+  return (
+    <Navigate
+      to={`/workspace/${encodeURIComponent(processId)}/${encodeURIComponent(functionId)}/compare`}
+      replace
+    />
+  );
+}
+
+function TilesDashboardRoutes() {
+  return (
+    <>
+      <Route
+        path="/processes/:processId"
+        element={
+          <AuthGate>
+            <ProcessTiles />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/processes/:processId/:functionId"
+        element={
+          <AuthGate>
+            <Workspace />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/processes/:processId/:functionId/compare"
+        element={
+          <AuthGate>
+            <VersionCompare />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/workspace/:processId"
+        element={
+          <AuthGate>
+            <LegacyWorkspaceRedirect />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/workspace/:processId/compare"
+        element={
+          <AuthGate>
+            <LegacyCompareRedirect />
+          </AuthGate>
+        }
+      />
+    </>
+  );
+}
+
+function LegacyWorkspacePrimaryRoutes() {
+  return (
+    <>
+      <Route
+        path="/workspace/:processId"
+        element={
+          <AuthGate>
+            <ProcessTiles />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/workspace/:processId/:functionId"
+        element={
+          <AuthGate>
+            <Workspace />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/workspace/:processId/:functionId/compare"
+        element={
+          <AuthGate>
+            <VersionCompare />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/workspace/:processId/compare"
+        element={
+          <AuthGate>
+            <WorkspaceShallowCompareRedirect />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/processes/:processId"
+        element={
+          <AuthGate>
+            <ProcessesDashboardRedirect />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/processes/:processId/:functionId"
+        element={
+          <AuthGate>
+            <ProcessesWorkspaceRedirect />
+          </AuthGate>
+        }
+      />
+      <Route
+        path="/processes/:processId/:functionId/compare"
+        element={
+          <AuthGate>
+            <ProcessesCompareRedirect />
+          </AuthGate>
+        }
+      />
+    </>
+  );
 }
 
 export default function App() {
+  const tilesDashboard = isTilesDashboardEnabled();
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
-          {/* Public routes — no auth required. */}
           <Route path="/login" element={<Login />} />
           <Route path="/respond/:token" element={<ManagerResponse />} />
 
-          {/* Authenticated routes. */}
           <Route
             path="/"
             element={
@@ -54,50 +198,8 @@ export default function App() {
             }
           />
 
-          {/* Process tile dashboard — the new landing page after create. */}
-          <Route
-            path="/processes/:processId"
-            element={
-              <AuthGate>
-                <ProcessTiles />
-              </AuthGate>
-            }
-          />
-          {/* Function-scoped workspace (the single reusable Workspace surface). */}
-          <Route
-            path="/processes/:processId/:functionId"
-            element={
-              <AuthGate>
-                <Workspace />
-              </AuthGate>
-            }
-          />
-          <Route
-            path="/processes/:processId/:functionId/compare"
-            element={
-              <AuthGate>
-                <VersionCompare />
-              </AuthGate>
-            }
-          />
+          {tilesDashboard ? <TilesDashboardRoutes /> : <LegacyWorkspacePrimaryRoutes />}
 
-          {/* Legacy compatibility. Kept through one release. */}
-          <Route
-            path="/workspace/:id"
-            element={
-              <AuthGate>
-                <LegacyWorkspaceRedirect />
-              </AuthGate>
-            }
-          />
-          <Route
-            path="/workspace/:id/compare"
-            element={
-              <AuthGate>
-                <LegacyCompareRedirect />
-              </AuthGate>
-            }
-          />
           <Route
             path="/compare"
             element={

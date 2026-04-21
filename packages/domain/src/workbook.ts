@@ -3,7 +3,7 @@ import { auditIssueKey } from './auditEngine';
 import { createId } from './id';
 import type { AuditIssue, AuditResult, IssueCorrection, SheetInfo, WorkbookFile } from './types';
 
-export const MAX_WORKBOOK_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+export const MAX_WORKBOOK_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const HEADER_SCAN_LIMIT = 20;
 const DUPLICATE_NAME_RE = /summary|ref|lookup/i;
 const COLUMN_ALIASES: Record<string, string[]> = {

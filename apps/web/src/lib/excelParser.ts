@@ -1,9 +1,10 @@
 import type ExcelJS from 'exceljs';
+import { MAX_WORKBOOK_FILE_SIZE_BYTES } from '@ses/domain';
 import { auditIssueKey } from './auditEngine';
 import { createId } from './id';
 import type { AuditIssue, AuditResult, IssueCorrection, SheetInfo, WorkbookFile } from './types';
 
-export const MAX_WORKBOOK_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+export { MAX_WORKBOOK_FILE_SIZE_BYTES };
 const HEADER_SCAN_LIMIT = 20;
 const DUPLICATE_NAME_RE = /summary|ref|lookup/i;
 const COLUMN_ALIASES: Record<string, string[]> = {

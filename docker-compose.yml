@@ -1,3 +1,7 @@
+# Local dev Postgres + Redis. Workbook bytes are stored in Postgres (BYTEA), not S3.
+# Sizing: each concurrent upload holds the file in API memory until persisted — plan for
+# roughly (max concurrent uploads × max workbook size). Default API limit is 25 MiB per file;
+# leave headroom on Postgres `shared_buffers` / host RAM if many users upload at once.
 services:
   postgres:
     image: postgres:16-alpine
@@ -11,6 +15,7 @@ services:
       - '5432:5432'
     volumes:
       - ses_pg_data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/01-ses-init.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ses -d ses']
       interval: 5s

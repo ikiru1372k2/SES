@@ -2,12 +2,13 @@ import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nest
 import type { Response } from 'express';
 import type { SessionUser } from '@ses/domain';
 import { AuthGuard } from './auth.guard';
+import { FunctionAccessGuard } from './common/function-access.guard';
 import { CurrentUser } from './common/current-user';
 import { attachmentContentDisposition } from './common/http';
 import { FileVersionsService } from './file-versions.service';
 
 @Controller()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FunctionAccessGuard)
 export class FileVersionsController {
   constructor(private readonly fileVersions: FileVersionsService) {}
 

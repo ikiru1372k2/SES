@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
+import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, type FunctionId } from '@ses/domain';
 import { compareResults } from '../lib/auditEngine';
+import { workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 import { AppShell } from '../components/layout/AppShell';
 import { MetricCard } from '../components/shared/MetricCard';
@@ -9,8 +11,19 @@ import { EmptyState } from '../components/shared/EmptyState';
 type Bucket = 'newIssues' | 'resolvedIssues' | 'changedIssues' | 'unchangedIssues';
 
 export function VersionCompare() {
-  const { id } = useParams();
-  const process = useAppStore((state) => state.processes.find((item) => item.id === id));
+  const { processId: routeProcessId, id: legacyId, functionId: routeFunctionId } = useParams<{
+    processId?: string;
+    id?: string;
+    functionId?: string;
+  }>();
+  const resolvedProcessId = routeProcessId ?? legacyId;
+  const functionId: FunctionId =
+    routeFunctionId && isFunctionId(routeFunctionId) ? routeFunctionId : DEFAULT_FUNCTION_ID;
+  const process = useAppStore((state) =>
+    resolvedProcessId
+      ? state.processes.find((item) => item.id === resolvedProcessId || item.displayCode === resolvedProcessId)
+      : undefined,
+  );
   const [bucket, setBucket] = useState<Bucket>('newIssues');
   const [fromId, setFromId] = useState(process?.versions[1]?.versionId ?? process?.versions[0]?.versionId ?? '');
   const [toId, setToId] = useState(process?.versions[0]?.versionId ?? '');
@@ -20,7 +33,7 @@ export function VersionCompare() {
     return from && to ? compareResults(from.result, to.result) : null;
   }, [fromId, process?.versions, toId]);
 
-  if (!process) return <Navigate to="/" replace />;
+  if (!resolvedProcessId || !process) return <Navigate to="/" replace />;
   if (process.versions.length < 2) {
     return (
       <AppShell process={process}>
@@ -37,7 +50,9 @@ export function VersionCompare() {
       <div className="space-y-5 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <Link to={`/workspace/${process.id}`} className="text-sm text-brand hover:underline">Back to workspace</Link>
+            <Link to={workspacePath(process.id, functionId)} className="text-sm text-brand hover:underline">
+              Back to {getFunctionLabel(functionId)}
+            </Link>
             <h1 className="mt-2 text-xl font-semibold">Version Compare</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">

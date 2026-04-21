@@ -48,6 +48,7 @@ import { PublicResponseService } from './signed-links/public-response.service';
 import { PublicResponseController } from './signed-links/public-response.controller';
 import { NotificationsController } from './notifications/notifications.controller';
 import { NotificationsService } from './notifications/notifications.service';
+import { UploadValidationPipe } from './common/pipes/upload-validation.pipe';
 
 @Module({
   imports: [
@@ -110,6 +111,7 @@ import { NotificationsService } from './notifications/notifications.service';
     SignedLinkService,
     PublicResponseService,
     NotificationsService,
+    UploadValidationPipe,
   ],
   exports: [
     PrismaService,

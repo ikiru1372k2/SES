@@ -5,7 +5,7 @@ import { DEFAULT_FUNCTION_ID } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';
 import { ActivityLogService } from './common/activity-log.service';
 import { ProcessAccessService } from './common/process-access.service';
-import { assertWorkbookUpload } from './common/security/workbook-upload';
+import { requireMultipartBuffer } from './common/security/workbook-upload';
 import { requestContext } from './common/request-context';
 import { RealtimeGateway } from './realtime/realtime.gateway';
 import { FilesRepository, serializeWorkbookFile } from './files.repository';
@@ -22,7 +22,7 @@ export class FilesService {
 
   async getFileOrThrow(idOrCode: string, user: SessionUser) {
     const scope = this.processAccess.whereProcessReadableBy(user);
-    const file = await this.filesRepository.findFileWithSheets(idOrCode, scope ?? undefined);
+    const file = await this.filesRepository.findFileWithSheets(idOrCode, scope);
     if (!file) throw new NotFoundException(`File ${idOrCode} not found`);
     await this.processAccess.assertCanAccessProcess(user, file.processId);
     return file;
@@ -41,7 +41,7 @@ export class FilesService {
     options: { functionId: FunctionId; clientTempId?: string },
   ) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'editor');
-    const buffer = assertWorkbookUpload(file);
+    const buffer = requireMultipartBuffer(file);
 
     const uploaded = await this.prisma.$transaction(async (tx) => {
       let withSheets;
@@ -209,12 +209,32 @@ export class FilesService {
   async download(idOrCode: string, user: SessionUser, version?: number) {
     const scope = this.processAccess.whereProcessReadableBy(user);
     if (version !== undefined) {
-      const file = await this.filesRepository.getVersionDownload(idOrCode, version, scope ?? undefined);
+      const file = await this.filesRepository.getVersionDownload(idOrCode, version, scope);
       await this.processAccess.assertCanAccessProcess(user, file.file.processId);
+      await this.activity.append(this.prisma, {
+        actorId: user.id,
+        actorEmail: user.email,
+        processId: file.file.processId,
+        entityType: 'workbook_file',
+        entityId: file.file.id,
+        entityCode: file.file.displayCode,
+        action: 'file.version_downloaded',
+        after: { versionNumber: version },
+      });
       return file;
     }
-    const file = await this.filesRepository.getCurrentDownload(idOrCode, user, scope ?? undefined);
+    const file = await this.filesRepository.getCurrentDownload(idOrCode, user, scope);
     await this.processAccess.assertCanAccessProcess(user, file.file.processId);
+    await this.activity.append(this.prisma, {
+      actorId: user.id,
+      actorEmail: user.email,
+      processId: file.file.processId,
+      entityType: 'workbook_file',
+      entityId: file.file.id,
+      entityCode: file.file.displayCode,
+      action: 'file.downloaded',
+      after: { current: true },
+    });
     return file;
   }
 

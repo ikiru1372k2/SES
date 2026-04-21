@@ -110,7 +110,7 @@ export class VersionsService {
     };
     const scope = this.processAccess.whereProcessReadableBy(user);
     const version = await this.prisma.savedVersion.findFirst({
-      where: scope ? { AND: [match, { process: scope }] } : match,
+      where: { AND: [match, { process: scope }] },
       include: {
         auditRun: {
           include: {

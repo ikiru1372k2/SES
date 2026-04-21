@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, InternalServerErrorException, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, InternalServerErrorException, OnModuleInit, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import type { SessionUser } from '@ses/domain';
@@ -15,7 +15,7 @@ type TokenPayload = {
 
 @Injectable()
 export class AuthService implements OnModuleInit {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   onModuleInit(): void {
     const secret = process.env.SES_AUTH_SECRET;
