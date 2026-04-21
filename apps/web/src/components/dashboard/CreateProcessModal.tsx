@@ -20,7 +20,9 @@ export function CreateProcessModal({ onClose }: { onClose: () => void }) {
       const process = await createProcess(name, description);
       toast.success('Process created');
       onClose();
-      void navigate(`/workspace/${process.id}`);
+      // Tile dashboard is the landing page after create — user picks a
+      // function audit before entering a workspace (issue #62).
+      void navigate(`/processes/${process.id}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not create process');
     } finally {

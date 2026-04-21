@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ActivityLogService } from './common/activity-log.service';
+import { FunctionAccessGuard } from './common/function-access.guard';
 import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { PrismaService } from './common/prisma.service';
@@ -15,6 +16,8 @@ import { ExportsController } from './exports.controller';
 import { ExportsService } from './exports.service';
 import { FilesController } from './files.controller';
 import { FilesService } from './files.service';
+import { FunctionsController } from './functions.controller';
+import { FunctionsService } from './functions.service';
 import { IssuesController } from './issues.controller';
 import { IssuesService } from './issues.service';
 import { JobsController } from './jobs.controller';
@@ -55,6 +58,7 @@ import { NotificationsService } from './notifications/notifications.service';
     HealthController,
     AuthController,
     RulesController,
+    FunctionsController,
     ProcessesController,
     ProcessActivityController,
     FilesController,
@@ -78,6 +82,8 @@ import { NotificationsService } from './notifications/notifications.service';
     ActivityLogService,
     AuthService,
     AuthGuard,
+    FunctionsService,
+    FunctionAccessGuard,
     RulesService,
     ProcessesService,
     FilesService,
@@ -102,6 +108,8 @@ import { NotificationsService } from './notifications/notifications.service';
     ActivityLogService,
     AuthService,
     AuthGuard,
+    FunctionsService,
+    FunctionAccessGuard,
     RealtimeGateway,
     PresenceRegistry,
   ],

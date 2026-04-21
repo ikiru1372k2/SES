@@ -3,7 +3,7 @@ import type { SessionUser } from '@ses/domain';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from './common/current-user';
 import { parseIfMatch } from './common/http';
-import { CreateProcessDto, UpdateProcessDto } from './dto/processes.dto';
+import { CreateFunctionAuditRequestDto, CreateProcessDto, UpdateProcessDto } from './dto/processes.dto';
 import { ProcessesService } from './processes.service';
 
 @Controller('processes')
@@ -54,6 +54,20 @@ export class ProcessesController {
     @CurrentUser() user: SessionUser,
   ) {
     return this.processesService.updatePolicy(idOrCode, parseIfMatch(ifMatch), body, user);
+  }
+
+  @Get(':idOrCode/tiles')
+  tiles(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
+    return this.processesService.tiles(idOrCode, user);
+  }
+
+  @Post(':idOrCode/function-audit-requests')
+  requestFunctionAudit(
+    @Param('idOrCode') idOrCode: string,
+    @Body() body: CreateFunctionAuditRequestDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.processesService.createFunctionAuditRequest(idOrCode, body, user);
   }
 
   @Get(':idOrCode/members')

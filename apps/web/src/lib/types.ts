@@ -60,10 +60,14 @@ export interface AuditProcess {
 
 export interface WorkbookFile {
   id: string;
+  displayCode?: string;
+  /** Issue #62: tile scoping. Defaults to 'master-data' for legacy local files. */
+  functionId?: string;
   name: string;
   uploadedAt: string;
   lastAuditedAt: string | null;
   isAudited: boolean;
+  serverBacked?: boolean;
   sheets: SheetInfo[];
   rawData: Record<string, unknown[][]>;
 }

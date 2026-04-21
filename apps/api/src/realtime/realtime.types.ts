@@ -28,7 +28,8 @@ export type RealtimeEventName =
   | 'activity.appended'
   | 'conflict.row_version'
   | 'process.member_removed'
-  | 'process.deleted';
+  | 'process.deleted'
+  | 'function.audit_request_created';
 
 export interface RealtimeEnvelope<T = unknown> {
   event: RealtimeEventName;

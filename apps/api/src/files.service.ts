@@ -1,8 +1,8 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
-import type { SessionUser } from '@ses/domain';
-import { createId } from '@ses/domain';
+import type { FunctionId, SessionUser } from '@ses/domain';
+import { createId, DEFAULT_FUNCTION_ID } from '@ses/domain';
 import { parseWorkbookBuffer } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';
 import { ActivityLogService } from './common/activity-log.service';
@@ -40,6 +40,7 @@ function serializeFile(file: {
   id: string;
   displayCode: string;
   processId: string;
+  functionId?: string | null;
   rowVersion: number;
   name: string;
   sizeBytes: number;
@@ -63,6 +64,7 @@ function serializeFile(file: {
     id: file.id,
     displayCode: file.displayCode,
     processId: file.processId,
+    functionId: (file.functionId ?? DEFAULT_FUNCTION_ID) as FunctionId,
     rowVersion: file.rowVersion,
     name: file.name,
     sizeBytes: file.sizeBytes,
@@ -97,17 +99,22 @@ export class FilesService {
     return file;
   }
 
-  async list(processIdOrCode: string, user: SessionUser) {
+  async list(processIdOrCode: string, user: SessionUser, functionId?: FunctionId) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode);
     const files = await this.prisma.workbookFile.findMany({
-      where: { processId: process.id },
+      where: functionId ? { processId: process.id, functionId } : { processId: process.id },
       orderBy: { uploadedAt: 'desc' },
       include: { sheets: { orderBy: { sheetName: 'asc' } } },
     });
     return files.map(serializeFile);
   }
 
-  async upload(processIdOrCode: string, file: Express.Multer.File, user: SessionUser) {
+  async upload(
+    processIdOrCode: string,
+    file: Express.Multer.File,
+    user: SessionUser,
+    options: { functionId: FunctionId; clientTempId?: string },
+  ) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'editor');
     const buffer = assertWorkbookUpload(file);
     let workbook;
@@ -126,6 +133,7 @@ export class FilesService {
           id: createId(),
           displayCode: fileCode,
           processId: process.id,
+          functionId: options.functionId,
           name: workbook.name,
           sizeBytes: buffer.byteLength,
           contentSha256,
@@ -165,7 +173,12 @@ export class FilesService {
         entityId: created.id,
         entityCode: created.displayCode,
         action: 'file.uploaded',
-        after: { name: created.name, sizeBytes: created.sizeBytes, processCode: process.displayCode },
+        after: {
+          name: created.name,
+          sizeBytes: created.sizeBytes,
+          processCode: process.displayCode,
+          functionId: options.functionId,
+        },
       });
 
       const withSheets = await tx.workbookFile.findUniqueOrThrow({
@@ -179,11 +192,15 @@ export class FilesService {
     this.realtime.emitToProcess(process.displayCode, 'file.uploaded', {
       fileCode: uploaded.displayCode,
       fileId: uploaded.id,
+      functionId: uploaded.functionId,
       name: uploaded.name,
       sizeBytes: uploaded.sizeBytes,
     }, { actor: { id: user.id, code: user.displayCode, email: user.email, displayName: user.displayName } });
 
-    return uploaded;
+    // Include the client-provided temp id so the frontend can rekey its
+    // IndexedDB cache from the temp id to the server id — fixes the
+    // "files disappear after reload" hydration bug (issue #63 §Acceptance).
+    return { ...uploaded, clientTempId: options.clientTempId ?? null };
   }
 
   async get(idOrCode: string, user: SessionUser) {

@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
+import { DEFAULT_FUNCTION_ID, type FunctionId } from '@ses/domain';
 import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../lib/auditPolicy';
 import { runAuditAsync } from '../lib/auditRunner';
-import { deleteWorkbookRawData, putWorkbookRawData } from '../lib/blobStore';
+import { deleteWorkbookRawData, putWorkbookRawData, renameWorkbookRawDataKey } from '../lib/blobStore';
 import { parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
 import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
@@ -56,7 +57,7 @@ type AppStore = {
   updateProcess: (id: string, patch: Partial<AuditProcess>) => Promise<void>;
   deleteProcess: (id: string) => Promise<void>;
   setActiveProcess: (id: string) => void;
-  uploadFile: (processId: string, file: File) => Promise<void>;
+  uploadFile: (processId: string, file: File, functionId?: FunctionId) => Promise<void>;
   setActiveFile: (processId: string, fileId: string) => void;
   deleteFile: (processId: string, fileId: string) => void;
   toggleSheet: (processId: string, fileId: string, sheetName: string) => void;
@@ -278,20 +279,28 @@ export const useAppStore = create<AppStore>()(
         rememberActiveProcess(processId);
       },
 
-      uploadFile: async (processId, file) => {
+      uploadFile: async (processId, file, functionId) => {
+        const fid: FunctionId = functionId ?? DEFAULT_FUNCTION_ID;
         const uploadId = createId(`${processId}-${file.name}`);
         const target = get().processes.find((p) => p.id === processId);
         set((state) => ({ uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 20, status: 'uploading' } } }));
         try {
           if (target?.serverBacked && target.displayCode) {
-            // Server-backed: POST the bytes; backend parses + stores + emits
-            // file.uploaded over the realtime channel so other members see it.
-            const apiFile = await uploadFileToApi(target.displayCode, file);
-            // Still parse locally so Preview can render rows without a round
-            // trip to /files/:id/sheets/:sheet/preview. This is redundant work
-            // right now, but cheap and lets the UI keep its current rendering.
+            // Parse locally first so the client has a deterministic temp id
+            // for the IndexedDB cache — the server echoes `clientTempId` back
+            // so we can rekey the raw-data cache to the server id after upload.
             const parsed = await parseWorkbook(file);
             await putWorkbookRawData(parsed.id, parsed.rawData);
+            // Server-backed: POST the bytes; backend parses + stores + emits
+            // file.uploaded over the realtime channel so other members see it.
+            const apiFile = await uploadFileToApi(target.displayCode, fid, file, {
+              clientTempId: parsed.id,
+            });
+            // Rekey IDB cache from temp id to server id so reload hydration
+            // finds the parsed rawData (fix for #63 hydration bug).
+            if (apiFile.id !== parsed.id) {
+              await renameWorkbookRawDataKey(parsed.id, apiFile.id);
+            }
             // Merge server metadata (displayCode, sheet codes) onto local shape
             const mergedSheets = parsed.sheets.map((s) => {
               const api = apiFile.sheets.find((x) => x.name === s.name);
@@ -303,6 +312,7 @@ export const useAppStore = create<AppStore>()(
               ...parsed,
               id: apiFile.id,
               displayCode: apiFile.displayCode,
+              functionId: apiFile.functionId,
               sheets: mergedSheets,
               serverBacked: true,
             };
