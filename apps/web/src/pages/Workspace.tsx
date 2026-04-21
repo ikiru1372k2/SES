@@ -37,6 +37,7 @@ export function Workspace() {
   const tab = useAppStore((state) => state.activeWorkspaceTab);
   const result = useAppStore((state) => state.currentAuditResult);
   const process = processes.find((item) => item.id === processId || item.displayCode === processId);
+  const processRecordId = process?.id;
   const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
   const currentUser = useCurrentUser();
   const [membersOpen, setMembersOpen] = useState(false);
@@ -58,9 +59,9 @@ export function Workspace() {
   }, [process, hydrateProcesses]);
 
   useEffect(() => {
-    if (!process) return;
-    void hydrateFunctionWorkspace(process.id, functionId);
-  }, [functionId, hydrateFunctionWorkspace, process]);
+    if (!processRecordId) return;
+    void hydrateFunctionWorkspace(processRecordId, functionId);
+  }, [functionId, hydrateFunctionWorkspace, processRecordId]);
 
   // Subscribe to realtime updates for this process. The hook accepts either
   // a PRC-* display code or a UUID; the server resolves either. When the
