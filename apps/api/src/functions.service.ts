@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { FUNCTION_REGISTRY, type FunctionId } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';
 
@@ -20,7 +20,7 @@ import { PrismaService } from './common/prisma.service';
 export class FunctionsService implements OnModuleInit {
   private readonly logger = new Logger(FunctionsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async onModuleInit(): Promise<void> {
     await this.seed();

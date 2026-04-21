@@ -10,6 +10,7 @@ import { CurrentUser } from './common/current-user';
 import { FunctionAccessGuard } from './common/function-access.guard';
 import { attachmentContentDisposition, parseIfMatch } from './common/http';
 import { UpdateSheetSelectionDto } from './dto/processes.dto';
+import { UploadValidationPipe } from './common/pipes/upload-validation.pipe';
 import { FilesService } from './files.service';
 
 function requireFunctionId(raw: string): FunctionId {
@@ -18,7 +19,7 @@ function requireFunctionId(raw: string): FunctionId {
 }
 
 @Controller()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FunctionAccessGuard)
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
@@ -26,7 +27,6 @@ export class FilesController {
   // for the tile workspace; every read/write is scoped by (processId, functionId).
 
   @Get('processes/:idOrCode/functions/:functionId/files')
-  @UseGuards(FunctionAccessGuard)
   listScoped(
     @Param('idOrCode') idOrCode: string,
     @Param('functionId') functionId: string,
@@ -36,7 +36,6 @@ export class FilesController {
   }
 
   @Post('processes/:idOrCode/functions/:functionId/files')
-  @UseGuards(FunctionAccessGuard)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @UseInterceptors(
     FileInterceptor('file', {
@@ -47,7 +46,7 @@ export class FilesController {
   uploadScoped(
     @Param('idOrCode') idOrCode: string,
     @Param('functionId') functionId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(UploadValidationPipe) file: Express.Multer.File,
     @Body('clientTempId') clientTempId: string | undefined,
     @CurrentUser() user: SessionUser,
   ) {
@@ -80,7 +79,7 @@ export class FilesController {
   )
   upload(
     @Param('idOrCode') idOrCode: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(UploadValidationPipe) file: Express.Multer.File,
     @Body('functionId') functionId: string | undefined,
     @Body('clientTempId') clientTempId: string | undefined,
     @CurrentUser() user: SessionUser,

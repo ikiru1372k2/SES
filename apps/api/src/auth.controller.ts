@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   Post,
   Res,
   UseGuards,
@@ -17,7 +18,7 @@ import { DevLoginDto } from './dto/auth.dto';
 @Controller('auth')
 @SkipThrottle({ default: true })
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @Post('dev-login')
   @SkipThrottle({ default: false })

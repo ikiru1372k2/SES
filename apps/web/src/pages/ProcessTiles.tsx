@@ -7,6 +7,7 @@ import { AppShell } from '../components/layout/AppShell';
 import { FunctionTile } from '../components/tiles/FunctionTile';
 import { RequestFunctionAuditTile } from '../components/tiles/RequestFunctionAuditTile';
 import { fetchProcessTiles, type ApiTiles } from '../lib/api/tilesApi';
+import { workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 
 const RequestFunctionAuditModal = lazy(() =>
@@ -81,7 +82,7 @@ export function ProcessTiles() {
               functionId={fn.id as FunctionId}
               label={fn.label}
               stats={tiles[fn.id as FunctionId]}
-              onOpen={() => navigate(`/processes/${encodeURIComponent(processId)}/${fn.id}`)}
+              onOpen={() => navigate(workspacePath(processId, fn.id))}
             />
           ))}
           <RequestFunctionAuditTile onClick={() => setModalOpen(true)} />

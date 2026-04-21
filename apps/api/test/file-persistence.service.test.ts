@@ -20,9 +20,11 @@ describe('FileVersionsService', () => {
         },
       } as never,
       {
-        whereProcessReadableBy: () => ({}),
+        whereProcessReadableBy: () => ({ members: { some: { userId: user.id } } }),
         assertCanAccessProcess: async () => undefined,
       } as never,
+      {} as never,
+      { append: async () => undefined } as never,
     );
 
     await assert.rejects(
@@ -38,13 +40,15 @@ describe('FileVersionsService', () => {
         findFileWithSheets: async () => ({ processId: 'process-1' }),
         snapshotCurrentVersion: async (_file: string, _user: typeof user, note: string) => {
           snapshotted = note === 'manager approved';
-          return { versionNumber: 2 };
+          return { id: 'fv-1', fileId: 'file-1', versionNumber: 2, note: 'manager approved' };
         },
       } as never,
       {
-        whereProcessReadableBy: () => ({}),
+        whereProcessReadableBy: () => ({ members: { some: { userId: user.id } } }),
         require: async () => undefined,
       } as never,
+      {} as never,
+      { append: async () => undefined } as never,
     );
 
     const result = await service.create('FIL-1', { note: 'manager approved' }, user);

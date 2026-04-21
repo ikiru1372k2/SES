@@ -7,6 +7,22 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: ses
+          POSTGRES_PASSWORD: ses
+          POSTGRES_DB: ses
+        options: >-
+          --health-cmd "pg_isready -U ses -d ses"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ses:ses@127.0.0.1:5432/ses
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,9 +36,13 @@ jobs:
       - run: npm ci
       - name: Generate Prisma client
         run: npm run prisma:generate --workspace @ses/api
+      - name: Apply database migrations
+        run: npm run prisma:migrate:deploy --workspace @ses/api
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - name: API end-to-end tests
+        run: npm run test:e2e --workspace @ses/api
       - run: npm run test:components
       - run: npm audit --audit-level=high
       - run: npm run build

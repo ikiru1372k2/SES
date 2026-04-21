@@ -22,7 +22,7 @@
     "build": "npm run build --workspace @ses/domain && npm run build --workspace @ses/api && npm run build --workspace @ses/web",
     "typecheck": "npm run build --workspace @ses/domain && npm run typecheck --workspace @ses/api && npm run typecheck --workspace @ses/web",
     "lint": "npm run lint --workspace @ses/web",
-    "test": "npm run test --workspace @ses/domain && npm run test --workspace @ses/web",
+    "test": "npm run test --workspace @ses/domain && npm run test --workspace @ses/api && npm run test --workspace @ses/web",
     "test:components": "npm run test:components --workspace @ses/web",
     "dev:web": "npm run build --workspace @ses/domain && npm run dev --workspace @ses/web",
     "dev:api": "npm run build --workspace @ses/domain && npm run start:dev --workspace @ses/api",

@@ -23,9 +23,6 @@ export class ProcessAccessService {
   constructor(private readonly prisma: PrismaService) {}
 
   whereAccessibleBy(user: SessionUser): Prisma.ProcessWhereInput {
-    if (user.role === 'admin') {
-      return {};
-    }
     return { members: { some: { userId: user.id } } };
   }
 
@@ -38,9 +35,6 @@ export class ProcessAccessService {
   }
 
   async require(processId: string, user: SessionUser, min: ProcessPermission): Promise<void> {
-    if (user.role === 'admin') {
-      return;
-    }
     const member = await this.prisma.processMember.findFirst({
       where: { processId, userId: user.id },
     });
@@ -59,25 +53,17 @@ export class ProcessAccessService {
     idOrCode: string,
     min: ProcessPermission = 'viewer',
   ) {
-    const match: Prisma.ProcessWhereInput = { OR: [{ id: idOrCode }, { displayCode: idOrCode }] };
-    const where: Prisma.ProcessWhereInput =
-      user.role === 'admin'
-        ? match
-        : { AND: [match, { members: { some: { userId: user.id } } } ] };
-    const process = await this.prisma.process.findFirst({ where });
+    const process = await this.prisma.process.findFirst({
+      where: { OR: [{ id: idOrCode }, { displayCode: idOrCode }] },
+    });
     if (!process) {
       throw new NotFoundException(`Process ${idOrCode} not found`);
     }
-    if (user.role !== 'admin') {
-      await this.require(process.id, user, min);
-    }
+    await this.require(process.id, user, min);
     return process;
   }
 
-  whereProcessReadableBy(user: SessionUser): Prisma.ProcessWhereInput | undefined {
-    if (user.role === 'admin') {
-      return undefined;
-    }
+  whereProcessReadableBy(user: SessionUser): Prisma.ProcessWhereInput {
     return { members: { some: { userId: user.id } } };
   }
 }

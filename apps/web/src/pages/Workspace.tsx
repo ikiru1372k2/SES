@@ -17,6 +17,7 @@ import { PresenceBar } from '../components/shared/PresenceBar';
 import { useCurrentUser } from '../components/auth/AuthGate';
 import { selectHasUnsavedAudit } from '../store/selectors';
 import { useAppStore } from '../store/useAppStore';
+import { processDashboardPath } from '../lib/processRoutes';
 import { useRealtime } from '../realtime/useRealtime';
 
 const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
@@ -100,7 +101,7 @@ export function Workspace() {
   const accessory = (
     <div className="flex items-center gap-2">
       <Link
-        to={`/processes/${encodeURIComponent(process.id)}`}
+        to={processDashboardPath(process.id)}
         className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300"
         title="Back to tiles"
       >
@@ -155,7 +156,7 @@ export function Workspace() {
         ) : null}
         {tab === 'versions' ? (
           <TabPanel>
-            <VersionHistoryTab process={scopedProcess} file={activeFile} />
+            <VersionHistoryTab process={scopedProcess} file={activeFile} functionId={functionId} />
           </TabPanel>
         ) : null}
         {tab === 'analytics' ? (

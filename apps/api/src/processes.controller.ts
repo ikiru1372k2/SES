@@ -1,13 +1,14 @@
 import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, UseGuards } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
 import { AuthGuard } from './auth.guard';
+import { FunctionAccessGuard } from './common/function-access.guard';
 import { CurrentUser } from './common/current-user';
 import { parseIfMatch } from './common/http';
 import { CreateFunctionAuditRequestDto, CreateProcessDto, UpdateProcessDto } from './dto/processes.dto';
 import { ProcessesService } from './processes.service';
 
 @Controller('processes')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, FunctionAccessGuard)
 export class ProcessesController {
   constructor(private readonly processesService: ProcessesService) {}
 

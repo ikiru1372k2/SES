@@ -273,7 +273,6 @@ export class ProcessesService {
   // Membership controls who can see a process and what they can do inside it.
   // Listing is allowed to any member (viewer+); adding/removing requires owner
   // because a member who can add others can grant themselves privileges.
-  // Admins bypass the membership check via findAccessibleProcessOrThrow.
 
   async listMembers(idOrCode: string, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');

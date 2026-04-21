@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react';
 import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { processDashboardPath } from '../../lib/processRoutes';
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../shared/Button';
 
@@ -20,9 +21,7 @@ export function CreateProcessModal({ onClose }: { onClose: () => void }) {
       const process = await createProcess(name, description);
       toast.success('Process created');
       onClose();
-      // Tile dashboard is the landing page after create — user picks a
-      // function audit before entering a workspace (issue #62).
-      void navigate(`/processes/${process.id}`);
+      void navigate(processDashboardPath(process.id));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not create process');
     } finally {

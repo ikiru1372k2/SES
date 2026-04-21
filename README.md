@@ -27,7 +27,7 @@ SES is a full-stack web application for auditing effort-planning Excel workbooks
 | Cache / pub-sub | Redis 7 | Socket.IO multi-instance adapter |
 | Realtime | Socket.IO | Collaborative presence, audit notifications |
 | Excel parsing | ExcelJS | Read uploaded workbooks, generate audited downloads |
-| Storage | S3-compatible | Workbook file uploads |
+| Storage | PostgreSQL `BYTEA` | Workbook file bytes persisted with Prisma (see [docs/MIGRATION.md](docs/MIGRATION.md)) |
 | Auth | Cookie-based session (HMAC) | HTTP-only `ses_token` cookie |
 | Tests | Node test runner + tsx | Unit tests for domain and API |
 | Language | TypeScript | End-to-end type safety |
@@ -42,7 +42,7 @@ apps/
     src/
       auth.*            Login, session verification
       audits.*          Audit run creation and retrieval
-      files.*           Workbook upload to S3
+      files.*           Workbook upload to Postgres (BYTEA)
       processes.*       Process CRUD
       tracking.*        Issue tracking stage management
       versions.*        Saved audit version management
@@ -76,8 +76,10 @@ docs/
   ARCHITECTURE.md
   CONTRIBUTING.md
   LOGGING.md
+  MIGRATION.md
   PHASE-0-COVERAGE.md
   PHASE-0-INVENTORY.md
+  QA.md
 ```
 
 ---
@@ -85,7 +87,7 @@ docs/
 ## Core workflow
 
 1. **Create a process** — name, description, audit policy.
-2. **Upload a workbook** — Excel file is stored in S3; metadata in PostgreSQL.
+2. **Upload a workbook** — Excel bytes are stored in PostgreSQL; metadata in the same database.
 3. **Run an audit** — the API applies the audit rules to the workbook rows and stores the result.
 4. **Review issues** — browse flagged rows by severity, sheet, and manager.
 5. **Prepare notifications** — generate per-manager emails with issue summaries.
@@ -109,8 +111,10 @@ docker compose up -d
 ```
 
 This starts:
-- PostgreSQL on `localhost:5432`
+- PostgreSQL on `localhost:5432` (first boot runs `docker/postgres-init.sql`, e.g. `pg_trgm`)
 - Redis on `localhost:6380`
+
+Workbook uploads are stored in the database. For capacity planning, assume roughly **25 MiB × concurrent uploads** of transient API memory while files stream to Postgres, plus steady-state disk for `WorkbookFile` / version rows.
 
 ### 2 — Configure environment
 
@@ -210,6 +214,7 @@ See [`.env.example`](.env.example) for the full list with comments. Key variable
 | `SES_CORS_ORIGINS` | No | localhost:3210 | Comma-separated allowed origins |
 | `SES_ALLOW_DEV_LOGIN` | No | — | Set to `true` in dev, or pair with `SES_ALLOW_DEMO_DEV_LOGIN=true` for a production-mode demo stack |
 | `SES_COOKIE_SECURE` | No | false | Set to `true` behind HTTPS |
+| `VITE_FEATURE_TILES_DASHBOARD` | No | (unset) | Frontend only: set in `apps/web/.env`. Use `false` to make `/workspace/...` the canonical routes after create/open; any other value keeps the tile dashboard + `/processes/...` flow. See [docs/MIGRATION.md](docs/MIGRATION.md). |
 
 ---
 
@@ -230,6 +235,8 @@ npm run build
 ---
 
 ## Database
+
+Uploaded workbooks and related blobs live in **Postgres** (`Bytes` columns), not object storage. Prisma migrations live under `apps/api/prisma/migrations`; new migrations should prefer expand/contract steps and optional `down.sql` where the team agrees on rollback (see [docs/MIGRATION.md](docs/MIGRATION.md)).
 
 Prisma manages schema changes. To create a new migration after editing `schema.prisma`:
 

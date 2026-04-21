@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { FunctionId } from '@ses/domain';
+import { versionComparePath } from '../../lib/processRoutes';
 import { compareResults, exportIssuesCsv } from '../../lib/auditEngine';
 import { createFileVersionOnApi } from '../../lib/api/fileVersionsApi';
 import { downloadFileToDisk } from '../../lib/api/filesApi';
@@ -11,7 +12,15 @@ import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
 
-export function VersionHistoryTab({ process, file }: { process: AuditProcess; file?: WorkbookFile | undefined }) {
+export function VersionHistoryTab({
+  process,
+  file,
+  functionId,
+}: {
+  process: AuditProcess;
+  file?: WorkbookFile | undefined;
+  functionId: FunctionId;
+}) {
   const loadVersion = useAppStore((state) => state.loadVersion);
   const hydrateFunctionWorkspace = useAppStore((state) => state.hydrateFunctionWorkspace);
   const [fromId, setFromId] = useState(process.versions[1]?.versionId ?? process.versions[0]?.versionId ?? '');
@@ -70,7 +79,14 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
         <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Audit Version History</h2>
-        {process.versions.length >= 2 ? <Link to={`/workspace/${process.id}/compare`} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700">Open compare page</Link> : null}
+        {process.versions.length >= 2 ? (
+          <Link
+            to={versionComparePath(process.id, functionId)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700"
+          >
+            Open compare page
+          </Link>
+        ) : null}
       </div>
       <div className="space-y-2">
         {process.versions.map((version) => (
