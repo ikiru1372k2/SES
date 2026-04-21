@@ -11,3 +11,4 @@ export * from './managerAnalytics';
 export * from './anomaly';
 export * from './workbook';
 export * from './reporting';
+export * from './functions';

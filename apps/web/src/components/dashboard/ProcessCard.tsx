@@ -87,8 +87,8 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
       </div>
       <div className="mt-2 text-xs text-gray-500">High {counts.High} - Med {counts.Medium} - Low {counts.Low}</div>
       <div className="mt-5 flex gap-2">
-        <Link to={`/workspace/${process.id}`} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">Open Workspace</Link>
-        <Link to={`/workspace/${process.id}/compare`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700 dark:hover:bg-gray-800">Compare</Link>
+        <Link to={`/processes/${process.id}`} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">Open Process</Link>
+        <Link to={`/compare`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700 dark:hover:bg-gray-800">Compare</Link>
       </div>
       {editOpen ? <EditProcessModal process={process} onClose={() => setEditOpen(false)} /> : null}
     </article>

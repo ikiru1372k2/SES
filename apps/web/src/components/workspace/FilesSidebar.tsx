@@ -1,17 +1,26 @@
-import { Trash2, Upload } from 'lucide-react';
+import { Download, Eye, Trash2, Upload } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import toast from 'react-hot-toast';
+import { DEFAULT_FUNCTION_ID, type FunctionId } from '@ses/domain';
+import { downloadFileToDisk } from '../../lib/api/filesApi';
 import { validateWorkbookFile } from '../../lib/excelParser';
 import type { AuditProcess, WorkbookFile } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { ProgressBar } from '../shared/ProgressBar';
 import { SheetList } from './SheetList';
 
-export function FilesSidebar({ process }: { process: AuditProcess }) {
+interface Props {
+  process: AuditProcess;
+  functionId?: FunctionId;
+}
+
+export function FilesSidebar({ process, functionId }: Props) {
   const uploadFile = useAppStore((state) => state.uploadFile);
   const setActiveFile = useAppStore((state) => state.setActiveFile);
+  const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
   const deleteFile = useAppStore((state) => state.deleteFile);
   const uploads = useAppStore((state) => state.uploads);
+  const scopedFid: FunctionId = functionId ?? DEFAULT_FUNCTION_ID;
   const activeFile = process.files.find((file) => file.id === process.activeFileId) ?? process.files[0];
 
   async function upload(files: FileList | null) {
@@ -23,7 +32,23 @@ export function FilesSidebar({ process }: { process: AuditProcess }) {
         toast.error(error instanceof Error ? error.message : `${file.name} is not a supported workbook`);
         continue;
       }
-      void uploadFile(process.id, file).then(() => toast.success(`${file.name} uploaded`)).catch(() => toast.error(`${file.name} failed`));
+      void uploadFile(process.id, file, scopedFid)
+        .then(() => toast.success(`${file.name} uploaded`))
+        .catch(() => toast.error(`${file.name} failed`));
+    }
+  }
+
+  function onView(file: WorkbookFile) {
+    setActiveFile(process.id, file.id);
+    setWorkspaceTab('preview');
+  }
+
+  async function onDownload(file: WorkbookFile) {
+    const ref = (file as { displayCode?: string }).displayCode ?? file.id;
+    try {
+      await downloadFileToDisk(ref, file.name);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Could not download ${file.name}`);
     }
   }
 
@@ -62,7 +87,10 @@ export function FilesSidebar({ process }: { process: AuditProcess }) {
               key={file.id}
               file={file}
               isActive={file.id === process.activeFileId}
+              serverBacked={Boolean(process.serverBacked)}
               onSelect={() => setActiveFile(process.id, file.id)}
+              onView={() => onView(file)}
+              onDownload={() => void onDownload(file)}
               onDelete={() => confirmDelete(file)}
             />
           ))}
@@ -76,12 +104,18 @@ export function FilesSidebar({ process }: { process: AuditProcess }) {
 function DocumentCard({
   file,
   isActive,
+  serverBacked,
   onSelect,
+  onView,
+  onDownload,
   onDelete,
 }: {
   file: WorkbookFile;
   isActive: boolean;
+  serverBacked: boolean;
   onSelect: () => void;
+  onView: () => void;
+  onDownload: () => void;
   onDelete: () => void;
 }) {
   const valid = file.sheets.filter((sheet) => sheet.status === 'valid').length;
@@ -107,7 +141,7 @@ function DocumentCard({
           : 'border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700'
       }`}
     >
-      <div className="flex gap-2 pr-7">
+      <div className="flex gap-2 pr-24">
         <span className={isActive ? 'text-green-500' : 'text-gray-300'}>{isActive ? '●' : '○'}</span>
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{file.name}</div>
@@ -119,18 +153,46 @@ function DocumentCard({
           ) : null}
         </div>
       </div>
-      <button
-        type="button"
-        aria-label={`Delete ${file.name}`}
-        title="Delete document"
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete();
-        }}
-        className="absolute right-2 top-2 rounded-md p-1 text-gray-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 dark:hover:bg-red-950/30"
-      >
-        <Trash2 size={14} />
-      </button>
+      <div className="absolute right-2 top-2 flex gap-0.5 opacity-0 transition focus-within:opacity-100 group-hover:opacity-100">
+        <button
+          type="button"
+          aria-label={`View ${file.name}`}
+          title="View preview"
+          onClick={(event) => {
+            event.stopPropagation();
+            onView();
+          }}
+          className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-700"
+        >
+          <Eye size={14} />
+        </button>
+        {serverBacked ? (
+          <button
+            type="button"
+            aria-label={`Download ${file.name}`}
+            title="Download original file"
+            onClick={(event) => {
+              event.stopPropagation();
+              onDownload();
+            }}
+            className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-700"
+          >
+            <Download size={14} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          aria-label={`Delete ${file.name}`}
+          title="Delete document"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Users } from 'lucide-react';
+import { ArrowLeft, Users } from 'lucide-react';
+import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, type FunctionId } from '@ses/domain';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
 import { MembersPanel } from '../components/workspace/MembersPanel';
 import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
@@ -20,13 +21,17 @@ import { useRealtime } from '../realtime/useRealtime';
 const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
 
 export function Workspace() {
-  const { id } = useParams();
+  // New surface: /processes/:processId/:functionId — back-compat with old
+  // /workspace/:id is handled by a redirect in App.tsx, so `id` is no longer read here.
+  const params = useParams<{ processId: string; functionId: string }>();
+  const processId = params.processId;
+  const functionId: FunctionId = isFunctionId(params.functionId) ? params.functionId : DEFAULT_FUNCTION_ID;
   const navigate = useNavigate();
   const processes = useAppStore((state) => state.processes);
   const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
   const tab = useAppStore((state) => state.activeWorkspaceTab);
   const result = useAppStore((state) => state.currentAuditResult);
-  const process = processes.find((item) => item.id === id);
+  const process = processes.find((item) => item.id === processId || item.displayCode === processId);
   const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
   const currentUser = useCurrentUser();
   const [membersOpen, setMembersOpen] = useState(false);
@@ -74,11 +79,22 @@ export function Workspace() {
     );
   }
   if (!process) return <Navigate to="/" replace />;
-  const activeFile = process.files.find((file) => file.id === process.activeFileId) ?? process.files[0] ?? undefined;
+  // Scope the file list to the selected function so each tile only sees its own files.
+  const functionFiles = process.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId);
+  const scopedProcess = { ...process, files: functionFiles };
+  const activeFile = functionFiles.find((file) => file.id === process.activeFileId) ?? functionFiles[0] ?? undefined;
   const canManageMembers = currentUser?.role === 'admin'; // Owners are verified server-side too; admin is the quick client-side hint.
 
   const accessory = (
     <div className="flex items-center gap-2">
+      <Link
+        to={`/processes/${encodeURIComponent(process.id)}`}
+        className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300"
+        title="Back to tiles"
+      >
+        <ArrowLeft size={14} />
+        <span className="hidden sm:inline">{getFunctionLabel(functionId)}</span>
+      </Link>
       <PresenceBar members={members} selfCode={currentUser?.displayCode} />
       {process.serverBacked ? (
         <button
@@ -95,37 +111,37 @@ export function Workspace() {
   );
 
   return (
-    <AppShell process={process} sidebar={<FilesSidebar process={process} />} topBarAccessory={accessory}>
+    <AppShell process={process} sidebar={<FilesSidebar process={scopedProcess} functionId={functionId} />} topBarAccessory={accessory}>
       <WorkspaceShell>
         {tab === 'preview' ? (
           <TabPanel>
-            <PreviewTab process={process} file={activeFile} result={result} />
+            <PreviewTab process={scopedProcess} file={activeFile} result={result} />
           </TabPanel>
         ) : null}
         {tab === 'results' ? (
           <TabPanel>
-            <AuditResultsTab process={process} file={activeFile} />
+            <AuditResultsTab process={scopedProcess} file={activeFile} />
           </TabPanel>
         ) : null}
         {tab === 'notifications' ? (
           <TabPanel scroll="split">
-            <NotificationsTab process={process} result={result ?? process.versions[0]?.result ?? null} />
+            <NotificationsTab process={scopedProcess} result={result ?? scopedProcess.versions[0]?.result ?? null} />
           </TabPanel>
         ) : null}
         {tab === 'tracking' ? (
           <TabPanel scroll="split">
-            <TrackingTab process={process} result={result ?? process.versions[0]?.result ?? null} />
+            <TrackingTab process={scopedProcess} result={result ?? scopedProcess.versions[0]?.result ?? null} />
           </TabPanel>
         ) : null}
         {tab === 'versions' ? (
           <TabPanel>
-            <VersionHistoryTab process={process} file={activeFile} />
+            <VersionHistoryTab process={scopedProcess} file={activeFile} />
           </TabPanel>
         ) : null}
         {tab === 'analytics' ? (
           <TabPanel>
             <Suspense fallback={<div className="p-5 text-sm text-gray-500">Loading analytics...</div>}>
-              <AnalyticsTab process={process} />
+              <AnalyticsTab process={scopedProcess} />
             </Suspense>
           </TabPanel>
         ) : null}

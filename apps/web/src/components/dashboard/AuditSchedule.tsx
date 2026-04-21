@@ -49,7 +49,7 @@ function ScheduleItem({ process }: { process: AuditProcess }) {
   const days = process.nextAuditDue ? daysUntilDue(process.nextAuditDue) : 0;
   const label = days < 0 ? `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue` : days === 0 ? 'Due today' : `Due in ${days} day${days === 1 ? '' : 's'}`;
   return (
-    <Link to={`/workspace/${process.id}`} className="block rounded-lg bg-white/75 p-3 text-sm text-gray-900 shadow-sm transition hover:bg-white dark:bg-black/20 dark:text-gray-100 dark:hover:bg-black/30">
+    <Link to={`/processes/${process.id}`} className="block rounded-lg bg-white/75 p-3 text-sm text-gray-900 shadow-sm transition hover:bg-white dark:bg-black/20 dark:text-gray-100 dark:hover:bg-black/30">
       <div className="truncate font-semibold">{process.name}</div>
       <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">{label}</div>
     </Link>

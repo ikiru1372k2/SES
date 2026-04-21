@@ -83,6 +83,57 @@ model Process {
   liveSessions      LiveSession[]
   signedLinks       SignedLink[]
   notificationLogs  NotificationLog[]
+  processFunctions  ProcessFunction[]
+  auditRequests     FunctionAuditRequest[]
+}
+
+/// System-defined, non-deletable function registry.
+/// Seeded from `FUNCTION_REGISTRY` in `@ses/domain` on every boot.
+/// Every WorkbookFile belongs to exactly one SystemFunction.
+model SystemFunction {
+  id           String   @id
+  label        String
+  displayOrder Int
+  isSystem     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  processMap   ProcessFunction[]
+  files        WorkbookFile[]
+}
+
+/// Enablement row per (process, function). Every new Process is seeded
+/// with every SystemFunction at `enabled = true`.
+model ProcessFunction {
+  processId  String
+  functionId String
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  process   Process        @relation(fields: [processId], references: [id], onDelete: Cascade)
+  function  SystemFunction @relation(fields: [functionId], references: [id])
+
+  @@id([processId, functionId])
+  @@index([processId])
+}
+
+/// Helpdesk-style request to open a brand-new function audit. Stub today —
+/// writes a row and fires the existing notifications transport.
+model FunctionAuditRequest {
+  id            String   @id
+  displayCode   String   @unique
+  processId     String
+  requestedById String
+  proposedName  String
+  description   String   @default("")
+  contactEmail  String
+  status        String   @default("open")
+  createdAt     DateTime @default(now())
+
+  process       Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
+
+  @@index([processId, createdAt])
 }
 
 model ProcessMember {
@@ -103,6 +154,9 @@ model WorkbookFile {
   id            String         @id
   displayCode   String         @unique
   processId     String
+  /// Scopes the file to one of the 5 system functions (master-data, over-planning, etc).
+  /// Added in issue #62. Backfilled to 'master-data' for existing rows.
+  functionId    String         @default("master-data")
   name          String
   sizeBytes     Int
   contentSha256 Bytes
@@ -115,11 +169,13 @@ model WorkbookFile {
   lastAuditedAt DateTime?
   rowVersion    Int            @default(1)
   process       Process        @relation(fields: [processId], references: [id], onDelete: Cascade)
+  function      SystemFunction @relation(fields: [functionId], references: [id])
   uploadedBy    User           @relation("WorkbookUploadedBy", fields: [uploadedById], references: [id])
   sheets        WorkbookSheet[]
   auditRuns     AuditRun[]
 
   @@index([processId])
+  @@index([processId, functionId])
 }
 
 model WorkbookSheet {
