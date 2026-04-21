@@ -14,7 +14,12 @@ import { AuditsController } from './audits.controller';
 import { AuditsService } from './audits.service';
 import { ExportsController } from './exports.controller';
 import { ExportsService } from './exports.service';
+import { FileDraftsController } from './file-drafts.controller';
+import { FileDraftsService } from './file-drafts.service';
+import { FileVersionsController } from './file-versions.controller';
+import { FileVersionsService } from './file-versions.service';
 import { FilesController } from './files.controller';
+import { FilesRepository } from './files.repository';
 import { FilesService } from './files.service';
 import { FunctionsController } from './functions.controller';
 import { FunctionsService } from './functions.service';
@@ -62,6 +67,8 @@ import { NotificationsService } from './notifications/notifications.service';
     ProcessesController,
     ProcessActivityController,
     FilesController,
+    FileVersionsController,
+    FileDraftsController,
     AuditsController,
     VersionsController,
     IssuesController,
@@ -86,7 +93,10 @@ import { NotificationsService } from './notifications/notifications.service';
     FunctionAccessGuard,
     RulesService,
     ProcessesService,
+    FilesRepository,
     FilesService,
+    FileVersionsService,
+    FileDraftsService,
     AuditsService,
     VersionsService,
     IssuesService,

@@ -1,99 +1,28 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { createHash } from 'node:crypto';
 import type { FunctionId, SessionUser } from '@ses/domain';
-import { createId, DEFAULT_FUNCTION_ID } from '@ses/domain';
-import { parseWorkbookBuffer } from '@ses/domain';
+import { DEFAULT_FUNCTION_ID } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';
 import { ActivityLogService } from './common/activity-log.service';
-import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { assertWorkbookUpload } from './common/security/workbook-upload';
 import { requestContext } from './common/request-context';
 import { RealtimeGateway } from './realtime/realtime.gateway';
-
-function serializeSheet(sheet: {
-  id: string;
-  displayCode: string;
-  sheetName: string;
-  status: string;
-  rowCount: number;
-  isSelected: boolean;
-  headerRowIx: number | null;
-  originalHeaders: unknown;
-  normalizedHeaders: unknown;
-}) {
-  return {
-    id: sheet.id,
-    displayCode: sheet.displayCode,
-    name: sheet.sheetName,
-    status: sheet.status,
-    rowCount: sheet.rowCount,
-    isSelected: sheet.isSelected,
-    headerRowIndex: sheet.headerRowIx ?? undefined,
-    originalHeaders: (sheet.originalHeaders as string[] | null) ?? undefined,
-    normalizedHeaders: (sheet.normalizedHeaders as string[] | null) ?? undefined,
-  };
-}
-
-function serializeFile(file: {
-  id: string;
-  displayCode: string;
-  processId: string;
-  functionId?: string | null;
-  rowVersion: number;
-  name: string;
-  sizeBytes: number;
-  mimeType: string;
-  storageKind: string;
-  uploadedAt: Date;
-  lastAuditedAt: Date | null;
-  sheets?: Array<{
-    id: string;
-    displayCode: string;
-    sheetName: string;
-    status: string;
-    rowCount: number;
-    isSelected: boolean;
-    headerRowIx: number | null;
-    originalHeaders: unknown;
-    normalizedHeaders: unknown;
-  }>;
-}) {
-  return {
-    id: file.id,
-    displayCode: file.displayCode,
-    processId: file.processId,
-    functionId: (file.functionId ?? DEFAULT_FUNCTION_ID) as FunctionId,
-    rowVersion: file.rowVersion,
-    name: file.name,
-    sizeBytes: file.sizeBytes,
-    mimeType: file.mimeType,
-    storageKind: file.storageKind,
-    uploadedAt: file.uploadedAt.toISOString(),
-    lastAuditedAt: file.lastAuditedAt?.toISOString() ?? null,
-    isAudited: Boolean(file.lastAuditedAt),
-    sheets: file.sheets?.map(serializeSheet) ?? [],
-  };
-}
+import { FilesRepository, serializeWorkbookFile } from './files.repository';
 
 @Injectable()
 export class FilesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly identifiers: IdentifierService,
     private readonly activity: ActivityLogService,
     private readonly processAccess: ProcessAccessService,
     private readonly realtime: RealtimeGateway,
+    private readonly filesRepository: FilesRepository,
   ) {}
 
   async getFileOrThrow(idOrCode: string, user: SessionUser) {
-    const match: Prisma.WorkbookFileWhereInput = { OR: [{ id: idOrCode }, { displayCode: idOrCode }] };
     const scope = this.processAccess.whereProcessReadableBy(user);
-    const file = await this.prisma.workbookFile.findFirst({
-      where: scope ? { AND: [match, { process: scope }] } : match,
-      include: { sheets: { orderBy: { sheetName: 'asc' } } },
-    });
+    const file = await this.filesRepository.findFileWithSheets(idOrCode, scope ?? undefined);
     if (!file) throw new NotFoundException(`File ${idOrCode} not found`);
     await this.processAccess.assertCanAccessProcess(user, file.processId);
     return file;
@@ -101,12 +30,8 @@ export class FilesService {
 
   async list(processIdOrCode: string, user: SessionUser, functionId?: FunctionId) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode);
-    const files = await this.prisma.workbookFile.findMany({
-      where: functionId ? { processId: process.id, functionId } : { processId: process.id },
-      orderBy: { uploadedAt: 'desc' },
-      include: { sheets: { orderBy: { sheetName: 'asc' } } },
-    });
-    return files.map(serializeFile);
+    const files = await this.filesRepository.listFiles(process.id, functionId);
+    return files.map(serializeWorkbookFile);
   }
 
   async upload(
@@ -117,52 +42,21 @@ export class FilesService {
   ) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'editor');
     const buffer = assertWorkbookUpload(file);
-    let workbook;
-    try {
-      workbook = await parseWorkbookBuffer(buffer, file.originalname);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Invalid workbook';
-      throw new BadRequestException(message);
-    }
-    const contentSha256 = createHash('sha256').update(buffer).digest();
 
     const uploaded = await this.prisma.$transaction(async (tx) => {
-      const fileCode = await this.identifiers.nextFileCode(tx, process.displayCode);
-      const created = await tx.workbookFile.create({
-        data: {
-          id: createId(),
-          displayCode: fileCode,
+      let withSheets;
+      try {
+        withSheets = await this.filesRepository.createUploadedFile(tx, {
           processId: process.id,
+          processCode: process.displayCode,
           functionId: options.functionId,
-          name: workbook.name,
-          sizeBytes: buffer.byteLength,
-          contentSha256,
-          mimeType: file.mimetype || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          storageKind: 'postgres',
-          // PRISMA-JSON: content is Bytes; parsedSheets is Json — both unavoidable until Prisma 6
-          content: buffer as any,
-          parsedSheets: workbook.sheets as any,
+          file,
+          buffer,
           uploadedById: user.id,
-        } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
-      });
-
-      for (const sheet of workbook.sheets) {
-        await tx.workbookSheet.create({
-          data: {
-            id: createId(),
-            displayCode: await this.identifiers.nextSheetCode(tx, fileCode),
-            fileId: created.id,
-            sheetName: sheet.name,
-            status: sheet.status,
-            rowCount: sheet.rowCount,
-            isSelected: sheet.isSelected,
-            headerRowIx: sheet.headerRowIndex,
-            // PRISMA-JSON: rows/originalHeaders/normalizedHeaders are Json columns
-            rows: (workbook.rawData[sheet.name] ?? []) as any,
-            originalHeaders: (sheet.originalHeaders ?? undefined) as any,
-            normalizedHeaders: (sheet.normalizedHeaders ?? undefined) as any,
-          } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
         });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Invalid workbook';
+        throw new BadRequestException(message);
       }
 
       await this.activity.append(tx, {
@@ -170,22 +64,17 @@ export class FilesService {
         actorEmail: user.email,
         processId: process.id,
         entityType: 'workbook_file',
-        entityId: created.id,
-        entityCode: created.displayCode,
+        entityId: withSheets.id,
+        entityCode: withSheets.displayCode,
         action: 'file.uploaded',
         after: {
-          name: created.name,
-          sizeBytes: created.sizeBytes,
+          name: withSheets.name,
+          sizeBytes: withSheets.sizeBytes,
           processCode: process.displayCode,
           functionId: options.functionId,
         },
       });
-
-      const withSheets = await tx.workbookFile.findUniqueOrThrow({
-        where: { id: created.id },
-        include: { sheets: { orderBy: { sheetName: 'asc' } } },
-      });
-      return serializeFile(withSheets);
+      return serializeWorkbookFile(withSheets);
     });
 
     // After-commit emit
@@ -204,7 +93,7 @@ export class FilesService {
   }
 
   async get(idOrCode: string, user: SessionUser) {
-    return serializeFile(await this.getFileOrThrow(idOrCode, user));
+    return serializeWorkbookFile(await this.getFileOrThrow(idOrCode, user));
   }
 
   async updateSheet(
@@ -236,7 +125,7 @@ export class FilesService {
         });
         throw new ConflictException({
           code: 'row_version_conflict',
-          current: serializeFile(latest),
+          current: serializeWorkbookFile(latest),
           requestId: requestContext.get().requestId,
         });
       }
@@ -259,7 +148,7 @@ export class FilesService {
         before: { isSelected: sheet.isSelected },
         after: { isSelected: next.isSelected },
       });
-      return serializeFile(latestFile);
+      return serializeWorkbookFile(latestFile);
     });
   }
 
@@ -317,13 +206,16 @@ export class FilesService {
     };
   }
 
-  async download(idOrCode: string, user: SessionUser) {
-    const file = await this.getFileOrThrow(idOrCode, user);
-    return {
-      fileName: file.name,
-      mimeType: file.mimeType,
-      content: file.content,
-    };
+  async download(idOrCode: string, user: SessionUser, version?: number) {
+    const scope = this.processAccess.whereProcessReadableBy(user);
+    if (version !== undefined) {
+      const file = await this.filesRepository.getVersionDownload(idOrCode, version, scope ?? undefined);
+      await this.processAccess.assertCanAccessProcess(user, file.file.processId);
+      return file;
+    }
+    const file = await this.filesRepository.getCurrentDownload(idOrCode, user, scope ?? undefined);
+    await this.processAccess.assertCanAccessProcess(user, file.file.processId);
+    return file;
   }
 
   async delete(idOrCode: string, user: SessionUser) {

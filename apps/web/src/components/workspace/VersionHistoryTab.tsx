@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import type { FunctionId } from '@ses/domain';
 import { compareResults, exportIssuesCsv } from '../../lib/auditEngine';
+import { createFileVersionOnApi } from '../../lib/api/fileVersionsApi';
+import { downloadFileToDisk } from '../../lib/api/filesApi';
 import { downloadAuditedWorkbook } from '../../lib/excelParser';
 import type { AuditProcess, WorkbookFile } from '../../lib/types';
 import { selectCorrectionCount } from '../../store/selectors';
@@ -10,6 +13,7 @@ import { MetricCard } from '../shared/MetricCard';
 
 export function VersionHistoryTab({ process, file }: { process: AuditProcess; file?: WorkbookFile | undefined }) {
   const loadVersion = useAppStore((state) => state.loadVersion);
+  const hydrateFunctionWorkspace = useAppStore((state) => state.hydrateFunctionWorkspace);
   const [fromId, setFromId] = useState(process.versions[1]?.versionId ?? process.versions[0]?.versionId ?? '');
   const [toId, setToId] = useState(process.versions[0]?.versionId ?? '');
   const [activeTab, setActiveTab] = useState<'newIssues' | 'resolvedIssues' | 'changedIssues'>('newIssues');
@@ -20,15 +24,52 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
     return from && to ? compareResults(from.result, to.result) : null;
   }, [process.versions, fromId, toId]);
 
-  if (!process.versions.length) {
-    return <EmptyState title="No saved versions">Run an audit and save a version to preserve traceability, compare changes, and support notifications.</EmptyState>;
-  }
-
   const rows = comparison?.[activeTab] ?? [];
   return (
     <div className="space-y-5">
+      {file ? (
+        <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">File Versions</h2>
+              <p className="mt-1 text-xs text-gray-500">Source workbook snapshots are separate from saved audit versions.</p>
+            </div>
+            <button
+              onClick={() => void saveFileVersion(process, file, hydrateFunctionWorkspace)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700"
+            >
+              Save file version
+            </button>
+          </div>
+          <div className="mt-3 divide-y divide-gray-100 rounded-lg border border-gray-100 dark:divide-gray-700 dark:border-gray-700">
+            {(file.fileVersions ?? []).map((version) => (
+              <div key={version.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
+                <div>
+                  <div className="font-medium">V{version.versionNumber}{version.isCurrent ? ' · Current' : ''}</div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    {new Date(version.createdAt).toLocaleString()} · {formatBytes(version.sizeBytes)}
+                    {version.note ? ` · ${version.note}` : ''}
+                  </div>
+                </div>
+                <button
+                  onClick={() => void downloadFileToDisk(file.displayCode ?? file.id, file.name, version.versionNumber)}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs hover:bg-gray-50 dark:border-gray-700"
+                >
+                  Download
+                </button>
+              </div>
+            ))}
+            {!(file.fileVersions ?? []).length ? <div className="p-3 text-sm text-gray-500">No file versions loaded.</div> : null}
+          </div>
+        </section>
+      ) : null}
+      {!process.versions.length ? (
+        <EmptyState title="No saved audit versions">Run an audit and save a version to preserve traceability, compare changes, and support notifications.</EmptyState>
+      ) : null}
+      {process.versions.length ? (
+        <>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Version History</h2>
+        <h2 className="text-lg font-semibold">Audit Version History</h2>
         {process.versions.length >= 2 ? <Link to={`/workspace/${process.id}/compare`} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700">Open compare page</Link> : null}
       </div>
       <div className="space-y-2">
@@ -79,8 +120,26 @@ export function VersionHistoryTab({ process, file }: { process: AuditProcess; fi
           </>
         ) : null}
       </section>
+        </>
+      ) : null}
     </div>
   );
+}
+
+async function saveFileVersion(
+  process: AuditProcess,
+  file: WorkbookFile,
+  hydrateFunctionWorkspace: (processId: string, functionId: FunctionId) => Promise<void>,
+) {
+  const note = window.prompt('Optional note for this source file version', '') ?? '';
+  await createFileVersionOnApi(file.displayCode ?? file.id, note);
+  await hydrateFunctionWorkspace(process.id, (file.functionId ?? 'master-data') as FunctionId);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function versionLabel(version: AuditProcess['versions'][number]) {

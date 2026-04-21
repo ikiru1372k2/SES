@@ -6,6 +6,8 @@ export interface ApiFileSummary {
   rowVersion: number;
   processId: string;
   functionId: FunctionId;
+  currentVersion?: number;
+  state?: 'uploaded' | 'processing' | 'completed' | 'draft';
   name: string;
   sizeBytes: number;
   mimeType: string;
@@ -75,8 +77,9 @@ export async function deleteFileOnApi(fileIdOrCode: string): Promise<void> {
   if (!res.ok) throw await parseError(res, 'Failed to delete file');
 }
 
-export async function downloadFileFromApi(fileIdOrCode: string): Promise<Blob> {
-  const res = await fetch(`/api/v1/files/${encodeURIComponent(fileIdOrCode)}/download`, {
+export async function downloadFileFromApi(fileIdOrCode: string, versionNumber?: number): Promise<Blob> {
+  const suffix = versionNumber ? `?version=${encodeURIComponent(String(versionNumber))}` : '';
+  const res = await fetch(`/api/v1/files/${encodeURIComponent(fileIdOrCode)}/download${suffix}`, {
     credentials: 'include',
   });
   if (!res.ok) throw await parseError(res, 'Failed to download file');
@@ -90,8 +93,9 @@ export async function downloadFileFromApi(fileIdOrCode: string): Promise<Blob> {
 export async function downloadFileToDisk(
   fileIdOrCode: string,
   suggestedName: string,
+  versionNumber?: number,
 ): Promise<void> {
-  const blob = await downloadFileFromApi(fileIdOrCode);
+  const blob = await downloadFileFromApi(fileIdOrCode, versionNumber);
   const url = URL.createObjectURL(blob);
   try {
     const link = document.createElement('a');

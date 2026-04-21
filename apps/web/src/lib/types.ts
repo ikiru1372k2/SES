@@ -63,6 +63,11 @@ export interface WorkbookFile {
   displayCode?: string;
   /** Issue #62: tile scoping. Defaults to 'master-data' for legacy local files. */
   functionId?: string;
+  rowVersion?: number;
+  currentVersion?: number;
+  state?: 'uploaded' | 'processing' | 'completed' | 'draft';
+  sizeBytes?: number;
+  mimeType?: string;
   name: string;
   uploadedAt: string;
   lastAuditedAt: string | null;
@@ -70,6 +75,34 @@ export interface WorkbookFile {
   serverBacked?: boolean;
   sheets: SheetInfo[];
   rawData: Record<string, unknown[][]>;
+  fileVersions?: FileVersionMetadata[];
+}
+
+export interface FileVersionMetadata {
+  id: string;
+  fileId: string;
+  versionNumber: number;
+  note: string;
+  sizeBytes: number;
+  createdAt: string;
+  isCurrent: boolean;
+  createdBy?: {
+    displayCode: string;
+    displayName: string;
+    email: string;
+  };
+}
+
+export interface FileDraftMetadata {
+  id?: string;
+  userId?: string;
+  processId?: string;
+  functionId?: string;
+  fileName?: string;
+  sizeBytes?: number;
+  updatedAt?: string;
+  createdAt?: string;
+  hasDraft?: boolean;
 }
 
 export interface SheetInfo {

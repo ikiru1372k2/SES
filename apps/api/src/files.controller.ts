@@ -125,8 +125,14 @@ export class FilesController {
   }
 
   @Get('files/:idOrCode/download')
-  async download(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser, @Res() response: Response) {
-    const file = await this.filesService.download(idOrCode, user);
+  async download(
+    @Param('idOrCode') idOrCode: string,
+    @Query('version') version: string | undefined,
+    @CurrentUser() user: SessionUser,
+    @Res() response: Response,
+  ) {
+    const parsedVersion = version === undefined ? undefined : Number(version);
+    const file = await this.filesService.download(idOrCode, user, Number.isFinite(parsedVersion) ? parsedVersion : undefined);
     response.setHeader('Content-Type', file.mimeType);
     response.setHeader('Content-Disposition', attachmentContentDisposition(file.fileName));
     response.send(file.content);
