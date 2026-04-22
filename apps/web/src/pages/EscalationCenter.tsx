@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { onRealtimeEvent } from '../realtime/socket';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Megaphone } from 'lucide-react';
+import { ArrowLeft, Megaphone, RefreshCw } from 'lucide-react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_REGISTRY } from '@ses/domain';
 import { AppShell } from '../components/layout/AppShell';
@@ -117,6 +117,12 @@ export function EscalationCenter() {
         // Invalidate any open tracking-events queries too so the timeline
         // auto-advances when the SLA cron transitions a stage.
         void queryClient.invalidateQueries({ queryKey: ['tracking-events'] });
+      } else if (envelope.event === 'directory.updated') {
+        // Issue #74: a Manager Directory mutation (inline-add, alias,
+        // merge, archive, delete) invalidates the "unmapped manager"
+        // banner and may free a previously-blocked escalation for send.
+        void queryClient.invalidateQueries({ queryKey: ['escalations', processId] });
+        void queryClient.invalidateQueries({ queryKey: ['directory-suggestions'] });
       }
     });
     return off;
@@ -229,6 +235,18 @@ export function EscalationCenter() {
             </Link>
             <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Escalation Center</h1>
             <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => {
+                void q.refetch();
+                void queryClient.invalidateQueries({ queryKey: ['directory-suggestions'] });
+              }}
+              disabled={q.isFetching}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-600 hover:border-gray-300 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
+              title="Force a refresh — only needed if the live feed has dropped"
+            >
+              <RefreshCw size={14} className={q.isFetching ? 'animate-spin' : ''} /> Refresh
+            </button>
             <button
               type="button"
               onClick={() => setBroadcastOpen(true)}

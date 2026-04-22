@@ -73,6 +73,9 @@ describe('DirectoryService.merge', () => {
           return null;
         },
       },
+      process: {
+        findMany: async () => [] as Array<{ displayCode: string }>,
+      },
       $transaction: async (fn: (tx: typeof txStub) => Promise<number>) => fn(txStub),
     };
 
@@ -84,6 +87,7 @@ describe('DirectoryService.merge', () => {
           appendCalls.push(meta);
         },
       } as never,
+      { emitToProcess: () => {} } as never,
     );
 
     const out = await service.merge(admin, { sourceId: 'src', targetId: 'tgt' });

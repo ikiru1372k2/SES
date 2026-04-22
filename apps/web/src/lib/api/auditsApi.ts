@@ -28,6 +28,11 @@ export interface ApiAuditRunSummary {
   status: string;
   scannedRows: number;
   flaggedRows: number;
+  /**
+   * Deterministic hash of the run's issue set (Issue #74). Empty string for
+   * legacy rows created before the column existed.
+   */
+  findingsHash?: string;
   summary: Record<string, unknown>;
   startedAt: string;
   completedAt: string | null;

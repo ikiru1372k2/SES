@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import type { AuditIssue, AuditResult, SessionUser, WorkbookFile as DomainWorkbookFile } from '@ses/domain';
 import {
@@ -21,6 +22,22 @@ import { requestContext } from './common/request-context';
 import { RealtimeGateway } from './realtime/realtime.gateway';
 import { StatusReconcilerService } from './status-reconciler.service';
 import { resolveIssueEmailsFromDirectory } from './directory/resolve-issue-emails';
+
+/**
+ * Stable sha256 over the sorted identity of each issue.
+ * Two runs with the same issues (any order) produce the same hash, so the
+ * web store can skip creating duplicate SavedVersion rows when an auditor
+ * re-runs against an unchanged file.
+ */
+function computeFindingsHash(
+  issues: Array<{ issueKey: string; ruleCode?: string | null; severity?: string | null }>,
+): string {
+  const normalized = issues
+    .map((i) => `${i.issueKey}|${i.ruleCode ?? ''}|${i.severity ?? ''}`)
+    .sort()
+    .join('\n');
+  return createHash('sha256').update(`${issues.length}\n${normalized}`).digest('hex');
+}
 
 function serializeIssue(issue: {
   id: string;
@@ -78,6 +95,7 @@ function serializeRun(run: {
   source: string;
   scannedRows: number;
   flaggedRows: number;
+  findingsHash?: string;
   startedAt: Date;
   completedAt: Date | null;
   issues?: Array<{
@@ -114,6 +132,7 @@ function serializeRun(run: {
     runAt: (run.completedAt ?? run.startedAt).toISOString(),
     scannedRows: run.scannedRows,
     flaggedRows: run.flaggedRows,
+    findingsHash: run.findingsHash ?? '',
     issues,
     sheets: ((run.summary as { sheets?: AuditResult['sheets'] } | null)?.sheets ?? []),
     policySnapshot: run.policySnapshot,
@@ -313,12 +332,21 @@ export class AuditsService {
         });
       }
 
+      const findingsHash = computeFindingsHash(
+        issuesWithCodes.map((i) => ({
+          issueKey: i.issueKey!,
+          ruleCode: i.ruleCode ?? i.ruleId ?? '',
+          severity: i.severity,
+        })),
+      );
+
       const completedRun = await tx.auditRun.update({
         where: { id: createdRun.id },
         data: {
           status: 'completed',
           scannedRows: result.scannedRows,
           flaggedRows: result.flaggedRows,
+          findingsHash,
           // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           summary: summary as any,
           completedAt: new Date(result.runAt),

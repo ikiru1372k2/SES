@@ -29,6 +29,7 @@ export type RealtimeEventName =
   | 'conflict.row_version'
   | 'process.member_removed'
   | 'process.deleted'
+  | 'directory.updated'
   | 'function.audit_request_created';
 
 export interface RealtimeEnvelope<T = unknown> {
@@ -123,4 +124,17 @@ export interface ProcessMemberRemovedPayload {
 export interface ProcessDeletedPayload {
   processCode: string;
   processName: string;
+}
+
+/**
+ * Emitted after any Manager Directory mutation so that open EscalationCenter
+ * / Workspace sessions can re-derive their "unmapped manager" banners
+ * without a page reload. `normalizedKeys` lets clients filter their local
+ * re-computation, but any payload is a safe invalidation trigger.
+ */
+export interface DirectoryUpdatedPayload {
+  tenantId: string;
+  action: 'created' | 'updated' | 'deleted' | 'archived' | 'merged';
+  entryId?: string;
+  normalizedKeys?: string[];
 }

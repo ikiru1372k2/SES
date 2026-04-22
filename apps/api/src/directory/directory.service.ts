@@ -20,6 +20,8 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { IdentifierService } from '../common/identifier.service';
 import { ActivityLogService } from '../common/activity-log.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import type { DirectoryUpdatedPayload } from '../realtime/realtime.types';
 import { matchRawNameToDirectoryEntries } from './directory-matching';
 
 function parseAliases(value: unknown): string[] {
@@ -47,7 +49,29 @@ export class DirectoryService {
     private readonly prisma: PrismaService,
     private readonly identifiers: IdentifierService,
     private readonly activity: ActivityLogService,
+    private readonly realtime: RealtimeGateway,
   ) {}
+
+  /**
+   * Directory mutations are tenant-scoped, but the realtime gateway rooms
+   * are per-process. Fan the notification out to every non-archived process
+   * in the tenant so any open EscalationCenter / Workspace tab re-derives
+   * its "unmapped manager" state without a reload. Cheap: one SELECT on
+   * PRIMARY-KEYed data plus N in-memory emits.
+   */
+  private async broadcastDirectoryUpdate(
+    tenantId: string,
+    payload: Omit<DirectoryUpdatedPayload, 'tenantId'>,
+  ): Promise<void> {
+    const processes = await this.prisma.process.findMany({
+      where: { tenantId, archivedAt: null },
+      select: { displayCode: true },
+    });
+    const envelope: DirectoryUpdatedPayload = { tenantId, ...payload };
+    for (const p of processes) {
+      this.realtime.emitToProcess(p.displayCode, 'directory.updated', envelope);
+    }
+  }
 
   private requireTenant(user: SessionUser): string {
     if (!user.tenantId) throw new ForbiddenException('Missing tenant');
@@ -244,6 +268,9 @@ export class DirectoryService {
         metadata: { created, updated, skipped, strategy: body.strategy, previewCounts: preview.counts },
       });
     });
+    if (created.length > 0 || updated.length > 0) {
+      await this.broadcastDirectoryUpdate(tenantId, { action: 'updated' });
+    }
     return { created, updated, skipped, previewCounts: preview.counts };
   }
 
@@ -295,6 +322,11 @@ export class DirectoryService {
         });
         return created;
       });
+      await this.broadcastDirectoryUpdate(tenantId, {
+        action: 'created',
+        entryId: row.id,
+        normalizedKeys: [row.normalizedKey],
+      });
       return this.serializeEntry(row);
     }
     if (!body.directoryEntryId) {
@@ -319,6 +351,11 @@ export class DirectoryService {
       entityId: entry.id,
       action: 'directory_resolve_alias',
       metadata: { rawName: raw },
+    });
+    await this.broadcastDirectoryUpdate(tenantId, {
+      action: 'updated',
+      entryId: updated.id,
+      normalizedKeys: [updated.normalizedKey],
     });
     return this.serializeEntry(updated);
   }
@@ -371,6 +408,11 @@ export class DirectoryService {
           createdById: user.id,
         },
       });
+    });
+    await this.broadcastDirectoryUpdate(tenantId, {
+      action: 'created',
+      entryId: created.id,
+      normalizedKeys: [created.normalizedKey],
     });
     return this.serializeEntry(created);
   }
@@ -445,6 +487,11 @@ export class DirectoryService {
       }
       throw error;
     }
+    await this.broadcastDirectoryUpdate(tenantId, {
+      action: 'created',
+      entryId: created.id,
+      normalizedKeys: [created.normalizedKey],
+    });
     return this.serializeEntry(created);
   }
 
@@ -502,6 +549,11 @@ export class DirectoryService {
         },
       });
     });
+    await this.broadcastDirectoryUpdate(tenantId, {
+      action: 'deleted',
+      entryId: entry.id,
+      normalizedKeys: [entry.normalizedKey],
+    });
   }
 
   async archiveBulk(user: SessionUser, body: { ids: string[] }) {
@@ -512,6 +564,9 @@ export class DirectoryService {
       where: { tenantId, id: { in: body.ids } },
       data: { active: false },
     });
+    if (res.count > 0) {
+      await this.broadcastDirectoryUpdate(tenantId, { action: 'archived' });
+    }
     return { archived: res.count };
   }
 
@@ -592,6 +647,11 @@ export class DirectoryService {
         metadata: { sourceId: source.id, targetId: target.id, repointed: n.count },
       });
       return n.count;
+    });
+    await this.broadcastDirectoryUpdate(tenantId, {
+      action: 'merged',
+      entryId: target.id,
+      normalizedKeys: [source.normalizedKey, target.normalizedKey],
     });
     return { repointed, targetId: target.id };
   }
@@ -755,6 +815,11 @@ export class DirectoryService {
         after: body as unknown as Record<string, unknown>,
       });
       return row;
+    });
+    await this.broadcastDirectoryUpdate(tenantId, {
+      action: 'updated',
+      entryId: updated.id,
+      normalizedKeys: [updated.normalizedKey],
     });
     return this.serializeEntry(updated);
   }
