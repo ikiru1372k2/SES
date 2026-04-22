@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
 import { parseWorkbook } from '../src/workbook.js';
+import { RULE_CATALOG_BY_FUNCTION, getRuleCatalogForFunction } from '../src/auditRules.js';
 import {
   getFunctionAuditEngine,
   isBadValue,
@@ -206,4 +207,34 @@ test('dispatcher falls back to legacy engine for non-master-data functions', asy
   // clean from its perspective, so there should be no Data Quality findings.
   const result = runFunctionAudit('over-planning', file, undefined, { issueScope: 'PRC-TEST' });
   assert.ok(result.issues.every((issue) => issue.category !== 'Data Quality'));
+});
+
+test('rule catalogs are strictly separated per function', () => {
+  // No ruleCode may appear in more than one function's catalog. This is the
+  // structural guarantee: Master Data rules cannot leak into Over Planning,
+  // etc. If this test ever fails, a rule was registered under two functions.
+  const seen = new Map<string, string>();
+  for (const [functionId, rules] of Object.entries(RULE_CATALOG_BY_FUNCTION)) {
+    for (const rule of rules) {
+      const prior = seen.get(rule.ruleCode);
+      assert.equal(prior, undefined, `ruleCode ${rule.ruleCode} claimed by both ${prior} and ${functionId}`);
+      seen.set(rule.ruleCode, functionId);
+    }
+  }
+});
+
+test('master-data catalog contains exactly the 10 required-field rules plus the Others review rule', () => {
+  const masterData = getRuleCatalogForFunction('master-data');
+  assert.equal(masterData.length, 11);
+  const codes = new Set(masterData.map((rule) => rule.ruleCode));
+  for (const column of Object.values(MD_COLUMNS)) {
+    assert.ok(codes.has(missingFieldRuleCode(column.id)), `master-data must own ${column.id}`);
+  }
+  assert.ok(codes.has(MD_REVIEW_OTHERS_RULE_CODE));
+});
+
+test('unbuilt functions have empty catalogs, not inherited rules', () => {
+  for (const fn of ['missing-plan', 'function-rate', 'internal-cost-rate'] as const) {
+    assert.equal(getRuleCatalogForFunction(fn).length, 0, `${fn} should not inherit any rules`);
+  }
 });

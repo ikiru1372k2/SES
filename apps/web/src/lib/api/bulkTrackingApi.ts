@@ -52,3 +52,47 @@ export async function bulkResolve(trackingIds: string[]) {
   if (!res.ok) throw await parseApiError(res, 'Bulk resolve failed');
   return (await res.json()) as { ok: boolean; count: number };
 }
+
+export type BulkActionOutcome = {
+  ok: boolean;
+  applied: number;
+  skipped: Array<{ trackingId: string; reason: string }>;
+  total: number;
+};
+
+export async function bulkAcknowledge(trackingIds: string[], note?: string): Promise<BulkActionOutcome> {
+  const res = await fetch('/api/v1/tracking/bulk/acknowledge', {
+    method: 'POST',
+    credentials: 'include',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ trackingIds, note }),
+  });
+  if (!res.ok) throw await parseApiError(res, 'Bulk acknowledge failed');
+  return (await res.json()) as BulkActionOutcome;
+}
+
+export async function bulkSnooze(
+  trackingIds: string[],
+  days: number,
+  note?: string,
+): Promise<{ ok: boolean; count: number; days: number }> {
+  const res = await fetch('/api/v1/tracking/bulk/snooze', {
+    method: 'POST',
+    credentials: 'include',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ trackingIds, days, note }),
+  });
+  if (!res.ok) throw await parseApiError(res, 'Bulk snooze failed');
+  return (await res.json()) as { ok: boolean; count: number; days: number };
+}
+
+export async function bulkReescalate(trackingIds: string[], note?: string): Promise<BulkActionOutcome> {
+  const res = await fetch('/api/v1/tracking/bulk/reescalate', {
+    method: 'POST',
+    credentials: 'include',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ trackingIds, note }),
+  });
+  if (!res.ok) throw await parseApiError(res, 'Bulk reescalate failed');
+  return (await res.json()) as BulkActionOutcome;
+}

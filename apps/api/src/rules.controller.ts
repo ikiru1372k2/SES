@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { AuthGuard } from './auth.guard';
 import { RulesService } from './rules.service';
 
@@ -8,8 +8,8 @@ export class RulesController {
   constructor(private readonly rulesService: RulesService) {}
 
   @Get()
-  list() {
-    return this.rulesService.list();
+  list(@Query('functionId') functionId?: string) {
+    return this.rulesService.list(functionId);
   }
 
   @Get(':ruleCode')

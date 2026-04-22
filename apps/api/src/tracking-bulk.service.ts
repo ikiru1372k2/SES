@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
+import { createId } from '@ses/domain';
+import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { PrismaService } from './common/prisma.service';
 import { TrackingComposeService, type ComposeDraftPayload } from './tracking-compose/tracking-compose.service';
@@ -22,6 +24,7 @@ export class TrackingBulkService {
     private readonly processAccess: ProcessAccessService,
     private readonly compose: TrackingComposeService,
     private readonly tracking: TrackingService,
+    private readonly identifiers: IdentifierService,
   ) {}
 
   private async listEntries(trackingIds: string[], user: SessionUser) {
@@ -67,8 +70,32 @@ export class TrackingBulkService {
     const entries = await this.listEntries(input.trackingIds, user);
     let success = 0;
     let failed = 0;
+    let skipped = 0;
     const progress: Array<Record<string, unknown>> = [];
     for (const [index, entry] of entries.entries()) {
+      // Fail-soft for the most common "soft" reason a row can't be sent:
+      // the manager is not in the directory yet and no email is attached.
+      // Previously TrackingComposeService.send() would throw a generic 400,
+      // the catch-all below would log it as "failed", and the auditor would
+      // have to cross-reference the error text. Now the UI can show a
+      // "Missing email — add to directory" chip and keep the row selectable
+      // so the auditor can fix the root cause once and retry.
+      const managerEmail = (entry.managerEmail ?? '').trim();
+      if (!managerEmail) {
+        skipped += 1;
+        progress.push({
+          index,
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          state: 'skipped',
+          reason: 'missing_email',
+          success,
+          failed,
+          skipped,
+          total: entries.length,
+        });
+        continue;
+      }
       try {
         await this.compose.send(entry.id, user, input.payload);
         success += 1;
@@ -79,6 +106,7 @@ export class TrackingBulkService {
           state: 'sent',
           success,
           failed,
+          skipped,
           total: entries.length,
         });
       } catch (error) {
@@ -91,11 +119,12 @@ export class TrackingBulkService {
           error: (error as Error).message,
           success,
           failed,
+          skipped,
           total: entries.length,
         });
       }
     }
-    return { progress, success, failed, total: entries.length };
+    return { progress, success, failed, skipped, total: entries.length };
   }
 
   async markResolved(trackingIds: string[], user: SessionUser) {
@@ -110,5 +139,113 @@ export class TrackingBulkService {
       ),
     );
     return { ok: true, count: entries.length };
+  }
+
+  /**
+   * Mark entries as acknowledged — mapped to the RESPONDED stage because
+   * the domain state machine doesn't carry a separate ACKNOWLEDGED node.
+   * Transitions that are already past RESPONDED (NO_RESPONSE / ESCALATED_*)
+   * are still eligible: the ladder treats acknowledgment as a response.
+   */
+  async markAcknowledged(trackingIds: string[], note: string, user: SessionUser) {
+    const entries = await this.listEntries(trackingIds, user);
+    const reason = note.trim() || 'bulk_acknowledge';
+    let applied = 0;
+    const skipped: Array<{ trackingId: string; reason: string }> = [];
+    for (const entry of entries) {
+      try {
+        await this.tracking.transition(
+          entry.id,
+          { to: 'RESPONDED', reason, sourceAction: 'bulk.acknowledge' },
+          user,
+        );
+        applied += 1;
+      } catch (err) {
+        skipped.push({ trackingId: entry.id, reason: (err as Error).message });
+      }
+    }
+    return { ok: true, applied, skipped, total: entries.length };
+  }
+
+  /**
+   * Push the SLA timer forward by N days without changing the stage. The
+   * SLA engine re-checks slaDueAt on its next tick; moving the deadline
+   * is the cheapest way to "snooze" without faking progress.
+   */
+  async snooze(trackingIds: string[], days: number, note: string, user: SessionUser) {
+    if (!Number.isFinite(days) || days <= 0 || days > 90) {
+      throw new BadRequestException('days must be between 1 and 90');
+    }
+    const entries = await this.listEntries(trackingIds, user);
+    const reason = note.trim() || `bulk_snooze:${days}d`;
+    const bumpMs = days * 24 * 60 * 60 * 1000;
+    await this.prisma.$transaction(async (tx) => {
+      for (const entry of entries) {
+        const base = entry.slaDueAt ?? new Date();
+        const next = new Date(base.getTime() + bumpMs);
+        await tx.trackingEntry.update({
+          where: { id: entry.id },
+          data: { slaDueAt: next, rowVersion: { increment: 1 } },
+        });
+        await tx.trackingEvent.create({
+          data: {
+            id: createId(),
+            displayCode: await this.identifiers.nextTrackingEventCode(tx),
+            trackingId: entry.id,
+            kind: 'sla_snoozed',
+            channel: 'manual',
+            note: reason,
+            reason: 'bulk_snooze',
+            payload: { days, slaDueAt: next.toISOString() } as object,
+            triggeredById: user.id,
+          },
+        });
+      }
+    });
+    return { ok: true, count: entries.length, days };
+  }
+
+  /**
+   * Walk the ladder one step forward. AWAITING_RESPONSE/NO_RESPONSE step
+   * up to ESCALATED_L1; ESCALATED_L1 steps to ESCALATED_L2. Anything past
+   * that (or already RESOLVED) is skipped with a clear reason instead of
+   * a 500.
+   */
+  async reescalate(trackingIds: string[], note: string, user: SessionUser) {
+    const entries = await this.listEntries(trackingIds, user);
+    const reason = note.trim() || 'bulk_reescalate';
+    let applied = 0;
+    const skipped: Array<{ trackingId: string; reason: string }> = [];
+    for (const entry of entries) {
+      const to = pickReescalationTarget(entry.stage);
+      if (!to) {
+        skipped.push({ trackingId: entry.id, reason: `cannot reescalate from ${entry.stage}` });
+        continue;
+      }
+      try {
+        await this.tracking.transition(
+          entry.id,
+          { to, reason, sourceAction: 'bulk.reescalate' },
+          user,
+        );
+        applied += 1;
+      } catch (err) {
+        skipped.push({ trackingId: entry.id, reason: (err as Error).message });
+      }
+    }
+    return { ok: true, applied, skipped, total: entries.length };
+  }
+}
+
+function pickReescalationTarget(stage: string): 'ESCALATED_L1' | 'ESCALATED_L2' | null {
+  switch (stage) {
+    case 'AWAITING_RESPONSE':
+    case 'NO_RESPONSE':
+    case 'SENT':
+      return 'ESCALATED_L1';
+    case 'ESCALATED_L1':
+      return 'ESCALATED_L2';
+    default:
+      return null;
   }
 }

@@ -552,30 +552,32 @@ export const useAppStore = create<AppStore>()(
         const useServer = Boolean(process.serverBacked && process.displayCode && fileDisplayCode);
         try {
           if (useServer) {
-            try {
-              const apiResult = await runAuditOnApi(process.displayCode!, fileDisplayCode!);
-              const apiIssues = await fetchAuditIssues(apiResult.displayCode);
-              const mapped = mapApiAuditToResult(file.id, apiResult, apiIssues);
-              set((state) => ({
-                isAuditRunning: false,
-                auditProgressText: '',
-                currentAuditResult: mapped,
-                activeWorkspaceTab: 'results',
-                processes: patchProcess(state.processes, processId, (item) =>
-                  patchFile({ ...item, latestAuditResult: mapped }, fileId, (currentFile) => ({
-                    ...currentFile,
-                    isAudited: true,
-                    lastAuditedAt: mapped.runAt,
-                  })),
-                ),
-              }));
-              return;
-            } catch (err) {
-              // Recovery: execution continues with the local in-browser audit engine.
-              console.warn('[audit] server-side run failed, falling back to local engine', err);
-            }
+            // Server path is authoritative — it runs the per-function engine
+            // and resolves manager emails from the directory. If this fails
+            // we surface the error rather than silently falling back to a
+            // local engine, because the local engine used to run effort
+            // rules against master-data files and produce nonsense findings.
+            const apiResult = await runAuditOnApi(process.displayCode!, fileDisplayCode!);
+            const apiIssues = await fetchAuditIssues(apiResult.displayCode);
+            const mapped = mapApiAuditToResult(file.id, apiResult, apiIssues);
+            set((state) => ({
+              isAuditRunning: false,
+              auditProgressText: '',
+              currentAuditResult: mapped,
+              activeWorkspaceTab: 'results',
+              processes: patchProcess(state.processes, processId, (item) =>
+                patchFile({ ...item, latestAuditResult: mapped }, fileId, (currentFile) => ({
+                  ...currentFile,
+                  isAudited: true,
+                  lastAuditedAt: mapped.runAt,
+                })),
+              ),
+            }));
+            return;
           }
-          const result = await runAuditAsync(file, process.auditPolicy);
+          // Local-only processes (demo mode / no server backing) run the
+          // per-function dispatcher directly in the browser.
+          const result = await runAuditAsync(file, file.functionId, process.auditPolicy);
           set((state) => ({
             isAuditRunning: false,
             auditProgressText: '',

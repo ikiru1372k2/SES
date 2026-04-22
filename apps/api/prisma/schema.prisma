@@ -156,6 +156,7 @@ model SystemFunction {
   processMap   ProcessFunction[]
   files        WorkbookFile[]
   fileDrafts   FileDraft[]
+  auditRules   AuditRule[]
 }
 
 /// Enablement row per (process, function). Every new Process is seeded
@@ -299,6 +300,7 @@ model WorkbookSheet {
 model AuditRule {
   id               String   @id
   ruleCode         String   @unique
+  functionId       String   @default("over-planning")
   name             String
   category         String
   description      String
@@ -307,7 +309,10 @@ model AuditRule {
   paramsSchema     Json
   version          Int      @default(1)
   createdAt        DateTime @default(now())
+  function         SystemFunction @relation(fields: [functionId], references: [id])
   issues           AuditIssue[]
+
+  @@index([functionId])
 }
 
 model AuditRun {

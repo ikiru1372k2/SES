@@ -472,6 +472,19 @@ export class DirectoryService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // Cascade cleanup: any AuditIssue rows that still carry this manager's
+      // email would point at a directory entry that no longer exists. Clear
+      // them to '' so the UI shows "Missing email — add to directory" again
+      // and the next audit run (or a manual directory re-import) can
+      // re-resolve the owner cleanly. Scoped to the tenant so cross-tenant
+      // data is never touched.
+      const scrubbed = await tx.auditIssue.updateMany({
+        where: {
+          email: { equals: entry.email, mode: 'insensitive' },
+          auditRun: { process: { tenantId } },
+        },
+        data: { email: '' },
+      });
       await tx.managerDirectory.delete({ where: { id: entry.id } });
       await this.activity.append(tx, {
         actorId: user.id,
@@ -481,7 +494,12 @@ export class DirectoryService {
         entityId: entry.id,
         entityCode: entry.displayCode,
         action: 'directory.manager.deleted',
-        metadata: { targetId: entry.id, targetCode: entry.displayCode, tenantId },
+        metadata: {
+          targetId: entry.id,
+          targetCode: entry.displayCode,
+          tenantId,
+          scrubbedIssueCount: scrubbed.count,
+        },
       });
     });
   }

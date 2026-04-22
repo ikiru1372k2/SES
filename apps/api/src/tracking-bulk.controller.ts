@@ -30,4 +30,25 @@ export class TrackingBulkController {
   resolve(@Body() body: { trackingIds: string[] }, @CurrentUser() user: SessionUser) {
     return this.trackingBulk.markResolved(body.trackingIds, user);
   }
+
+  @Post('acknowledge')
+  acknowledge(@Body() body: { trackingIds: string[]; note?: string }, @CurrentUser() user: SessionUser) {
+    return this.trackingBulk.markAcknowledged(body.trackingIds, body.note ?? '', user);
+  }
+
+  @Post('snooze')
+  snooze(
+    @Body() body: { trackingIds: string[]; days: number; note?: string },
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.trackingBulk.snooze(body.trackingIds, body.days, body.note ?? '', user);
+  }
+
+  @Post('reescalate')
+  reescalate(
+    @Body() body: { trackingIds: string[]; note?: string },
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.trackingBulk.reescalate(body.trackingIds, body.note ?? '', user);
+  }
 }

@@ -14,7 +14,7 @@ import { BulkComposer } from '../components/escalations/BulkComposer';
 import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 import { useCurrentUser } from '../components/auth/authContext';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
-import { bulkResolve } from '../lib/api/bulkTrackingApi';
+import { bulkAcknowledge, bulkReescalate, bulkResolve, bulkSnooze } from '../lib/api/bulkTrackingApi';
 import { processDashboardPath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 
@@ -195,14 +195,58 @@ export function EscalationCenter() {
           {summary ? <EscalationSummaryBar summary={summary} /> : null}
 
           {selectedTrackingIds.size > 0 ? (
-            <div className="mb-3 flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm">
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm">
               <span>{selectedTrackingIds.size} selected</span>
               <button
                 type="button"
                 className="rounded border border-gray-300 px-2 py-1 text-xs"
                 onClick={() => setBulkComposerOpen(true)}
               >
-                Bulk compose
+                Compose
+              </button>
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-2 py-1 text-xs"
+                onClick={() => {
+                  void bulkAcknowledge([...selectedTrackingIds]).then((res) => {
+                    if (res.skipped.length) {
+                      window.alert(`${res.applied} acknowledged, ${res.skipped.length} skipped.`);
+                    }
+                    void q.refetch();
+                  });
+                }}
+              >
+                Acknowledge
+              </button>
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-2 py-1 text-xs"
+                onClick={() => {
+                  const raw = window.prompt('Snooze for how many days? (1 – 90)', '3');
+                  if (!raw) return;
+                  const days = Number.parseInt(raw, 10);
+                  if (!Number.isFinite(days) || days < 1 || days > 90) {
+                    window.alert('Enter a number between 1 and 90.');
+                    return;
+                  }
+                  void bulkSnooze([...selectedTrackingIds], days).then(() => q.refetch());
+                }}
+              >
+                Snooze
+              </button>
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-2 py-1 text-xs"
+                onClick={() => {
+                  void bulkReescalate([...selectedTrackingIds]).then((res) => {
+                    if (res.skipped.length) {
+                      window.alert(`${res.applied} re-escalated, ${res.skipped.length} skipped.`);
+                    }
+                    void q.refetch();
+                  });
+                }}
+              >
+                Re-escalate
               </button>
               <button
                 type="button"
@@ -211,7 +255,7 @@ export function EscalationCenter() {
                   void bulkResolve([...selectedTrackingIds]).then(() => q.refetch());
                 }}
               >
-                Bulk resolve
+                Resolve
               </button>
               <button
                 type="button"

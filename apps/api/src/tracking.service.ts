@@ -85,6 +85,24 @@ type PatchBody = {
   projectStatuses?: Record<string, unknown>;
 };
 
+// Single source of truth for how `projectStatuses` is coerced into the
+// JSON column. Previously duplicated between upsert() and patchEntry(),
+// which made it easy to drift — a bug found in the audit pass. The helper
+// accepts three possible inputs: the caller-supplied patch, the existing
+// DB row's column, or nothing — and always returns a non-null JSON object.
+function resolveProjectStatusesJson(
+  incoming: Record<string, unknown> | undefined,
+  existing: unknown,
+): Record<string, unknown> {
+  if (incoming !== undefined) {
+    return parseProjectStatuses(incoming) as unknown as Record<string, unknown>;
+  }
+  if (existing !== undefined && existing !== null) {
+    return parseProjectStatuses(existing) as unknown as Record<string, unknown>;
+  }
+  return parseProjectStatuses({}) as unknown as Record<string, unknown>;
+}
+
 function coerceStage(value: string | undefined, fallback: EscalationStage): EscalationStage {
   if (value === undefined || value === null) return fallback;
   if (isEscalationStage(value)) return value;
@@ -128,12 +146,7 @@ export class TrackingService {
         where: { processId: process.id, managerKey: body.managerKey },
         include: { events: { orderBy: { at: 'asc' } } },
       });
-      const projectStatusesJson =
-        body.projectStatuses !== undefined
-          ? (parseProjectStatuses(body.projectStatuses) as unknown as Record<string, unknown>)
-          : existing?.projectStatuses !== undefined && existing?.projectStatuses !== null
-            ? (parseProjectStatuses(existing.projectStatuses) as unknown as Record<string, unknown>)
-            : (parseProjectStatuses({}) as unknown as Record<string, unknown>);
+      const projectStatusesJson = resolveProjectStatusesJson(body.projectStatuses, existing?.projectStatuses);
       const entry = existing
         ? await tx.trackingEntry.update({
             where: { id: existing.id },
@@ -197,10 +210,7 @@ export class TrackingService {
     }
     await this.processAccess.require(prior.processId, user, 'editor');
     return this.prisma.$transaction(async (tx) => {
-      const projectStatusesJson =
-        body.projectStatuses !== undefined
-          ? (parseProjectStatuses(body.projectStatuses) as unknown as Record<string, unknown>)
-          : (prior.projectStatuses as any);
+      const projectStatusesJson = resolveProjectStatusesJson(body.projectStatuses, prior.projectStatuses);
       const entry = await tx.trackingEntry.update({
         where: { id: prior.id },
         data: {

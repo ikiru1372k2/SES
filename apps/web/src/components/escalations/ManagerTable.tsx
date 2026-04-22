@@ -25,6 +25,18 @@ function SlaDot({ tone }: { tone: 'green' | 'amber' | 'red' | 'grey' }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${map[tone]}`} title="SLA" />;
 }
 
+function slaCountdownLabel(row: ProcessEscalationManagerRow, now: number): string {
+  if (row.resolved) return 'Resolved';
+  if (!row.slaDueAt) return '—';
+  const delta = new Date(row.slaDueAt).getTime() - now;
+  const abs = Math.abs(delta);
+  const hours = Math.round(abs / 3_600_000);
+  if (hours < 1) return delta < 0 ? 'Overdue now' : 'Due < 1h';
+  if (hours < 48) return delta < 0 ? `Overdue ${hours}h` : `Due in ${hours}h`;
+  const days = Math.round(hours / 24);
+  return delta < 0 ? `Overdue ${days}d` : `Due in ${days}d`;
+}
+
 export function ManagerTable({
   processId,
   rows,
@@ -166,7 +178,13 @@ export function ManagerTable({
                 </td>
                 <td className="px-3 py-2">
                   <div className="font-medium text-gray-900 dark:text-white">{row.managerName}</div>
-                  <div className="text-xs text-gray-500">{row.resolvedEmail ?? '—'}</div>
+                  {row.resolvedEmail ? (
+                    <div className="text-xs text-gray-500">{row.resolvedEmail}</div>
+                  ) : (
+                    <div className="mt-0.5 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                      Missing email — add to directory
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2 tabular-nums">{row.totalIssues}</td>
                 <td className="px-3 py-2">
@@ -189,7 +207,10 @@ export function ManagerTable({
                   {row.lastContactAt ? new Date(row.lastContactAt).toLocaleDateString() : '—'}
                 </td>
                 <td className="px-3 py-2">
-                  <SlaDot tone={tone} />
+                  <div className="flex items-center gap-2">
+                    <SlaDot tone={tone} />
+                    <span className="text-xs text-gray-600 dark:text-gray-300">{slaCountdownLabel(row, now)}</span>
+                  </div>
                 </td>
                 <td className="relative px-2 py-2">
                   <button

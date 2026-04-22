@@ -8,8 +8,11 @@ import {
   buildIssuesCsv,
   createId,
   createIssueKey,
+  normalizeProcessPolicies,
+  resolveFunctionPolicy,
   runFunctionAudit,
 } from '@ses/domain';
+import type { FunctionId } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';
 import { IdentifierService } from './common/identifier.service';
 import { ActivityLogService } from './common/activity-log.service';
@@ -17,6 +20,7 @@ import { ProcessAccessService } from './common/process-access.service';
 import { requestContext } from './common/request-context';
 import { RealtimeGateway } from './realtime/realtime.gateway';
 import { StatusReconcilerService } from './status-reconciler.service';
+import { resolveIssueEmailsFromDirectory } from './directory/resolve-issue-emails';
 
 function serializeIssue(issue: {
   id: string;
@@ -236,11 +240,28 @@ export class AuditsService {
         } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
 
+      // Resolve the policy slice for this function. Legacy single-blob
+      // AuditPolicy rows normalise into the over-planning slice; new
+      // ProcessPolicies rows are passed through unchanged. Engines that
+      // don't use policy (like master-data) get an empty object.
+      const processPolicies = normalizeProcessPolicies(process.auditPolicy);
+      const resolvedFunctionId = (file.functionId ?? 'master-data') as FunctionId;
+      const functionPolicy = resolveFunctionPolicy(processPolicies, resolvedFunctionId);
       // PRISMA-JSON: auditPolicy is stored as Json; cast satisfies domain runAudit signature
-      const result = runFunctionAudit(file.functionId, domainFile, process.auditPolicy as any, {
+      const result = runFunctionAudit(resolvedFunctionId, domainFile, functionPolicy as any, {
         issueScope: process.displayCode,
         runCode,
       });
+
+      // Master Data exports have no email column at all — every owner must
+      // be looked up from the tenant's Manager Directory. For over-planning
+      // we also prefer the directory: it's canonical, the workbook isn't.
+      const directoryResolution = await resolveIssueEmailsFromDirectory(
+        tx,
+        process.tenantId,
+        result.issues,
+      );
+
       const issuesWithCodes = await Promise.all(result.issues.map(async (issue) => ({
         ...issue,
         displayCode: await this.identifiers.nextIssueCode(tx, runCode),
@@ -254,6 +275,10 @@ export class AuditsService {
       const summary = {
         severity: this.severitySummary(issuesWithCodes),
         sheets: result.sheets,
+        managerDirectory: {
+          resolvedCount: directoryResolution.resolvedFromDirectory,
+          unresolvedNames: directoryResolution.unresolvedManagerNames,
+        },
       };
 
       for (const issue of issuesWithCodes) {

@@ -55,9 +55,11 @@ async function main() {
   }
 
   for (const rule of AUDIT_RULE_CATALOG) {
+    const functionId = rule.functionId ?? 'over-planning';
     await prisma.auditRule.upsert({
       where: { ruleCode: rule.ruleCode },
       update: {
+        functionId,
         name: rule.name,
         category: rule.category,
         description: rule.description,
@@ -70,6 +72,7 @@ async function main() {
       create: {
         id: createId(),
         ruleCode: rule.ruleCode,
+        functionId,
         name: rule.name,
         category: rule.category,
         description: rule.description,
