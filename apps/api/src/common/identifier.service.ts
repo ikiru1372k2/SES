@@ -128,4 +128,9 @@ export class IdentifierService {
     const value = await this.nextSequence(tx, 'TSC');
     return `TSC-${pad(value, 9)}`;
   }
+
+  async nextTrackingAttachmentCode(tx: TxLike): Promise<string> {
+    const value = await this.nextSequence(tx, 'TAT');
+    return `TAT-${pad(value, 9)}`;
+  }
 }
