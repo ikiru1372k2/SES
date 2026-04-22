@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { BadgeCheck } from 'lucide-react';
 import type { ProcessEscalationManagerRow } from '@ses/domain';
+import { verifyTracking } from '../../lib/api/trackingStageApi';
 import { ActivityFeed } from './ActivityFeed';
 import { Composer } from './Composer';
 import { FindingsTab } from './FindingsTab';
@@ -21,6 +25,23 @@ export function EscalationPanel({
 }) {
   const [tab, setTab] = useState<TabId>('findings');
   const panelRef = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+  const trackingRef = row?.trackingId ?? row?.trackingDisplayCode ?? null;
+  const awaitingVerification = Boolean(row && row.stage === 'RESOLVED' && !row.verifiedAt);
+  const canVerify = Boolean(row && !row.verifiedAt);
+
+  const verifyMut = useMutation({
+    mutationFn: () => {
+      if (!trackingRef) return Promise.reject(new Error('No tracking row'));
+      return verifyTracking(trackingRef);
+    },
+    onSuccess: () => {
+      toast.success('Verified — moved to Resolved.');
+      void qc.invalidateQueries({ queryKey: ['escalations'] });
+      void qc.invalidateQueries({ queryKey: ['tracking-events', trackingRef] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -67,6 +88,16 @@ export function EscalationPanel({
             <div className="mt-1 flex flex-wrap gap-2 text-xs">
               <span className="rounded bg-gray-100 px-2 py-0.5 dark:bg-gray-800">{row.stage ?? '—'}</span>
               <span className="text-gray-500">SLA: {slaText}</span>
+              {awaitingVerification ? (
+                <span className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                  Awaiting auditor verification
+                </span>
+              ) : null}
+              {row.verifiedAt ? (
+                <span className="rounded bg-green-100 px-2 py-0.5 font-medium text-green-900 dark:bg-green-900/40 dark:text-green-100">
+                  Verified {row.verifiedByName ? `by ${row.verifiedByName}` : ''}
+                </span>
+              ) : null}
             </div>
           </div>
           <button
@@ -103,11 +134,30 @@ export function EscalationPanel({
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {tab === 'findings' ? <FindingsTab processId={processId} row={row} /> : null}
           {tab === 'compose' ? <Composer processDisplayCode={processDisplayCode} row={row} onDone={onClose} /> : null}
-          {tab === 'activity' ? <ActivityFeed trackingIdOrCode={row.trackingId ?? row.trackingDisplayCode} /> : null}
+          {tab === 'activity' ? (
+            <ActivityFeed trackingIdOrCode={row.trackingId ?? row.trackingDisplayCode} row={row} />
+          ) : null}
           {tab === 'attachments' ? (
             <p className="text-sm text-gray-500">Attachments will be available in a later release.</p>
           ) : null}
         </div>
+        {canVerify && trackingRef ? (
+          <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+            <span className="text-xs text-gray-500">
+              {awaitingVerification
+                ? 'Manager marked resolved — review the evidence and verify to close the loop.'
+                : 'Verifying closes the row to Resolved with your name stamped on it.'}
+            </span>
+            <button
+              type="button"
+              onClick={() => verifyMut.mutate()}
+              disabled={verifyMut.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+            >
+              <BadgeCheck size={14} /> Verified — Resolve
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

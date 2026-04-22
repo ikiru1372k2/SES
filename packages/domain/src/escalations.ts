@@ -34,8 +34,16 @@ export interface ProcessEscalationManagerRow {
   trackingId: string | null;
   trackingDisplayCode: string | null;
   /**
-   * Current counters on the tracking entry (Issue #75). The UI uses these
-   * to render the `Outlook N/2` / `Teams N/1` pills and to mirror the
+   * Issue #76: an auditor must click "Verified — Resolve" before a
+   * RESOLVED-stage entry truly leaves the active list. When `stage`
+   * reads RESOLVED but `verifiedAt` is null the row renders with an
+   * orange "Awaiting verification" pill.
+   */
+  verifiedAt?: string | null;
+  verifiedByName?: string | null;
+  /**
+   * Counters on the tracking entry (Issue #75). The UI uses these to
+   * render the `Outlook N/2` / `Teams N/1` pills and to mirror the
    * server-side channel gate.
    */
   outlookCount?: number;

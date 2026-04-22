@@ -76,6 +76,8 @@ model User {
   fileDrafts     FileDraft[]       @relation("FileDraftBy")
   managerDirectoriesCreated ManagerDirectory[] @relation("ManagerDirectoryCreatedBy")
   trackingDraftLocks TrackingEntry[] @relation("TrackingDraftLock")
+  trackingVerifications TrackingEntry[] @relation("TrackingVerifier")
+  trackingStageComments TrackingStageComment[] @relation("TrackingStageCommentBy")
 }
 
 model Process {
@@ -457,17 +459,46 @@ model TrackingEntry {
   composeDraft   Json?
   draftLockUserId String?
   draftLockExpiresAt DateTime?
+  /// Issue #76: an auditor must explicitly click "Verified — Resolve"
+  /// before a RESOLVED-stage entry leaves the active list. Null means the
+  /// row is "resolved per manager" but still awaiting auditor sign-off.
+  verifiedById   String?
+  verifiedAt     DateTime?
   rowVersion     Int      @default(1)
   updatedAt      DateTime @updatedAt
   process        Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
   events         TrackingEvent[]
   notifications  Notification[]
   draftLockUser  User?    @relation("TrackingDraftLock", fields: [draftLockUserId], references: [id], onDelete: SetNull)
+  verifiedBy     User?    @relation("TrackingVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
   notificationLogs NotificationLog[]
+  stageComments  TrackingStageComment[]
 
   @@unique([processId, managerKey])
   @@index([processId, stage, slaDueAt])
   @@index([processId, managerEmail])
+}
+
+/// Per-stage commentary on a tracking entry (Issue #76). Auditors drop
+/// notes like "tried calling, no answer" or "manager asked for extension"
+/// attached to a specific ladder step; each click on a StageGraph node
+/// opens a thread scoped to (trackingEntryId, stage).
+model TrackingStageComment {
+  id              String        @id
+  displayCode     String        @unique
+  trackingEntryId String
+  stage           String
+  authorId        String
+  /// Denormalised for display when the author is later deleted.
+  authorName      String
+  body            String
+  createdAt       DateTime      @default(now())
+
+  trackingEntry   TrackingEntry @relation(fields: [trackingEntryId], references: [id], onDelete: Cascade)
+  author          User          @relation("TrackingStageCommentBy", fields: [authorId], references: [id])
+
+  @@index([trackingEntryId, stage])
+  @@index([trackingEntryId, createdAt])
 }
 
 model TrackingEvent {

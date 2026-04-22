@@ -207,7 +207,17 @@ export function ManagerTable({
                   </div>
                 </td>
                 <td className="px-3 py-2">
-                  <span className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">{row.stage ?? '—'}</span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">{row.stage ?? '—'}</span>
+                    {row.stage === 'RESOLVED' && !row.verifiedAt ? (
+                      <span
+                        className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100"
+                        title="Manager marked resolved — needs auditor verification"
+                      >
+                        Awaiting verification
+                      </span>
+                    ) : null}
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-xs text-gray-600">
                   {row.lastContactAt ? new Date(row.lastContactAt).toLocaleDateString() : '—'}
