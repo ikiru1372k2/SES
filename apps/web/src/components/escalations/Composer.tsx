@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_IDS } from '@ses/domain';
 import toast from 'react-hot-toast';
+import { Mail, MessageSquare } from 'lucide-react';
 import { fetchEscalationTemplates } from '../../lib/api/escalationTemplatesApi';
 import {
   discardComposeDraft,
@@ -12,15 +13,37 @@ import {
   sendCompose,
   type ComposeDraftPayload,
 } from '../../lib/api/trackingComposeApi';
+import { openMailto, openTeamsChat } from '../../lib/outbound/clientHandoff';
 import { useAutosaveOnLeave } from '../../hooks/useAutosaveOnLeave';
 import { Button } from '../shared/Button';
 import { PreviewPane } from './PreviewPane';
+
+type SendChannel = 'email' | 'teams';
 
 function stageKeyForRow(row: ProcessEscalationManagerRow): string {
   const lv = row.escalationLevel ?? 0;
   if (lv >= 2) return 'ESCALATED_L2';
   if (lv >= 1) return 'ESCALATED_L1';
   return 'NEW';
+}
+
+function addBusinessDays(base: Date, days: number): Date {
+  const d = new Date(base);
+  let added = 0;
+  while (added < days) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const wd = d.getUTCDay();
+    if (wd !== 0 && wd !== 6) added += 1;
+  }
+  return d;
+}
+
+function toDateInputValue(d: Date): string {
+  // yyyy-mm-dd for <input type="date">
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 export function Composer({
@@ -34,17 +57,29 @@ export function Composer({
 }) {
   const qc = useQueryClient();
   const trackingRef = row.trackingId ?? row.trackingDisplayCode;
-  const [previewMode, setPreviewMode] = useState(false);
+
+  // Issue #75 — Composer defaults to Preview so the auditor reviews before
+  // sending. Edit is a toggle-back; send actions live in the preview footer.
+  const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [templateId, setTemplateId] = useState<string | undefined>();
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [cc, setCc] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState('');
-  const [channel, setChannel] = useState<'email' | 'teams' | 'both'>('email');
   const [removedEngines, setRemovedEngines] = useState<Set<string>>(new Set());
   const [resolvedPreview, setResolvedPreview] = useState<{ subject: string; body: string } | null>(null);
   const [dirtyWarn, setDirtyWarn] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [authorNote, setAuthorNote] = useState('');
+  const [deadlineAt, setDeadlineAt] = useState<string>(() =>
+    toDateInputValue(addBusinessDays(new Date(), 5)),
+  );
+
+  const outlookCount = row.outlookCount ?? 0;
+  const teamsCount = row.teamsCount ?? 0;
+  const outlookAllowed = outlookCount < 2;
+  const teamsAllowed = outlookCount >= 2 && teamsCount < 1;
+  const cycleComplete = outlookCount >= 2 && teamsCount >= 1;
 
   const statusQ = useQuery({
     queryKey: ['compose-status', trackingRef],
@@ -79,33 +114,40 @@ export function Composer({
     setTemplateId(t.id);
     setSubject(t.subject);
     setBody(t.body);
-    setChannel((t.channel as 'email' | 'teams' | 'both') || 'email');
   }, [templatesQ.data]);
 
-  async function togglePreview() {
-    if (previewMode) {
-      setPreviewMode(false);
-      return;
-    }
+  // Refresh the resolved preview whenever we enter preview mode so the
+  // auditor sees the actual substituted copy, not the raw template.
+  useEffect(() => {
+    if (viewMode !== 'preview' || !trackingRef) return;
+    let cancelled = false;
     setPreviewLoading(true);
-    try {
-      const previewBody: Partial<ComposeDraftPayload> = {
-        subject,
-        body,
-        cc,
-        removedEngineIds: [...removedEngines],
-        channel,
-      };
-      if (templateId) previewBody.templateId = templateId;
-      const data = await previewCompose(trackingRef!, previewBody);
-      setResolvedPreview(data);
-      setPreviewMode(true);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Preview failed');
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
+    const previewBody: Partial<ComposeDraftPayload> = {
+      subject,
+      body,
+      cc,
+      removedEngineIds: [...removedEngines],
+      authorNote,
+      deadlineAt: deadlineAt || null,
+    };
+    if (templateId) previewBody.templateId = templateId;
+    void previewCompose(trackingRef, previewBody)
+      .then((data) => {
+        if (cancelled) return;
+        setResolvedPreview(data);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        toast.error(e instanceof Error ? e.message : 'Preview failed');
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode, trackingRef, templateId, subject, body, cc, removedEngines, authorNote, deadlineAt]);
 
   const draftMut = useMutation({
     mutationFn: (payload: ComposeDraftPayload) => saveComposeDraft(trackingRef!, payload),
@@ -127,18 +169,38 @@ export function Composer({
   });
 
   const sendMut = useMutation({
-    mutationFn: () =>
+    mutationFn: (channel: SendChannel) =>
       sendCompose(trackingRef!, {
         subject,
         body,
         cc,
         removedEngineIds: [...removedEngines],
         channel,
-        sources: FUNCTION_IDS.filter((id) => (row.countsByEngine[id] ?? 0) > 0 && !removedEngines.has(id)) as string[],
+        authorNote,
+        deadlineAt: deadlineAt || null,
+        sources: FUNCTION_IDS.filter(
+          (id) => (row.countsByEngine[id] ?? 0) > 0 && !removedEngines.has(id),
+        ) as string[],
         ...(templateId ? { templateId } : {}),
       }),
-    onSuccess: () => {
-      toast.success('Sent');
+    onSuccess: (result) => {
+      // Issue #75: the server only records intent; the user's own app does
+      // the actual send. Try to open it; fall back to a copy-hint when the
+      // browser's popup blocker kills the window.open.
+      const handoffOk =
+        result.channel === 'teams'
+          ? openTeamsChat({ to: result.to, message: `${result.subject}\n\n${result.body}` })
+          : openMailto({ to: result.to, cc: result.cc, subject: result.subject, body: result.body });
+      if (handoffOk) {
+        toast.success(
+          result.channel === 'teams' ? 'Recorded — Teams opening…' : 'Recorded — mail client opening…',
+        );
+      } else {
+        toast(
+          `Recorded on server. Your browser blocked the ${result.channel === 'teams' ? 'Teams' : 'mail'} window — open it manually.`,
+          { icon: '⚠️' },
+        );
+      }
       void qc.invalidateQueries({ queryKey: ['escalations'] });
       onDone();
     },
@@ -160,7 +222,6 @@ export function Composer({
     if (t) {
       setSubject(t.subject);
       setBody(t.body);
-      setChannel((t.channel as 'email' | 'teams' | 'both') || 'email');
     }
   }
 
@@ -192,7 +253,8 @@ export function Composer({
     body,
     cc,
     removedEngineIds: [...removedEngines],
-    channel,
+    authorNote,
+    deadlineAt: deadlineAt || null,
     ...(templateId ? { templateId } : {}),
   };
 
@@ -203,7 +265,7 @@ export function Composer({
   const dirtyRef = useRef(false);
   useEffect(() => {
     dirtyRef.current = true;
-  }, [subject, body, cc, removedEngines, channel, templateId]);
+  }, [subject, body, cc, removedEngines, templateId, authorNote, deadlineAt]);
   const latestPayloadRef = useRef(payload);
   latestPayloadRef.current = payload;
   useAutosaveOnLeave(async () => {
@@ -216,6 +278,19 @@ export function Composer({
       // Autosave is best-effort — never interrupt the user's navigation.
     }
   }, Boolean(trackingRef));
+
+  const outlookGateReason = cycleComplete
+    ? 'Cycle complete — resolve or force re-escalate.'
+    : outlookAllowed
+    ? ''
+    : 'Outlook limit reached — escalate via Teams next.';
+  const teamsGateReason = cycleComplete
+    ? 'Cycle complete — resolve or force re-escalate.'
+    : teamsAllowed
+    ? ''
+    : outlookCount < 2
+    ? `Send ${2 - outlookCount} more Outlook reminder${2 - outlookCount === 1 ? '' : 's'} before Teams.`
+    : 'Teams already used this cycle.';
 
   return (
     <div className="space-y-4">
@@ -232,6 +307,19 @@ export function Composer({
           </button>
         </div>
       ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+        <span className="font-medium">Ladder:</span>
+        <span className={`rounded-full px-2 py-0.5 ${outlookCount >= 1 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
+          Outlook #1 {outlookCount >= 1 ? '✓' : ''}
+        </span>
+        <span className={`rounded-full px-2 py-0.5 ${outlookCount >= 2 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
+          Outlook #2 {outlookCount >= 2 ? '✓' : ''}
+        </span>
+        <span className={`rounded-full px-2 py-0.5 ${teamsCount >= 1 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
+          Teams {teamsCount >= 1 ? '✓' : ''}
+        </span>
+      </div>
 
       <div>
         <div className="text-xs font-medium text-gray-500">To</div>
@@ -269,34 +357,32 @@ export function Composer({
         ) : null}
       </div>
 
-      <div>
-        <label className="text-xs font-medium text-gray-500">Template</label>
-        <select
-          disabled={readOnly}
-          value={templateId ?? ''}
-          onChange={(e) => onTemplateChange(e.target.value)}
-          className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
-        >
-          {(templatesQ.data ?? []).map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.stage} v{t.version} ({t.channel})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label className="text-xs font-medium text-gray-500">Channel</label>
-        <select
-          disabled={readOnly}
-          value={channel}
-          onChange={(e) => setChannel(e.target.value as 'email' | 'teams' | 'both')}
-          className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
-        >
-          <option value="email">Email</option>
-          <option value="teams">Teams</option>
-          <option value="both">Both</option>
-        </select>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className="text-xs font-medium text-gray-500">Template</label>
+          <select
+            disabled={readOnly}
+            value={templateId ?? ''}
+            onChange={(e) => onTemplateChange(e.target.value)}
+            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+          >
+            {(templatesQ.data ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.stage} v{t.version} ({t.channel})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-500">Due date (shown to manager as {'{{dueDate}}'})</label>
+          <input
+            type="date"
+            disabled={readOnly}
+            value={deadlineAt}
+            onChange={(e) => setDeadlineAt(e.target.value)}
+            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+          />
+        </div>
       </div>
 
       <div>
@@ -334,7 +420,7 @@ export function Composer({
         </div>
       </div>
 
-      {!previewMode ? (
+      {viewMode === 'edit' ? (
         <>
           <div>
             <label className="text-xs font-medium text-gray-500">Subject</label>
@@ -357,22 +443,65 @@ export function Composer({
           </div>
         </>
       ) : (
-        <PreviewPane subject={resolvedPreview?.subject ?? ''} body={resolvedPreview?.body ?? ''} />
+        <div className="space-y-2">
+          <div className="text-[11px] uppercase tracking-wide text-gray-500">
+            Preview (what the manager will see)
+          </div>
+          <PreviewPane
+            subject={resolvedPreview?.subject ?? (previewLoading ? 'Loading…' : subject)}
+            body={resolvedPreview?.body ?? (previewLoading ? 'Loading…' : body)}
+          />
+        </div>
       )}
 
+      <div>
+        <label className="text-xs font-medium text-gray-500">
+          Auditor note (internal — not shown to the manager)
+        </label>
+        <textarea
+          disabled={readOnly}
+          value={authorNote}
+          onChange={(e) => setAuthorNote(e.target.value)}
+          rows={2}
+          placeholder="Why are you sending this now? e.g. 'tried calling twice, no answer'"
+          className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+        />
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-3 dark:border-gray-800">
-        <Button type="button" variant="secondary" onClick={() => void togglePreview()} disabled={previewLoading}>
-          {previewMode ? 'Edit' : 'Preview'}
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => setViewMode(viewMode === 'preview' ? 'edit' : 'preview')}
+        >
+          {viewMode === 'preview' ? 'Edit' : 'Preview'}
         </Button>
-        <div className="flex-1" />
         <Button type="button" variant="secondary" onClick={() => discardMut.mutate()} disabled={readOnly || discardMut.isPending}>
           Discard
         </Button>
         <Button type="button" variant="secondary" onClick={() => draftMut.mutate(payload)} disabled={readOnly || draftMut.isPending}>
           Save draft
         </Button>
-        <Button type="button" onClick={() => sendMut.mutate()} disabled={readOnly || sendMut.isPending}>
-          Send
+        <div className="flex-1" />
+        <Button
+          type="button"
+          variant={outlookAllowed ? 'primary' : 'secondary'}
+          leading={<Mail size={14} />}
+          title={outlookGateReason || 'Open Outlook with this message prefilled'}
+          disabled={readOnly || !outlookAllowed || sendMut.isPending}
+          onClick={() => sendMut.mutate('email')}
+        >
+          Outlook ({outlookCount}/2)
+        </Button>
+        <Button
+          type="button"
+          variant={teamsAllowed ? 'primary' : 'secondary'}
+          leading={<MessageSquare size={14} />}
+          title={teamsGateReason || 'Open Teams chat with this message prefilled'}
+          disabled={readOnly || !teamsAllowed || sendMut.isPending}
+          onClick={() => sendMut.mutate('teams')}
+        >
+          Teams ({teamsCount}/1)
         </Button>
       </div>
     </div>

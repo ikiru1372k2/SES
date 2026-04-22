@@ -33,6 +33,13 @@ export interface ProcessEscalationManagerRow {
   slaDueAt: string | null;
   trackingId: string | null;
   trackingDisplayCode: string | null;
+  /**
+   * Current counters on the tracking entry (Issue #75). The UI uses these
+   * to render the `Outlook N/2` / `Teams N/1` pills and to mirror the
+   * server-side channel gate.
+   */
+  outlookCount?: number;
+  teamsCount?: number;
   escalationLevel?: number;
   draftLockExpiresAt?: string | null;
   draftLockUserDisplayName?: string | null;

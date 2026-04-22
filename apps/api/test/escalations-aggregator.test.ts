@@ -33,6 +33,8 @@ describe('aggregateEscalations', () => {
         slaDueAt: null,
         id: 't1',
         displayCode: 'TRK-1',
+        outlookCount: 1,
+        teamsCount: 0,
       },
     ];
     const payload = aggregateEscalations('proc-1', issues, tracking);

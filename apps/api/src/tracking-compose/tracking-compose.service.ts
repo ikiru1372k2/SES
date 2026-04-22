@@ -33,7 +33,36 @@ export type ComposeDraftPayload = {
   cc: string[];
   removedEngineIds?: string[];
   channel?: EscalationSendChannel;
+  /** Auditor-only note persisted alongside the send. Not shown to the manager. */
+  authorNote?: string;
+  /** ISO-8601 date for the {{dueDate}} slot. */
+  deadlineAt?: string | null;
 };
+
+/**
+ * Issue #75: escalation cycle is outlook → outlook → teams, then the cycle
+ * is complete. The server is the source of truth for the gate; the UI
+ * mirrors it from `outlookCount` / `teamsCount` on the tracking entry.
+ * Admin-only `forceReescalate` zeroes the counters to start a new cycle.
+ */
+function assertChannelAllowed(
+  entry: { outlookCount: number; teamsCount: number },
+  channel: EscalationSendChannel,
+): void {
+  const effective: 'outlook' | 'teams' = channel === 'teams' ? 'teams' : 'outlook';
+  if (effective === 'outlook') {
+    if (entry.outlookCount >= 2) {
+      throw new ConflictException('Outlook limit reached for this cycle — escalate via Teams next.');
+    }
+    return;
+  }
+  if (entry.outlookCount < 2) {
+    throw new ConflictException('Send two Outlook reminders before escalating to Teams.');
+  }
+  if (entry.teamsCount >= 1) {
+    throw new ConflictException('Cycle complete — resolve or force re-escalate before sending again.');
+  }
+}
 
 function stageKeyForLevel(level: number): string {
   if (level >= 2) return 'ESCALATED_L2';
@@ -182,30 +211,53 @@ export class TrackingComposeService {
     ) {
       throw new ForbiddenException('Another user holds the compose lock.');
     }
-    if (entry.stage !== EscalationStage.NEW && entry.stage !== EscalationStage.DRAFTED) {
-      throw new BadRequestException('Send is only allowed from NEW or DRAFTED.');
+    // The ladder may be at any stage the cycle allows: NEW/DRAFTED for the
+    // first Outlook, AWAITING_RESPONSE for the second Outlook, and
+    // AWAITING_RESPONSE / ESCALATED_L1 / NO_RESPONSE for the Teams leg. Any
+    // other stage is a bug in the client: refuse loudly.
+    if (
+      entry.stage !== EscalationStage.NEW &&
+      entry.stage !== EscalationStage.DRAFTED &&
+      entry.stage !== EscalationStage.AWAITING_RESPONSE &&
+      entry.stage !== EscalationStage.ESCALATED_L1 &&
+      entry.stage !== EscalationStage.NO_RESPONSE
+    ) {
+      throw new BadRequestException(`Send is not allowed from stage ${entry.stage}.`);
     }
-    assertTransition(entry.stage as DomainEscalationStage, EscalationStage.SENT);
-    assertTransition(EscalationStage.SENT, EscalationStage.AWAITING_RESPONSE);
 
     const { subject, text, channel } = await this.resolveContent(entry, user, body);
     const sendChannel: EscalationSendChannel = channel ?? 'email';
+    // Channel gate (Issue #75): the 2-Outlooks-then-1-Teams cycle is
+    // enforced here so race conditions between multiple auditors can't
+    // punch through the counter.
+    assertChannelAllowed({ outlookCount: entry.outlookCount, teamsCount: entry.teamsCount }, sendChannel);
+    if (sendChannel === 'both') {
+      // The client-handoff path opens one window per channel; mailto and
+      // the Teams deep-link can't be atomically composed anyway. Force the
+      // auditor to pick one explicitly.
+      throw new BadRequestException('Channel "both" is no longer supported — pick Outlook or Teams.');
+    }
+
     const to = (entry.managerEmail ?? '').trim();
     if (!to) {
       throw new BadRequestException('Manager email is required before send.');
     }
 
-    await this.outbound.sendEscalation({
-      channel: sendChannel,
-      to,
-      cc: (body.cc ?? []).map((c) => c.trim()).filter(Boolean),
-      subject,
-      bodyText: text,
-    });
+    // Issue #75: no SMTP, no Teams webhook. The web client opens mailto: /
+    // teams deep-link with the prefilled content after this endpoint
+    // returns. We only RECORD the handoff here so the ladder advances and
+    // the activity timeline reflects what happened.
 
     const slaHours = entry.process.slaInitialHours ?? 120;
     const slaDueAt = new Date(Date.now() + slaHours * 60 * 60 * 1000);
     const issueCount = body.sources?.length ? body.sources.length : 0;
+    const deadlineAt = body.deadlineAt ? new Date(body.deadlineAt) : null;
+    const authorNote = (body.authorNote ?? '').slice(0, 2000);
+
+    // The Teams leg transitions to ESCALATED_L1 so the timeline clearly
+    // distinguishes an Outlook reminder from a Teams escalation.
+    const nextStage: EscalationStage =
+      sendChannel === 'teams' ? EscalationStage.ESCALATED_L1 : EscalationStage.AWAITING_RESPONSE;
 
     const logRow = await this.prisma.$transaction(async (tx) => {
       const log = await tx.notificationLog.create({
@@ -216,12 +268,14 @@ export class TrackingComposeService {
           trackingEntryId: entry.id,
           managerEmail: to.toLowerCase(),
           managerName: entry.managerName,
-          channel: sendChannel === 'both' ? 'both' : sendChannel,
+          channel: sendChannel,
           subject,
           bodyPreview: text.slice(0, 2000),
           resolvedBody: text,
           sources: body.sources as object,
           issueCount,
+          authorNote,
+          deadlineAt,
         },
       });
       await tx.trackingEvent.create({
@@ -230,20 +284,24 @@ export class TrackingComposeService {
           displayCode: await this.identifiers.nextTrackingEventCode(tx),
           trackingId: entry.id,
           kind: 'escalation_sent',
-          channel: sendChannel === 'both' ? 'sendAll' : sendChannel === 'teams' ? 'teams' : 'outlook',
+          channel: sendChannel === 'teams' ? 'teams' : 'outlook',
           note: subject.slice(0, 200),
           reason: 'escalation_send',
-          payload: { sources: body.sources, notificationLogId: log.id } as object,
+          payload: {
+            sources: body.sources,
+            notificationLogId: log.id,
+            deadlineAt: deadlineAt?.toISOString() ?? null,
+            authorNote,
+          } as object,
           triggeredById: user.id,
         },
       });
-      const outlookInc =
-        sendChannel === 'email' || sendChannel === 'both' ? 1 : 0;
-      const teamsInc = sendChannel === 'teams' || sendChannel === 'both' ? 1 : 0;
+      const outlookInc = sendChannel === 'email' ? 1 : 0;
+      const teamsInc = sendChannel === 'teams' ? 1 : 0;
       await tx.trackingEntry.update({
         where: { id: entry.id },
         data: {
-          stage: EscalationStage.AWAITING_RESPONSE,
+          stage: nextStage,
           outlookCount: outlookInc ? { increment: outlookInc } : undefined,
           teamsCount: teamsInc ? { increment: teamsInc } : undefined,
           lastContactAt: new Date(),
@@ -272,7 +330,69 @@ export class TrackingComposeService {
       issueCount: logRow.issueCount,
     }, { actor: { id: user.id, code: user.displayCode, email: user.email, displayName: user.displayName } });
 
-    return { ok: true, notificationLogId: logRow.id };
+    // Return the resolved content so the client can hand it to the user's
+    // mail / Teams app immediately — no second round-trip for preview.
+    return {
+      ok: true,
+      notificationLogId: logRow.id,
+      channel: sendChannel,
+      subject,
+      body: text,
+      to: to.toLowerCase(),
+      cc: (body.cc ?? []).map((c) => c.trim()).filter(Boolean),
+    };
+  }
+
+  /**
+   * Admin-only cycle reset (Issue #75). Zeroes the Outlook / Teams
+   * counters and stamps a `cycle_reset` TrackingEvent so the activity
+   * feed explains why a manager is seeing a fresh round of reminders.
+   * Transitions back to NEW so the gate reopens at Outlook #1.
+   */
+  async forceReescalate(idOrCode: string, user: SessionUser) {
+    if (user.role !== 'admin') {
+      throw new ForbiddenException('Admin role required to force a new cycle.');
+    }
+    const entry = await this.loadEntry(idOrCode, user);
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.trackingEntry.update({
+        where: { id: entry.id },
+        data: {
+          outlookCount: 0,
+          teamsCount: 0,
+          stage: EscalationStage.NEW,
+          slaDueAt: null,
+          rowVersion: { increment: 1 },
+        },
+      });
+      await tx.trackingEvent.create({
+        data: {
+          id: createId(),
+          displayCode: await this.identifiers.nextTrackingEventCode(tx),
+          trackingId: entry.id,
+          kind: 'cycle_reset',
+          channel: 'manual',
+          note: 'Cycle reset — Outlook and Teams counters zeroed.',
+          reason: 'force_reescalate',
+          triggeredById: user.id,
+        },
+      });
+      await this.activity.append(tx, {
+        actorId: user.id,
+        actorEmail: user.email,
+        processId: entry.processId,
+        entityType: 'tracking_entry',
+        entityId: entry.id,
+        entityCode: entry.displayCode,
+        action: 'tracking.cycle_reset',
+      });
+      return row;
+    });
+    this.realtime.emitToProcess(entry.process.displayCode, 'tracking.updated', {
+      trackingId: entry.id,
+      stage: updated.stage,
+    }, { actor: { id: user.id, code: user.displayCode, email: user.email, displayName: user.displayName } });
+    return { ok: true, stage: updated.stage };
   }
 
   private async pickTemplate(tenantId: string, stageKey: string, templateId?: string) {

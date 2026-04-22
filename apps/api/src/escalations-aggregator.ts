@@ -29,6 +29,8 @@ export type AggregatorTrackingRow = {
   slaDueAt: Date | null;
   id: string;
   displayCode: string;
+  outlookCount: number;
+  teamsCount: number;
 };
 
 function issueManagerKey(row: AggregatorIssueRow): string {
@@ -140,6 +142,8 @@ export function aggregateEscalations(
       slaDueAt: tr?.slaDueAt?.toISOString() ?? null,
       trackingId: tr?.id ?? null,
       trackingDisplayCode: tr?.displayCode ?? null,
+      outlookCount: tr?.outlookCount ?? 0,
+      teamsCount: tr?.teamsCount ?? 0,
     });
   }
 
