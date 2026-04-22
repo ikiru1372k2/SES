@@ -1,4 +1,5 @@
 import type { TrackingEntry } from './types';
+import { emptyProjectStatuses } from './projectStatuses';
 
 export type PipelineKey = 'notContacted' | 'notified' | 'escalated' | 'resolved';
 
@@ -15,10 +16,27 @@ export function trackingKey(processId: string, managerEmail: string): string {
 
 export function pipelineKey(entry: TrackingEntry): PipelineKey {
   if (entry.resolved) return 'resolved';
-  if (entry.stage === 'Resolved') return 'resolved';
-  if (entry.stage === 'Teams escalated') return 'escalated';
-  if (entry.stage === 'Reminder 1 sent' || entry.stage === 'Reminder 2 sent') return 'notified';
-  if (entry.stage === 'Not contacted') return 'notContacted';
+  const legacy = entry.stage as string;
+  if (legacy === 'Resolved') return 'resolved';
+  if (legacy === 'Teams escalated') return 'escalated';
+  if (legacy === 'Reminder 1 sent' || legacy === 'Reminder 2 sent') return 'notified';
+  if (legacy === 'Not contacted') return 'notContacted';
+  switch (entry.stage) {
+    case 'RESOLVED':
+      return 'resolved';
+    case 'ESCALATED_L1':
+    case 'ESCALATED_L2':
+    case 'NO_RESPONSE':
+      return 'escalated';
+    case 'SENT':
+    case 'AWAITING_RESPONSE':
+    case 'RESPONDED':
+      return 'notified';
+    case 'NEW':
+    case 'DRAFTED':
+    default:
+      break;
+  }
   if (entry.teamsCount > 0 || entry.outlookCount >= 2) return 'escalated';
   if (entry.outlookCount > 0) return 'notified';
   return 'notContacted';
@@ -39,9 +57,10 @@ export function makeDefaultTrackingEntry(
     outlookCount: 0,
     teamsCount: 0,
     lastContactAt: null,
-    stage: 'Not contacted',
+    stage: 'NEW',
+    escalationLevel: 0,
     resolved: false,
     history: [],
-    projectStatuses: {},
+    projectStatuses: emptyProjectStatuses(),
   };
 }

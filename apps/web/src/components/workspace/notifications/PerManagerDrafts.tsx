@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { AuditProcess, NotificationDraft, NotificationTemplate, NotificationTheme } from '../../../lib/types';
+import type { AuditProcess, NotificationDraft, NotificationComposeTemplate, NotificationTheme } from '../../../lib/types';
 import { trackingKey } from '../../../lib/tracking';
 import { TemplateEditor } from '../TemplateEditor';
 import { DraftCard } from './DraftCard';
@@ -30,11 +30,7 @@ export function PerManagerDrafts({
   setSearch,
   setSelected,
   active,
-  sendAll,
-  validRecipientCount,
-  openOutlook,
   downloadDraft,
-  openTeams,
   onSaveNamed,
   onCopyDraft,
 }: {
@@ -44,19 +40,17 @@ export function PerManagerDrafts({
   setTheme: (theme: NotificationTheme) => void;
   deadline: string;
   setDeadline: (value: string) => void;
-  template: NotificationTemplate;
-  setTemplate: (template: NotificationTemplate | ((previous: NotificationTemplate) => NotificationTemplate)) => void;
+  template: NotificationComposeTemplate;
+  setTemplate: (
+    template: NotificationComposeTemplate | ((previous: NotificationComposeTemplate) => NotificationComposeTemplate),
+  ) => void;
   onlyUnreviewed: boolean;
   setOnlyUnreviewed: (value: boolean) => void;
   search: string;
   setSearch: (value: string) => void;
   setSelected: (index: number) => void;
   active: NotificationDraft | undefined;
-  sendAll: () => void;
-  validRecipientCount: number;
-  openOutlook: (draft: NotificationDraft) => void;
   downloadDraft: (draft: NotificationDraft) => void;
-  openTeams: (draft: NotificationDraft) => void;
   onSaveNamed: (name: string) => void;
   onCopyDraft: (draft: NotificationDraft) => void;
 }) {
@@ -78,14 +72,6 @@ export function PerManagerDrafts({
             placeholder="Search manager, email, project name, project no..."
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
           />
-          <button
-            type="button"
-            onClick={sendAll}
-            disabled={!drafts.length}
-            className="w-full rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-40"
-          >
-            Send All ({validRecipientCount} managers)
-          </button>
           <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
             <input
               type="checkbox"
@@ -109,9 +95,7 @@ export function PerManagerDrafts({
                   setRightPanel('preview');
                 }}
                 onCopy={() => onCopyDraft(draft)}
-                onOutlook={() => openOutlook(draft)}
                 onEml={() => downloadDraft(draft)}
-                onTeams={() => openTeams(draft)}
               />
             ))
           ) : (

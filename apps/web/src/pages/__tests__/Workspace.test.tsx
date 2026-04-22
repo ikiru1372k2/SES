@@ -69,6 +69,10 @@ vi.mock('../../realtime/useRealtime', () => ({
   useRealtime: () => ({ members: [] }),
 }));
 
+vi.mock('../../lib/api/directoryApi', () => ({
+  directorySuggestions: vi.fn().mockResolvedValue({ results: {} }),
+}));
+
 import { useAppStore } from '../../store/useAppStore';
 
 describe('Workspace', () => {

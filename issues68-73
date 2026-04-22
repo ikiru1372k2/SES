@@ -1,0 +1,518 @@
+# SES Escalation Overhaul — Implementation Issues
+
+**Goal:** Replace per-tile tracking/notification with a unified, manager-centric escalation workflow across all audit engines.
+
+**Strategy:** 5 sequential issues. Each is a full deliverable. Do not start issue N+1 until N is merged.
+
+**Total estimated effort:** ~3–4 weeks for one engineer, ~2 weeks for a pair.
+
+---
+
+## Dependency graph
+
+```
+Issue 1 (Directory)  ─┐
+                      ├──▶ Issue 3 (Escalation Center UI) ──▶ Issue 4 (Composer) ──▶ Issue 5 (Automation)
+Issue 2 (Data Model) ─┘
+```
+
+Issue 1 and Issue 2 can run in parallel. Everything else is strictly sequential.
+
+---
+
+## Issue 1 — Manager Directory & Email Resolution
+
+**Priority:** P0 (blocks everything else)
+**Estimate:** 4–5 days
+**Labels:** `feature`, `backend`, `frontend`, `foundation`
+
+### Context
+
+Audit Excel uploads contain manager names but no emails. Without emails, no notification or tracking surface can function. We need a tenant-level directory that maps names → emails, handles misspellings, and learns from user corrections.
+
+### Goals
+
+- Single source of truth for manager contact info, scoped per tenant
+- Three low-friction ingestion paths: file upload, paste-from-Excel, manual entry
+- Fuzzy matching that auto-resolves high-confidence matches and surfaces ambiguous ones for human review
+- Alias learning: a typo resolved once is never asked about again
+
+### Non-goals
+
+- Bi-directional sync with HR systems (future)
+- Per-process directories (explicitly rejected — would cause re-entry)
+- Auto-detection of manager roles or reporting chains
+
+### Acceptance criteria
+
+- [ ] New `ManagerDirectory` table with unique `(tenantId, email)` and indexed `normalizedKey`
+- [ ] Upload wizard modal with 4 steps: drop-or-paste → column mapping → preview → commit
+- [ ] Paste-from-Excel textarea handles tab-separated + newline input correctly
+- [ ] Column auto-detection matches common header variants (`first_name`, `firstName`, `First Name`, `Given Name`)
+- [ ] Preview step highlights duplicates, invalid emails, and conflicts with color-coded rows and a counts summary
+- [ ] Matching function: exact `normalizedKey` → alias → fuzzy (token-sort ratio ≥ 0.90 auto-accept, 0.70–0.90 candidate list, <0.70 unmapped)
+- [ ] Inline resolution drawer appears on any tile / Escalation Center page when unmapped managers exist
+- [ ] Resolution drawer offers: accept suggestion (stores alias), "None of these" → inline add, "Apply all high-confidence" bulk action
+- [ ] Directory management page at `/admin/directory` with search, filters, bulk archive, merge flow
+- [ ] Merge repoints `TrackingEntry.managerKey` references to target entry; aliases folded in; source archived (never hard-deleted)
+- [ ] Email changes on existing entries show "will repoint N tracking rows" confirmation
+- [ ] Collision handling: two real people with the same name → forced to unmapped state, human must pick
+
+### Technical scope
+
+**Schema (Prisma):**
+
+```prisma
+model ManagerDirectory {
+  id            String   @id
+  tenantId      String
+  firstName     String
+  lastName      String
+  email         String
+  normalizedKey String
+  aliases       Json     // string[] of observed spellings
+  active        Boolean  @default(true)
+  source        String   // "manual" | "upload" | "inline-resolved"
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([tenantId, email])
+  @@index([tenantId, normalizedKey])
+}
+```
+
+**Endpoints:**
+
+- `POST /api/directory/upload` — accepts parsed rows, returns commit preview with diagnostics
+- `POST /api/directory/commit` — applies with chosen strategy (`skip_duplicates` | `update_existing`)
+- `POST /api/directory/resolve` — resolve unmapped name; records alias on success
+- `POST /api/directory/merge` — merge two entries; returns affected row counts
+- `GET /api/directory?search=...&filter=...` — paginated list for management page
+- `GET /api/directory/:id/history` — all audit runs referencing this manager
+
+**Components:**
+
+- `<DirectoryUploadWizard />` — the 4-step modal
+- `<PasteFromExcel />` — textarea with client-side TSV parser
+- `<ResolutionDrawer />` — right-side drawer reusable on tile + Escalation Center
+- `<DirectoryTable />` — admin page with inline edit, merge action
+
+**Matching library:** `fastest-levenshtein` or `rapidfuzz-js`. Ship with conservative threshold (0.95 auto-accept), loosen based on real data in Issue 5 polish.
+
+### Out of scope / deferred
+
+- Bi-directional HR sync
+- Auto-suggest emails from company SSO directory (add if Keycloak integration is desired later)
+- Per-role permissions on directory editing (single admin role for v1)
+
+---
+
+## Issue 2 — Escalation Data Model & State Machine
+
+**Priority:** P0 (parallel to Issue 1)
+**Estimate:** 3–4 days
+**Labels:** `backend`, `foundation`, `schema-change`
+
+### Context
+
+Current `TrackingEntry` is process-scoped per manager (good), but `projectStatuses` is untyped JSON. We need a structured per-engine status model, a formal state machine, and an aggregation endpoint that unions findings across all 5 audit engines.
+
+### Goals
+
+- Formalize `projectStatuses` as typed `byEngine` structure with `aggregate` rollup
+- Introduce `stage` as a finite-state enum with guarded transitions
+- Build one aggregation endpoint that returns manager-centric rows for a process
+- Log every state transition to `TrackingEvent` for full audit trail
+
+### Non-goals
+
+- Any UI work (that's Issue 3)
+- Automatic transitions based on time (that's Issue 5)
+- Template content or composer logic (that's Issue 4)
+
+### Acceptance criteria
+
+- [ ] `TrackingEntry.stage` constrained to enum: `NEW | DRAFTED | SENT | AWAITING_RESPONSE | RESPONDED | NO_RESPONSE | ESCALATED_L1 | ESCALATED_L2 | RESOLVED`
+- [ ] `projectStatuses` JSON follows typed schema: `{ byEngine: { [engineKey]: { openCount, status, lastSeenRunId, resolvedAt? } }, aggregate: { totalOpen, overallStatus } }`
+- [ ] Global `resolved = true` only when every non-`na` engine sub-status is `resolved`
+- [ ] State transition function rejects illegal transitions (e.g. `RESOLVED → NEW` without explicit reopen)
+- [ ] Every transition writes a `TrackingEvent` row with actor, timestamp, reason, payload
+- [ ] New `NotificationTemplate` table created (content populated in Issue 4)
+- [ ] `GET /api/processes/:id/escalations` returns manager-keyed rows aggregating issues from latest completed run per engine
+- [ ] Aggregation normalizes manager email (lowercase, trim) for grouping
+- [ ] Aggregation joins `ManagerDirectory` (from Issue 1) to attach emails when available
+- [ ] Re-run audit auto-reconciles: engine sub-status flips to `resolved` if manager no longer flagged; other engines untouched
+- [ ] Unit tests cover all legal transitions + rejection of all illegal ones
+
+### Technical scope
+
+**Schema:**
+
+```prisma
+enum EscalationStage {
+  NEW
+  DRAFTED
+  SENT
+  AWAITING_RESPONSE
+  RESPONDED
+  NO_RESPONSE
+  ESCALATED_L1
+  ESCALATED_L2
+  RESOLVED
+}
+
+model TrackingEntry {
+  // ...existing fields...
+  stage           EscalationStage @default(NEW)
+  slaDueAt        DateTime?
+  escalationLevel Int             @default(0)
+  // projectStatuses JSON now typed per spec above
+}
+
+model NotificationTemplate {
+  id          String   @id
+  tenantId    String?  // null = system template
+  parentId    String?  // org override points at system template
+  stage       String
+  subject     String
+  body        String
+  channel     String   // "email" | "teams" | "both"
+  active      Boolean
+  version     Int
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+```
+
+**Server modules:**
+
+- `EscalationStateMachine` — pure function `canTransition(from, to): boolean` + `transition(entry, to, actor, reason): TrackingEntry`
+- `EscalationAggregator` — builds manager-keyed rows from latest runs
+- `StatusReconciler` — runs after each audit; updates byEngine sub-statuses
+
+**Endpoints:**
+
+- `GET /api/processes/:id/escalations` — the main read endpoint (returns rows for UI in Issue 3)
+- `POST /api/tracking/:id/transition` — explicit transition trigger (used by composer in Issue 4)
+
+**Migration:**
+
+- Backfill existing `TrackingEntry.projectStatuses` into new structured format
+- Default `stage` derived from existing `resolved` flag: `resolved=true → RESOLVED`, else `NEW`
+
+### Out of scope / deferred
+
+- UI to visualize the state machine (nice-to-have admin tool, post-MVP)
+- Cross-process aggregation (single process per page for now)
+
+---
+
+## Issue 3 — Escalation Center UI & Tile Cleanup
+
+**Priority:** P0 (depends on Issues 1 + 2)
+**Estimate:** 5–6 days
+**Labels:** `frontend`, `feature`, `breaking-ux`
+
+### Context
+
+This is the user-visible payoff. One page, one row per manager, engine findings visible as pills. Tiles get demoted to pure analysis surfaces — no more per-tile Send button, no more per-tile TrackingTab.
+
+### Goals
+
+- Ship the Escalation Center as a top-level route on each process
+- Make cross-engine manager exposure visible at a glance
+- Remove the duplication-inducing per-tile workflow
+- Preserve tile analysis capability (files, runs, versions, evidence)
+
+### Non-goals
+
+- Composer or send capability (that's Issue 4 — Center is read-only at end of this issue)
+- Bulk operations (that's Issue 5)
+- Template editing (that's Issue 4)
+
+### Acceptance criteria
+
+**New page (`/processes/:id/escalations`):**
+
+- [ ] Left filter rail: stage (checkboxes), engine, SLA status, assigned-to-me toggle, saved views stub
+- [ ] Center manager table with columns: manager (name + email), total issues, engine pills (count per engine, greyed when zero), stage badge, last contact, SLA dot (green/amber/red), row action menu
+- [ ] Sort by total issues / stage / last contact / SLA
+- [ ] Keyboard navigation: `j`/`k` to move between rows, `enter` to open panel, `esc` to close
+- [ ] Right slide-over panel on row click (no page navigation)
+- [ ] Panel has 4 tabs: **Findings** (grouped by engine, expandable, deep-link to tile evidence), **Compose** (placeholder in this issue), **Activity** (TrackingEvent timeline), **Attachments** (placeholder)
+- [ ] Panel header shows manager, email, stage badge, SLA countdown
+- [ ] Top summary bar: total open findings, per-engine counts, managers-with-open count, SLA-breaching count
+
+**Process dashboard changes:**
+
+- [ ] Banner above tile grid when unresolved escalations exist: "N managers have open findings across M engines. [Open Escalation Center →]"
+- [ ] Footer chip on each tile: "N managers flagged here" — deep-links to Escalation Center pre-filtered to that engine
+
+**Tile cleanup:**
+
+- [ ] Remove `<TrackingTab />` from tile workspace (or demote to read-only "Evidence for this engine")
+- [ ] Remove per-tile "Send notification" buttons
+- [ ] Tile retains: file upload, run audit, version history, issue list as evidence view
+- [ ] Add small "email" column to tile issue list populated from directory (gap visible where unmapped)
+
+**Unmapped manager handling:**
+
+- [ ] `<ResolutionDrawer />` from Issue 1 surfaces on Escalation Center when unmapped managers exist
+- [ ] Non-blocking banner: "N managers in these findings aren't in the directory. Notifications can't be sent until they're resolved."
+
+### Technical scope
+
+**Routes:**
+
+- `/processes/:id/escalations` (new)
+- `/processes/:id` (existing — add banner + tile chips)
+- Tile route (existing — remove TrackingTab route)
+
+**Components:**
+
+- `<EscalationCenter />` — page shell, filter rail, table, panel orchestrator
+- `<ManagerTable />` — dense row rendering with pills, keyboard handlers
+- `<EnginePill />` — reusable, takes `engine`, `count`, `onClick`
+- `<EscalationPanel />` — slide-over with tabs
+- `<FindingsTab />` — groups findings by engine, each linking to evidence
+- `<ActivityFeed />` — renders `TrackingEvent[]` chronologically
+- `<ProcessDashboardBanner />` — unresolved-escalations summary
+- `<TileEscalationChip />` — footer chip on each tile
+
+**Data:**
+
+- Consumes `GET /api/processes/:id/escalations` from Issue 2
+- Panel consumes `GET /api/tracking/:id/events` for activity feed
+
+**Migration / breaking changes:**
+
+- Feature flag the old TrackingTab for 1 release cycle, then remove
+- Document the change in release notes — this is a visible UX shift
+
+### Out of scope / deferred
+
+- Composer functionality (Issue 4)
+- Saved views persistence (Issue 5 polish)
+- Advanced filters (date ranges, custom tags)
+
+---
+
+## Issue 4 — Template System, Composer & Send Workflow
+
+**Priority:** P1 (depends on Issue 3)
+**Estimate:** 5–6 days
+**Labels:** `frontend`, `backend`, `feature`
+
+### Context
+
+Single-manager send flow. Three-layer templates (system / org override / per-send edit), slot substitution, state transitions on send. This is where the escalation becomes *actionable*.
+
+### Goals
+
+- Admins manage templates; users send with minimal friction
+- Every send moves state machine forward atomically
+- One notification record per send, even when multiple engines are included
+- Preview flip so users see exactly what the recipient sees
+
+### Non-goals
+
+- Bulk send (Issue 5)
+- Scheduled send (Issue 5)
+- Auto-escalation drafts (Issue 5)
+
+### Acceptance criteria
+
+**Template admin (`/admin/templates`):**
+
+- [ ] List-detail layout grouped by stage, system templates locked with lock icon
+- [ ] "Clone to customize" creates org override (parentId set)
+- [ ] Editor shows slot reference sidebar: `{managerFirstName}`, `{processName}`, `{findingsByEngine}`, `{slaDeadline}`, `{auditRunDate}`, `{auditorName}`
+- [ ] Preview pane renders template against a sample manager with real slot substitution
+- [ ] Publish creates new version; old versions remain queryable; new sends use latest active
+- [ ] Channel toggle per template: email / teams / both
+
+**Composer (modal, triggered from panel "Compose" tab or row action):**
+
+- [ ] Recipient block: locked manager, auto-populated CC based on stage (L1 → manager's manager, L2 → stakeholder)
+- [ ] CCs removable with warning
+- [ ] Template picker pre-selected based on current stage; changing warns if user edited body
+- [ ] Subject field (editable, slot-expanded)
+- [ ] Body field (markdown or minimal rich text, slot-expanded)
+- [ ] `{findingsByEngine}` renders as collapsible sections per engine; each section deletable with warning ("N findings still open in tracking")
+- [ ] Channel toggle defaults from template
+- [ ] Preview toggle flips composer to read-only rendered view
+- [ ] Bottom bar: Discard · Save draft · Send
+
+**Send mechanics:**
+
+- [ ] Send triggers: one SMTP/Teams call, one `NotificationsService.recordSend`, one state transition, one `TrackingEvent`
+- [ ] `recordSend` persists resolved (post-substitution) body and structured `{ sources: [engineKeys] }`
+- [ ] State transitions enforced: NEW → DRAFTED (on save draft), NEW/DRAFTED → SENT (on send), SENT → AWAITING_RESPONSE (immediately after send)
+- [ ] SLA clock starts on transition to AWAITING_RESPONSE
+- [ ] `outlookCount` / `teamsCount` incremented per channel
+- [ ] Soft lock: if another user has DRAFTED state open, second user sees read-only "Being edited by X" warning
+
+**Learning loop (subtle):**
+
+- [ ] After 3rd identical manual edit to the same template, offer "Save these changes to org template"
+
+### Technical scope
+
+**Endpoints:**
+
+- `GET /api/templates?stage=...` — list templates (system + org override merged)
+- `POST /api/templates` — create org override
+- `PATCH /api/templates/:id` — edit + version bump
+- `POST /api/tracking/:id/compose` — save draft (transitions to DRAFTED)
+- `POST /api/tracking/:id/send` — send (transitions to SENT → AWAITING_RESPONSE)
+- `POST /api/tracking/:id/preview` — returns resolved subject + body for preview
+
+**Components:**
+
+- `<TemplateAdmin />` — list-detail page
+- `<TemplateEditor />` — editor with slot sidebar + preview
+- `<Composer />` — modal triggered from panel
+- `<EngineSectionBlock />` — collapsible findings section inside composer body
+- `<PreviewPane />` — renders final email/teams message
+
+**Slot substitution:**
+
+- Pure function: `substitute(template: string, slots: Slots): string`
+- Slot values resolved server-side to keep logic canonical
+- `{findingsByEngine}` expands into formatted markdown/HTML blocks
+
+### Out of scope / deferred
+
+- Response parsing (Issue 5)
+- A/B testing templates (never)
+- Attachments on outgoing emails (evaluate post-MVP)
+
+---
+
+## Issue 5 — SLA Engine, Bulk Operations & Polish
+
+**Priority:** P1 (depends on Issue 4)
+**Estimate:** 5–6 days
+**Labels:** `backend`, `frontend`, `automation`, `polish`
+
+### Context
+
+Makes the workflow self-driving. Cron-based SLA enforcement, auto-queued (never auto-sent) escalations, bulk compose, in-app notifications, saved views, keyboard shortcuts, scheduled sends. The "this actually feels like a real product" issue.
+
+### Goals
+
+- Users never need to manually check who's overdue — the system tells them
+- Bulk send turns "12 managers × 3 engines = 36 emails" into one workflow pass
+- No surprise sends: everything stays human-reviewed
+
+### Non-goals
+
+- Machine-learning-based response classification (future)
+- SMS / WhatsApp channels (future)
+
+### Acceptance criteria
+
+**SLA engine:**
+
+- [ ] Scheduled job runs every N minutes (default 15)
+- [ ] For each `TrackingEntry` in `SENT` or `AWAITING_RESPONSE` past `slaDueAt`: transition to `NO_RESPONSE`, auto-queue L1 draft, notify auditor in-app
+- [ ] For each in `ESCALATED_L1` past `slaDueAt + L2Delay`: transition to `NO_RESPONSE` (L2), auto-queue L2 draft, notify auditor + their lead
+- [ ] **Drafts are queued, never auto-sent** — user must click to send
+- [ ] Idempotent: no duplicate drafts for same (entry, stage)
+- [ ] SLA config per tenant: initial SLA hours, L1 delay, L2 delay
+
+**Bulk operations:**
+
+- [ ] Multi-select rows in Escalation Center → top bar transforms to bulk actions
+- [ ] Bulk compose opens multi-tab preview: one tab per recipient, each showing their fully-rendered email
+- [ ] Each tab individually editable before send-all
+- [ ] "Send all N" fires sequentially with progress indicator; failures isolated, rest continue
+- [ ] Bulk mark resolved / bulk snooze / bulk escalate
+
+**In-app notifications:**
+
+- [ ] Bell icon in top nav with unread count
+- [ ] Dropdown feed: "Manager X responded" (with inline preview), "N escalations breached SLA — drafts ready", "Your scheduled send just went out"
+- [ ] Click notification → deep-link into Escalation Center with correct row open
+- [ ] Mark all read
+
+**Daily digest email:**
+
+- [ ] 9am local time email to each auditor with open escalations
+- [ ] Summary only: counts + deep-links, not per-event
+- [ ] Opt-out in user preferences
+
+**Scheduled sends:**
+
+- [ ] Composer "Send now" / "Send at [datetime]" toggle
+- [ ] Scheduled sends appear in Activity feed as pending event
+- [ ] Cancelable before firing
+- [ ] Fires via same send pipeline; same state transitions apply
+
+**Response detection (basic):**
+
+- [ ] Webhook / polling integration for reply detection (scope to Outlook first)
+- [ ] Reply to tracked email → transition to `RESPONDED`, notify auditor
+- [ ] Reply body stored on `TrackingEvent`
+
+**Saved views:**
+
+- [ ] Save current filter combination with a name
+- [ ] Appear in left rail of Escalation Center
+- [ ] Defaults seeded: "My overdue," "L2 escalations," "Awaiting my review"
+
+**Keyboard shortcuts:**
+
+- [ ] `c` compose, `r` resolve, `e` escalate now, `s` snooze, `/` focus search
+- [ ] `?` shows shortcut cheat sheet
+- [ ] `j`/`k` navigation confirmed from Issue 3
+
+**Matching threshold tuning (follow-up to Issue 1):**
+
+- [ ] Review real match confidence distribution
+- [ ] Adjust auto-accept threshold based on observed false positive rate
+
+### Technical scope
+
+**Background jobs:**
+
+- `SLAEnforcer` — cron, transitions + draft queue
+- `ScheduledSendDispatcher` — cron, fires scheduled sends at their time
+- `ResponseWatcher` — webhook handler or polling loop
+
+**Endpoints:**
+
+- `POST /api/tracking/bulk/compose` — returns N previews
+- `POST /api/tracking/bulk/send` — fires N sends with progress stream (SSE)
+- `GET /api/notifications` — in-app feed
+- `POST /api/notifications/:id/read` — mark read
+- `GET /api/views` / `POST /api/views` — saved view CRUD
+
+**Components:**
+
+- `<NotificationBell />` — top nav bell + dropdown
+- `<BulkComposer />` — tabbed multi-recipient preview
+- `<ShortcutOverlay />` — `?` cheat sheet
+- `<SavedViewsRail />` — left rail section
+
+### Out of scope / deferred
+
+- Full NLP response classification
+- Non-Outlook reply detection (Gmail, etc.) — can layer in later
+- Analytics dashboard (response rates, time-to-resolution) — separate future issue
+
+---
+
+## Rollout & migration notes
+
+**Feature flags.** Ship each issue behind a flag. Enable per-tenant for early feedback before global rollout. Particularly important for Issue 3 (breaking UX change).
+
+**Data migration.** Issue 2 backfills `projectStatuses` and `stage`. Run in staging first; verify row counts match pre-migration.
+
+**Training.** Issue 3 ships with an in-app product tour (first-time Escalation Center visit). One screen, 4 highlights: manager table, engine pills, slide-over panel, banner on process dashboard.
+
+**Rollback plan.** Issues 1, 2, 4, 5 are additive — safe to disable via flag. Issue 3 removes TrackingTab; keep it feature-flagged for one release so rollback is flag-flip, not code-revert.
+
+**Docs to update.** Admin guide (Issue 1 directory, Issue 4 templates), user guide (Issue 3 new workflow, Issue 5 shortcuts), API docs (all new endpoints).

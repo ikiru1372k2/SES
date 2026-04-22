@@ -15,7 +15,7 @@ export function BroadcastComposer({
   body: string;
   onSubjectChange: (value: string) => void;
   onBodyChange: (value: string) => void;
-  onSend: (recipients: string[], subject: string, body: string) => void;
+  onSend: () => void;
 }) {
   const recipients = useMemo(
     () => [...new Set(drafts.map((draft) => draft.email).filter((email): email is string => Boolean(email)))],
@@ -27,7 +27,7 @@ export function BroadcastComposer({
       toast.error('No valid manager emails in the audit');
       return;
     }
-    onSend(recipients, subject, body);
+    onSend();
   }
 
   return (

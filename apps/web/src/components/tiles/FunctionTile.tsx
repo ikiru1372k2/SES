@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { FileSpreadsheet, Clock3, AlertCircle } from 'lucide-react';
 import type { FunctionId } from '@ses/domain';
 import type { ApiTileStats } from '../../lib/api/tilesApi';
@@ -8,6 +8,7 @@ interface Props {
   label: string;
   stats: ApiTileStats | undefined;
   onOpen: () => void;
+  footer?: ReactNode;
 }
 
 function formatRelative(iso: string | null): string {
@@ -26,7 +27,7 @@ function formatRelative(iso: string | null): string {
  * That separation lets us reuse the same tile under admin dashboards without
  * duplicating network logic.
  */
-export function FunctionTile({ functionId, label, stats, onOpen }: Props) {
+export function FunctionTile({ functionId, label, stats, onOpen, footer }: Props) {
   function onKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -65,6 +66,7 @@ export function FunctionTile({ functionId, label, stats, onOpen }: Props) {
           <Clock3 size={12} />
           {formatRelative(stats?.lastUploadAt ?? null)}
         </div>
+        {footer ? <div className="mt-2 border-t border-gray-100 pt-2 dark:border-gray-700">{footer}</div> : null}
       </div>
     </button>
   );

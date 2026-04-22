@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { EscalationStage } from '@prisma/client';
 import type { SessionUser } from '@ses/domain';
 import { ActivityLogService } from '../common/activity-log.service';
 import { IdentifierService } from '../common/identifier.service';
@@ -8,12 +9,13 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { TrackingService } from '../tracking.service';
 import type { RecordSendDto } from './dto/record-send.dto';
 
-function computeStage(outlookCount: number, teamsCount: number, resolved: boolean): string {
-  if (resolved) return 'Resolved';
-  if (teamsCount > 0) return 'Teams escalated';
-  if (outlookCount >= 2) return 'Reminder 2 sent';
-  if (outlookCount === 1) return 'Reminder 1 sent';
-  return 'Not contacted';
+/** Maps legacy send-count heuristics to `EscalationStage`. */
+function contactStage(outlookCount: number, teamsCount: number, resolved: boolean): EscalationStage {
+  if (resolved) return EscalationStage.RESOLVED;
+  if (teamsCount > 0) return EscalationStage.ESCALATED_L1;
+  if (outlookCount >= 2) return EscalationStage.AWAITING_RESPONSE;
+  if (outlookCount >= 1) return EscalationStage.SENT;
+  return EscalationStage.NEW;
 }
 
 @Injectable()
@@ -46,8 +48,8 @@ export class NotificationsService {
     );
 
     // Advance stage if it changed.
-    const newStage = computeStage(updatedEntry.outlookCount, updatedEntry.teamsCount, updatedEntry.resolved);
-    if (newStage !== updatedEntry.stage) {
+    const newStage = contactStage(updatedEntry.outlookCount, updatedEntry.teamsCount, updatedEntry.resolved);
+    if (newStage !== (updatedEntry.stage as EscalationStage)) {
       await this.tracking.upsert(
         process.displayCode,
         { managerKey, managerName: body.managerName ?? managerKey, managerEmail: body.managerEmail, stage: newStage },

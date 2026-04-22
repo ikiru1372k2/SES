@@ -28,6 +28,7 @@ import { IssuesService } from './issues.service';
 import { JobsController } from './jobs.controller';
 import { JobsService } from './jobs.service';
 import { HealthController } from './health.controller';
+import { EscalationsService } from './escalations.service';
 import { ProcessesController } from './processes.controller';
 import { ProcessActivityController } from './process-activity.controller';
 import { ProcessesService } from './processes.service';
@@ -49,6 +50,21 @@ import { PublicResponseController } from './signed-links/public-response.control
 import { NotificationsController } from './notifications/notifications.controller';
 import { NotificationsService } from './notifications/notifications.service';
 import { UploadValidationPipe } from './common/pipes/upload-validation.pipe';
+import { DirectoryController } from './directory/directory.controller';
+import { DirectoryService } from './directory/directory.service';
+import { StatusReconcilerService } from './status-reconciler.service';
+import { EscalationTemplatesController } from './escalation-templates/escalation-templates.controller';
+import { EscalationTemplatesService } from './escalation-templates/escalation-templates.service';
+import { TrackingComposeController } from './tracking-compose/tracking-compose.controller';
+import { TrackingComposeService } from './tracking-compose/tracking-compose.service';
+import { OutboundDeliveryService } from './outbound/outbound-delivery.service';
+import { TrackingBulkController } from './tracking-bulk.controller';
+import { TrackingBulkService } from './tracking-bulk.service';
+import { InAppNotificationsController } from './in-app-notifications.controller';
+import { InAppNotificationsService } from './in-app-notifications.service';
+import { SavedViewsController } from './saved-views.controller';
+import { SavedViewsService } from './saved-views.service';
+import { SlaEngineService } from './sla-engine.service';
 
 @Module({
   imports: [
@@ -81,6 +97,12 @@ import { UploadValidationPipe } from './common/pipes/upload-validation.pipe';
     PublicResponseController,
     SignedLinkController,
     NotificationsController,
+    DirectoryController,
+    EscalationTemplatesController,
+    TrackingComposeController,
+    TrackingBulkController,
+    InAppNotificationsController,
+    SavedViewsController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
@@ -94,11 +116,13 @@ import { UploadValidationPipe } from './common/pipes/upload-validation.pipe';
     FunctionAccessGuard,
     RulesService,
     ProcessesService,
+    EscalationsService,
     FilesRepository,
     FilesService,
     FileVersionsService,
     FileDraftsService,
     AuditsService,
+    StatusReconcilerService,
     VersionsService,
     IssuesService,
     TrackingService,
@@ -112,6 +136,14 @@ import { UploadValidationPipe } from './common/pipes/upload-validation.pipe';
     PublicResponseService,
     NotificationsService,
     UploadValidationPipe,
+    DirectoryService,
+    OutboundDeliveryService,
+    EscalationTemplatesService,
+    TrackingComposeService,
+    TrackingBulkService,
+    InAppNotificationsService,
+    SavedViewsService,
+    SlaEngineService,
   ],
   exports: [
     PrismaService,

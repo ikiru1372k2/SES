@@ -10,9 +10,12 @@ import { BrandMark } from '../components/shared/BrandMark';
 import { Button } from '../components/shared/Button';
 import { EmptyState } from '../components/shared/EmptyState';
 import { Skeleton } from '../components/shared/Skeleton';
+import { useCurrentUser } from '../components/auth/authContext';
+import { Link } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 
 export function Dashboard() {
+  const user = useCurrentUser();
   const processes = useAppStore((state) => state.processes);
   const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
   const [showCreate, setShowCreate] = useState(false);
@@ -51,7 +54,17 @@ export function Dashboard() {
                 <h1 className="mt-5 text-2xl font-bold">Smart Escalation System</h1>
                 <p className="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">Audit effort planning, identify overplanning or no-planning risks, prepare manager notifications, and track escalation progress in one controlled workspace.</p>
               </div>
-              <Button onClick={() => setShowCreate(true)} leading={<Plus size={16} />}>Create New Process</Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {user?.role === 'admin' ? (
+                  <Link
+                    to="/admin/directory"
+                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900"
+                  >
+                    Manager directory
+                  </Link>
+                ) : null}
+                <Button onClick={() => setShowCreate(true)} leading={<Plus size={16} />}>Create New Process</Button>
+              </div>
             </div>
           </div>
         </div>

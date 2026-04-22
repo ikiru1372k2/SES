@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
-import { DEFAULT_FUNCTION_ID, type FunctionId } from '@ses/domain';
+import {
+  DEFAULT_FUNCTION_ID,
+  type EscalationStage,
+  type FunctionId,
+  type LegacyProjectTrackingRow,
+  parseProjectStatuses,
+} from '@ses/domain';
 import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../lib/auditPolicy';
 import { runAuditAsync } from '../lib/auditRunner';
 import { deleteWorkbookRawData, getWorkbookRawData, putWorkbookRawData, renameWorkbookRawDataKey } from '../lib/blobStore';
@@ -30,15 +36,22 @@ import type {
   IssueAcknowledgment,
   IssueComment,
   IssueCorrection,
-  NotificationTemplate,
+  NotificationComposeTemplate,
   NotificationTheme,
   ProjectTrackingStatus,
   TrackingChannel,
   TrackingEntry,
-  TrackingStage,
   WorkbookFile,
   WorkspaceTab,
 } from '../lib/types';
+
+function inferEscalationStageFromCounts(outlookCount: number, teamsCount: number, resolved: boolean): EscalationStage {
+  if (resolved) return 'RESOLVED';
+  if (teamsCount > 0) return 'ESCALATED_L1';
+  if (outlookCount >= 2) return 'AWAITING_RESPONSE';
+  if (outlookCount === 1) return 'SENT';
+  return 'NEW';
+}
 
 type UploadState = {
   fileName: string;
@@ -78,7 +91,7 @@ type AppStore = {
   saveVersion: (processId: string, details: { versionName: string; notes: string }) => AuditProcess | undefined;
   loadVersion: (processId: string, versionId: string) => void;
   recordTrackingEvent: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, channel: TrackingChannel, note: string) => void;
-  setTrackingStage: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, stage: TrackingStage) => void;
+  setTrackingStage: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, stage: EscalationStage) => void;
   markTrackingResolved: (processId: string, managerEmail: string) => void;
   reopenTracking: (processId: string, managerEmail: string) => void;
   addIssueComment: (processId: string, issueKey: string, body: string, author?: string) => void;
@@ -94,8 +107,8 @@ type AppStore = {
     patch: Partial<Pick<ProjectTrackingStatus, 'stage' | 'feedback'>>,
     note?: string,
   ) => void;
-  saveTemplate: (processId: string, name: string, theme: NotificationTheme, template: NotificationTemplate) => void;
-  loadTemplate: (processId: string, name: string) => NotificationTemplate | null;
+  saveTemplate: (processId: string, name: string, theme: NotificationTheme, template: NotificationComposeTemplate) => void;
+  loadTemplate: (processId: string, name: string) => NotificationComposeTemplate | null;
   deleteTemplate: (processId: string, name: string) => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
   resetWorkspaceAfterUserSwitch: () => void;
@@ -666,15 +679,7 @@ export const useAppStore = create<AppStore>()(
             const current = process.notificationTracking[key];
             const outlookCount = (current?.outlookCount ?? 0) + (channel === 'outlook' || channel === 'eml' || channel === 'sendAll' ? 1 : 0);
             const teamsCount = (current?.teamsCount ?? 0) + (channel === 'teams' ? 1 : 0);
-            const stage = current?.resolved
-              ? 'Resolved'
-              : teamsCount > 0
-                ? 'Teams escalated'
-                : outlookCount >= 2
-                  ? 'Reminder 2 sent'
-                  : outlookCount === 1
-                    ? 'Reminder 1 sent'
-                    : 'Not contacted';
+            const stage = inferEscalationStageFromCounts(outlookCount, teamsCount, current?.resolved ?? false);
             const base = makeDefaultTrackingEntry(processId, managerName, managerEmail, flaggedProjectCount);
             const entry: TrackingEntry = {
               ...base,
@@ -684,7 +689,7 @@ export const useAppStore = create<AppStore>()(
               stage,
               resolved: current?.resolved ?? false,
               history: [...(current?.history ?? []), { channel, at: now, note }],
-              projectStatuses: current?.projectStatuses ?? {},
+              projectStatuses: parseProjectStatuses(current?.projectStatuses),
             };
             return { ...process, notificationTracking: { ...process.notificationTracking, [key]: entry }, updatedAt: now };
           }),
@@ -703,7 +708,7 @@ export const useAppStore = create<AppStore>()(
             managerName,
             managerEmail,
             stage,
-            resolved: stage === 'Resolved',
+            resolved: stage === 'RESOLVED',
           }).catch((err) => {
             // Recovery: local store is already patched; re-sync on next page load.
             console.warn('[tracking] server upsert failed', err);
@@ -714,14 +719,39 @@ export const useAppStore = create<AppStore>()(
             const key = trackingKey(processId, managerEmail);
             const current = process.notificationTracking[key];
             const base = current ?? makeDefaultTrackingEntry(processId, managerName, managerEmail, flaggedProjectCount);
-            const countsByStage: Record<TrackingStage, Pick<TrackingEntry, 'outlookCount' | 'teamsCount' | 'resolved'>> = {
-              'Not contacted': { outlookCount: 0, teamsCount: 0, resolved: false },
-              'Reminder 1 sent': { outlookCount: Math.max(base.outlookCount, 1), teamsCount: 0, resolved: false },
-              'Reminder 2 sent': { outlookCount: Math.max(base.outlookCount, 2), teamsCount: 0, resolved: false },
-              'Teams escalated': { outlookCount: Math.max(base.outlookCount, 1), teamsCount: Math.max(base.teamsCount, 1), resolved: false },
-              Resolved: { outlookCount: base.outlookCount, teamsCount: base.teamsCount, resolved: true },
-            };
-            const nextCounts = countsByStage[stage];
+            const nextCounts: Pick<TrackingEntry, 'outlookCount' | 'teamsCount' | 'resolved'> = (() => {
+              switch (stage) {
+                case 'NEW':
+                  return { outlookCount: 0, teamsCount: 0, resolved: false };
+                case 'SENT':
+                  return { outlookCount: Math.max(base.outlookCount, 1), teamsCount: 0, resolved: false };
+                case 'AWAITING_RESPONSE':
+                  return { outlookCount: Math.max(base.outlookCount, 2), teamsCount: 0, resolved: false };
+                case 'ESCALATED_L1':
+                case 'ESCALATED_L2':
+                case 'NO_RESPONSE':
+                  return {
+                    outlookCount: Math.max(base.outlookCount, 1),
+                    teamsCount: Math.max(base.teamsCount, 1),
+                    resolved: false,
+                  };
+                case 'DRAFTED':
+                case 'RESPONDED':
+                  return {
+                    outlookCount: base.outlookCount,
+                    teamsCount: base.teamsCount,
+                    resolved: false,
+                  };
+                case 'RESOLVED':
+                  return { outlookCount: base.outlookCount, teamsCount: base.teamsCount, resolved: true };
+                default:
+                  return {
+                    outlookCount: base.outlookCount,
+                    teamsCount: base.teamsCount,
+                    resolved: base.resolved,
+                  };
+              }
+            })();
             const entry: TrackingEntry = {
               ...base,
               managerName,
@@ -729,7 +759,7 @@ export const useAppStore = create<AppStore>()(
               flaggedProjectCount,
               ...nextCounts,
               stage,
-              lastContactAt: stage === 'Not contacted' ? null : now,
+              lastContactAt: stage === 'NEW' ? null : now,
               history: [...base.history, { channel: 'manual', at: now, note: `Moved to ${stage}` }],
             };
             return { ...process, notificationTracking: { ...process.notificationTracking, [key]: entry }, updatedAt: now };
@@ -752,7 +782,7 @@ export const useAppStore = create<AppStore>()(
                 [key]: {
                   ...entry,
                   resolved: true,
-                  stage: 'Resolved',
+                  stage: 'RESOLVED',
                   lastContactAt: now,
                   history: [...entry.history, { channel: 'manual', at: now, note: 'Marked resolved' }],
                 },
@@ -770,7 +800,7 @@ export const useAppStore = create<AppStore>()(
             const key = trackingKey(processId, managerEmail);
             const current = process.notificationTracking[key];
             if (!current) return process;
-            const stage = current.teamsCount > 0 ? 'Teams escalated' : current.outlookCount >= 2 ? 'Reminder 2 sent' : current.outlookCount === 1 ? 'Reminder 1 sent' : 'Not contacted';
+            const stage = inferEscalationStageFromCounts(current.outlookCount, current.teamsCount, false);
             return {
               ...process,
               notificationTracking: {
@@ -935,7 +965,9 @@ export const useAppStore = create<AppStore>()(
             const key = trackingKey(processId, managerEmail);
             const current = process.notificationTracking[key];
             if (!current) return process;
-            const existingStatus = current.projectStatuses?.[projectNo] ?? {
+            const parsed = parseProjectStatuses(current.projectStatuses);
+            const legacy: Record<string, LegacyProjectTrackingRow> = { ...(parsed.legacyProjects ?? {}) };
+            const existingStatus = legacy[projectNo] ?? {
               projectNo,
               stage: 'open' as const,
               feedback: '',
@@ -947,10 +979,9 @@ export const useAppStore = create<AppStore>()(
             const updated: ProjectTrackingStatus = {
               ...existingStatus,
               ...patch,
-              history:
-                stageChanged || note
-                  ? [...existingStatus.history, { channel: 'manual' as const, at: now, note: note ?? `Stage: ${newStage}` }]
-                  : existingStatus.history,
+              history: (stageChanged || note
+                ? [...existingStatus.history, { channel: 'manual' as TrackingChannel, at: now, note: note ?? `Stage: ${newStage}` }]
+                : existingStatus.history) as ProjectTrackingStatus['history'],
               updatedAt: now,
             };
             return {
@@ -959,7 +990,7 @@ export const useAppStore = create<AppStore>()(
                 ...process.notificationTracking,
                 [key]: {
                   ...current,
-                  projectStatuses: { ...(current.projectStatuses ?? {}), [projectNo]: updated },
+                  projectStatuses: { ...parsed, legacyProjects: { ...legacy, [projectNo]: updated } },
                 },
               },
               updatedAt: now,
@@ -1068,6 +1099,14 @@ export const useAppStore = create<AppStore>()(
     {
       name: DATA_KEY,
       storage: browserStorage,
+      version: 1,
+      migrate: (persistedState) => {
+        const typed = persistedState as Partial<AppStore> | undefined;
+        return {
+          ...typed,
+          processes: Array.isArray(typed?.processes) ? typed.processes : [],
+        } as AppStore;
+      },
       partialize: (state) => ({ processes: state.processes }) as AppStore,
     },
   ),

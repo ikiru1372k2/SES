@@ -5,12 +5,16 @@ import { FunctionAccessGuard } from './common/function-access.guard';
 import { CurrentUser } from './common/current-user';
 import { parseIfMatch } from './common/http';
 import { CreateFunctionAuditRequestDto, CreateProcessDto, UpdateProcessDto } from './dto/processes.dto';
+import { EscalationsService } from './escalations.service';
 import { ProcessesService } from './processes.service';
 
 @Controller('processes')
 @UseGuards(AuthGuard, FunctionAccessGuard)
 export class ProcessesController {
-  constructor(private readonly processesService: ProcessesService) {}
+  constructor(
+    private readonly processesService: ProcessesService,
+    private readonly escalationsService: EscalationsService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: SessionUser) {
@@ -60,6 +64,11 @@ export class ProcessesController {
   @Get(':idOrCode/tiles')
   tiles(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
     return this.processesService.tiles(idOrCode, user);
+  }
+
+  @Get(':idOrCode/escalations')
+  escalations(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
+    return this.escalationsService.getForProcess(idOrCode, user);
   }
 
   @Post(':idOrCode/function-audit-requests')

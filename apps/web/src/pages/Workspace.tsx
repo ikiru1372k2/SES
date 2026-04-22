@@ -1,7 +1,7 @@
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Users } from 'lucide-react';
-import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, type FunctionId } from '@ses/domain';
+import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, isValidEmail, type FunctionId } from '@ses/domain';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
 import { MembersPanel } from '../components/workspace/MembersPanel';
 import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
@@ -17,8 +17,11 @@ import { PresenceBar } from '../components/shared/PresenceBar';
 import { useCurrentUser } from '../components/auth/authContext';
 import { selectHasUnsavedAudit } from '../store/selectors';
 import { useAppStore } from '../store/useAppStore';
+import { isLegacyTileTrackingTabEnabled } from '../lib/featureFlags';
 import { processDashboardPath } from '../lib/processRoutes';
 import { useRealtime } from '../realtime/useRealtime';
+import { directorySuggestions } from '../lib/api/directoryApi';
+import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 
 const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
 
@@ -29,6 +32,7 @@ export function Workspace() {
   const processId = params.processId;
   const functionId: FunctionId = isFunctionId(params.functionId) ? params.functionId : DEFAULT_FUNCTION_ID;
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const processes = useAppStore((state) => state.processes);
   const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
   const hydrateFunctionWorkspace = useAppStore((state) => state.hydrateFunctionWorkspace);
@@ -36,17 +40,56 @@ export function Workspace() {
   const promoteFileDraft = useAppStore((state) => state.promoteFileDraft);
   const discardFileDraft = useAppStore((state) => state.discardFileDraft);
   const tab = useAppStore((state) => state.activeWorkspaceTab);
+  const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
   const result = useAppStore((state) => state.currentAuditResult);
   const process = processes.find((item) => item.id === processId || item.displayCode === processId);
   const processRecordId = process?.id;
   const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
   const currentUser = useCurrentUser();
+  const managerDirectoryOn = currentUser?.managerDirectoryEnabled !== false;
+  const tabFromUrl = searchParams.get('tab');
   const [membersOpen, setMembersOpen] = useState(false);
+  const [resolutionOpen, setResolutionOpen] = useState(false);
+  const [unmappedCount, setUnmappedCount] = useState<number | null>(null);
   const hydrateAttemptedRef = useRef(false);
   const [hydrateFinished, setHydrateFinished] = useState(false);
   // hydrating is true only while we're waiting for hydrateProcesses() to complete.
   // Derived rather than stored so we never need setState in an effect's sync path.
   const hydrating = !process && !hydrateFinished;
+
+  const rawManagerNames = useMemo(() => {
+    if (!process) return [];
+    const functionFiles = process.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId);
+    const auditResult = result ?? process.versions[0]?.result ?? null;
+    const names = new Set<string>();
+    for (const issue of auditResult?.issues ?? []) {
+      const n = issue.projectManager?.trim();
+      if (!n) continue;
+      if (!isValidEmail(issue.email)) names.add(n);
+    }
+    return [...names];
+  }, [process, functionId, result]);
+
+  useEffect(() => {
+    if (!managerDirectoryOn || rawManagerNames.length === 0) {
+      setUnmappedCount(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sug = await directorySuggestions(rawManagerNames);
+        if (cancelled) return;
+        const n = rawManagerNames.filter((name) => !sug.results[name]?.autoMatch).length;
+        setUnmappedCount(n);
+      } catch {
+        if (!cancelled) setUnmappedCount(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rawManagerNames, managerDirectoryOn]);
 
   // If the user hard-refreshed /workspace/<id> in a tab that has no cached
   // process (incognito, different logged-in user, cleared storage) the store
@@ -63,6 +106,15 @@ export function Workspace() {
     if (!processRecordId) return;
     void hydrateFunctionWorkspace(processRecordId, functionId);
   }, [functionId, hydrateFunctionWorkspace, processRecordId]);
+
+  useEffect(() => {
+    if (tabFromUrl === 'results') {
+      setWorkspaceTab('results');
+      const next = new URLSearchParams(searchParams);
+      next.delete('tab');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams, setWorkspaceTab, tabFromUrl]);
 
   // Subscribe to realtime updates for this process. The hook accepts either
   // a PRC-* display code or a UUID; the server resolves either. When the
@@ -133,6 +185,14 @@ export function Workspace() {
         onRestore={promoteFileDraft}
         onDiscard={discardFileDraft}
       />
+      {managerDirectoryOn && unmappedCount !== null && unmappedCount > 0 ? (
+        <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+          {unmappedCount} manager{unmappedCount === 1 ? '' : 's'} in these findings are not confidently matched in the directory. Notifications may be blocked until resolved.{' '}
+          <button type="button" className="font-medium underline" onClick={() => setResolutionOpen(true)}>
+            Open resolver
+          </button>
+        </div>
+      ) : null}
       <WorkspaceShell>
         {tab === 'preview' ? (
           <TabPanel>
@@ -149,7 +209,7 @@ export function Workspace() {
             <NotificationsTab process={scopedProcess} result={result ?? scopedProcess.versions[0]?.result ?? null} />
           </TabPanel>
         ) : null}
-        {tab === 'tracking' ? (
+        {tab === 'tracking' && isLegacyTileTrackingTabEnabled() ? (
           <TabPanel scroll="split">
             <TrackingTab process={scopedProcess} result={result ?? scopedProcess.versions[0]?.result ?? null} />
           </TabPanel>
@@ -173,6 +233,17 @@ export function Workspace() {
           currentUserCode={currentUser?.displayCode}
           canManage={canManageMembers}
           onClose={() => setMembersOpen(false)}
+        />
+      ) : null}
+      {managerDirectoryOn && resolutionOpen && rawManagerNames.length > 0 ? (
+        <ResolutionDrawer
+          open={resolutionOpen}
+          onClose={() => setResolutionOpen(false)}
+          rawNames={rawManagerNames}
+          onResolved={() => {
+            setResolutionOpen(false);
+            void hydrateFunctionWorkspace(process.id, functionId);
+          }}
         />
       ) : null}
     </AppShell>

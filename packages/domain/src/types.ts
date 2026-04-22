@@ -1,3 +1,9 @@
+import type { EscalationStage } from './escalationStages';
+import type { ProjectStatusesV2 } from './projectStatuses';
+
+export type { EscalationStage } from './escalationStages';
+export type { ProjectStatusesV2, EngineProjectStatus, EngineSubStatus, ProjectStatusesAggregate } from './projectStatuses';
+
 export type SheetStatus = 'valid' | 'duplicate' | 'invalid';
 export type Severity = 'High' | 'Medium' | 'Low';
 export type WorkspaceTab = 'preview' | 'results' | 'notifications' | 'tracking' | 'versions' | 'analytics';
@@ -217,13 +223,22 @@ export interface AuditVersion {
   label?: string;
 }
 
-export type TrackingStage = 'Not contacted' | 'Reminder 1 sent' | 'Reminder 2 sent' | 'Teams escalated' | 'Resolved';
-export type TrackingChannel = 'outlook' | 'eml' | 'teams' | 'manual' | 'sendAll';
+export type TrackingChannel =
+  | 'outlook'
+  | 'eml'
+  | 'teams'
+  | 'manual'
+  | 'sendAll'
+  | 'manager_response'
+  | 'stage_transition';
 
 export interface TrackingEvent {
   channel: TrackingChannel;
+  kind?: string | undefined;
   at: string;
   note: string;
+  reason?: string | undefined;
+  payload?: unknown;
 }
 
 export interface TrackingEntry {
@@ -237,10 +252,11 @@ export interface TrackingEntry {
   outlookCount: number;
   teamsCount: number;
   lastContactAt: string | null;
-  stage: TrackingStage;
+  stage: EscalationStage;
+  escalationLevel?: number | undefined;
   resolved: boolean;
   history: TrackingEvent[];
-  projectStatuses: Record<string, ProjectTrackingStatus>;
+  projectStatuses: ProjectStatusesV2;
 }
 
 export type ProjectTrackingStage = 'open' | 'acknowledged' | 'corrected' | 'resolved';
@@ -282,7 +298,7 @@ export interface NotificationDraft {
   htmlBody: string;
 }
 
-export interface NotificationTemplate {
+export interface NotificationComposeTemplate {
   greeting: string;
   intro: string;
   actionLine: string;
@@ -292,11 +308,14 @@ export interface NotificationTemplate {
   signature2: string;
 }
 
+/** @deprecated Use `NotificationComposeTemplate`; alias kept for workspace imports. */
+export type NotificationTemplate = NotificationComposeTemplate;
+
 export interface SavedTemplate {
   displayCode?: string | undefined;
   name: string;
   theme: NotificationTheme;
-  template: NotificationTemplate;
+  template: NotificationComposeTemplate;
 }
 
 export interface SessionUser {
@@ -305,6 +324,9 @@ export interface SessionUser {
   email: string;
   displayName: string;
   role: 'admin' | 'auditor' | 'viewer';
+  tenantId?: string;
+  tenantDisplayCode?: string;
+  managerDirectoryEnabled?: boolean;
 }
 
 export interface ProcessSummary {

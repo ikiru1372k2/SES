@@ -4,8 +4,11 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, HelpCircle } from 'lucide-react';
 import { FUNCTION_REGISTRY, type FunctionId } from '@ses/domain';
 import { AppShell } from '../components/layout/AppShell';
+import { ProcessDashboardBanner } from '../components/escalations/ProcessDashboardBanner';
+import { TileEscalationChip } from '../components/escalations/TileEscalationChip';
 import { FunctionTile } from '../components/tiles/FunctionTile';
 import { RequestFunctionAuditTile } from '../components/tiles/RequestFunctionAuditTile';
+import { fetchProcessEscalations } from '../lib/api/escalationsApi';
 import { fetchProcessTiles, type ApiTiles } from '../lib/api/tilesApi';
 import { workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
@@ -31,6 +34,13 @@ export function ProcessTiles() {
   const tilesQuery = useQuery({
     queryKey: ['process', processId, 'tiles'],
     queryFn: () => fetchProcessTiles(processId!),
+    enabled: Boolean(processId),
+    staleTime: 15_000,
+  });
+
+  const escalationsQuery = useQuery({
+    queryKey: ['escalations', processId],
+    queryFn: () => fetchProcessEscalations(processId!),
     enabled: Boolean(processId),
     staleTime: 15_000,
   });
@@ -75,6 +85,10 @@ export function ProcessTiles() {
           </div>
         ) : null}
 
+        {process ? (
+          <ProcessDashboardBanner processId={process.displayCode ?? process.id} summary={escalationsQuery.data?.summary} />
+        ) : null}
+
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FUNCTION_REGISTRY.map((fn) => (
             <FunctionTile
@@ -83,6 +97,15 @@ export function ProcessTiles() {
               label={fn.label}
               stats={tiles[fn.id as FunctionId]}
               onOpen={() => navigate(workspacePath(processId, fn.id))}
+              footer={
+                process ? (
+                  <TileEscalationChip
+                    processId={process.displayCode ?? process.id}
+                    functionId={fn.id as FunctionId}
+                    managerCount={escalationsQuery.data?.summary?.perEngineManagerCounts?.[fn.id] ?? 0}
+                  />
+                ) : null
+              }
             />
           ))}
           <RequestFunctionAuditTile onClick={() => setModalOpen(true)} />

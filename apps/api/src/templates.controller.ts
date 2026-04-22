@@ -16,7 +16,13 @@ export class TemplatesController {
 
   @Post('templates')
   create(
-    @Body() body: { processId?: string | null; name: string; theme: string; template: Record<string, unknown> },
+    @Body()
+    body: {
+      processId?: string | null;
+      name: string;
+      theme: string;
+      template: Record<string, unknown>;
+    },
     @CurrentUser() user: SessionUser,
   ) {
     return this.templatesService.create(body, user);

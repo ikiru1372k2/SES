@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { managerStats } from '../src/managerAnalytics.js';
+import { emptyProjectStatuses } from '../src/projectStatuses.js';
 import type { AuditIssue, AuditProcess, AuditResult, AuditVersion, TrackingEntry } from '../src/types.js';
 
 function issue(patch: Partial<AuditIssue> = {}): AuditIssue {
@@ -47,7 +48,7 @@ test('cyclesFlagged counts versions the manager appears in, not the raw issue co
   const tracking: TrackingEntry[] = [{
     key: 'p:w@x.com', processId: 'p', managerName: 'Wagner', managerEmail: 'w@x.com',
     flaggedProjectCount: 2, outlookCount: 0, teamsCount: 0, lastContactAt: null,
-    stage: 'Not contacted', resolved: false, history: [], projectStatuses: {},
+    stage: 'NEW', resolved: false, history: [], projectStatuses: emptyProjectStatuses(),
   }];
   const [stat] = managerStats(process(versions, tracking));
   assert.equal(stat?.cyclesFlagged, 2);
@@ -63,7 +64,7 @@ test('chronicSlowResponder triggers when flagged in ≥3 cycles without response
   const tracking: TrackingEntry[] = [{
     key: 'p:w@x.com', processId: 'p', managerName: 'Wagner', managerEmail: 'w@x.com',
     flaggedProjectCount: 3, outlookCount: 0, teamsCount: 0, lastContactAt: null,
-    stage: 'Not contacted', resolved: false, history: [], projectStatuses: {},
+    stage: 'NEW', resolved: false, history: [], projectStatuses: emptyProjectStatuses(),
   }];
   const [stat] = managerStats(process(versions, tracking));
   assert.equal(stat?.cyclesFlagged, 3);

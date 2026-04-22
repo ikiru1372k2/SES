@@ -31,3 +31,12 @@ export function versionComparePath(processIdOrCode: string, functionId: Function
 export function defaultWorkspacePath(processIdOrCode: string): string {
   return workspacePath(processIdOrCode, DEFAULT_FUNCTION_ID);
 }
+
+export function escalationCenterPath(processIdOrCode: string, search?: URLSearchParams | Record<string, string>): string {
+  const pid = encodeURIComponent(processIdOrCode);
+  const base = isTilesDashboardEnabled() ? `/processes/${pid}/escalations` : `/workspace/${pid}/escalations`;
+  if (!search) return base;
+  const q = search instanceof URLSearchParams ? search : new URLSearchParams(search);
+  const s = q.toString();
+  return s ? `${base}?${s}` : base;
+}

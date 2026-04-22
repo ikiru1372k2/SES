@@ -46,6 +46,11 @@ export class TrackingController {
     return this.trackingService.patchEntry(idOrCode, body, user);
   }
 
+  @Get('tracking/:idOrCode/events')
+  listEvents(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
+    return this.trackingService.listEvents(idOrCode, user);
+  }
+
   @Post('tracking/:idOrCode/events')
   addEvent(
     @Param('idOrCode') idOrCode: string,
@@ -53,5 +58,14 @@ export class TrackingController {
     @CurrentUser() user: SessionUser,
   ) {
     return this.trackingService.addEvent(idOrCode, body, user);
+  }
+
+  @Post('tracking/:idOrCode/transition')
+  transition(
+    @Param('idOrCode') idOrCode: string,
+    @Body() body: { to: string; reason: string; sourceAction: string },
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.trackingService.transition(idOrCode, body, user);
   }
 }

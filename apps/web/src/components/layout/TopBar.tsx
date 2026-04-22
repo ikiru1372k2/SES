@@ -3,6 +3,7 @@ import { FormEvent, useState, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import { Link, useNavigate } from 'react-router-dom';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
+import { useCurrentUser } from '../auth/authContext';
 import { downloadAuditedWorkbook } from '../../lib/excelParser';
 import { isAuditDueSoon, nextDueDateAfterSave } from '../../lib/scheduleHelpers';
 import { displayName } from '../../lib/storage';
@@ -11,6 +12,7 @@ import { selectCorrectionCount, selectHasUnsavedAudit, selectLatestAuditResult }
 import { useAppStore } from '../../store/useAppStore';
 import { BrandMark } from '../shared/BrandMark';
 import { Button } from '../shared/Button';
+import { NotificationBell } from './NotificationBell';
 
 async function signOutAndRedirect(navigate: ReturnType<typeof useNavigate>) {
   try {
@@ -23,6 +25,7 @@ async function signOutAndRedirect(navigate: ReturnType<typeof useNavigate>) {
 
 export function TopBar({ process, accessory }: { process?: AuditProcess | undefined; accessory?: ReactNode }) {
   const navigate = useNavigate();
+  const sessionUser = useCurrentUser();
   const currentAuditResult = useAppStore((state) => state.currentAuditResult);
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const runAudit = useAppStore((state) => state.runAudit);
@@ -63,6 +66,15 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
           <BrandMark />
         </Link>
         <div className="flex items-center gap-2">
+          <NotificationBell />
+          {sessionUser?.role === 'admin' ? (
+            <Link
+              to="/admin/directory"
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900"
+            >
+              Directory
+            </Link>
+          ) : null}
           <Link to="/compare" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900">Compare Processes</Link>
           <button
             type="button"
@@ -100,6 +112,15 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <NotificationBell />
+        {sessionUser?.role === 'admin' ? (
+          <Link
+            to="/admin/directory"
+            className="hidden rounded-lg border border-gray-300 px-2 py-1.5 text-xs font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100 md:inline-block"
+          >
+            Directory
+          </Link>
+        ) : null}
         {accessory ? <div className="mr-2">{accessory}</div> : null}
         <div className="text-right">
           <Button

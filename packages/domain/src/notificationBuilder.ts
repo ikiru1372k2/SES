@@ -5,7 +5,7 @@ import type {
   IssueComment,
   IssueCorrection,
   NotificationDraft,
-  NotificationTemplate,
+  NotificationComposeTemplate,
   NotificationTheme,
 } from './types';
 
@@ -39,7 +39,7 @@ export function managerKey(name: string, email?: string | null): string {
 /** @deprecated Use managerKey instead. Kept only for migration. */
 export const recipientKeyFor = managerKey;
 
-export function defaultTemplateForTheme(theme: NotificationTheme): Omit<NotificationTemplate, 'greeting' | 'deadlineLine'> {
+export function defaultTemplateForTheme(theme: NotificationTheme): Omit<NotificationComposeTemplate, 'greeting' | 'deadlineLine'> {
   switch (theme) {
     case 'Executive Summary':
       return {
@@ -105,7 +105,7 @@ export interface BuildNotificationDraftsOptions {
   issues: AuditIssue[];
   theme: NotificationTheme;
   deadline: string;
-  template?: NotificationTemplate;
+  template?: NotificationComposeTemplate;
   corrections?: Record<string, IssueCorrection>;
   comments?: Record<string, IssueComment[]>;
   acknowledgments?: Record<string, IssueAcknowledgment>;
@@ -121,7 +121,7 @@ export function buildNotificationDrafts(options: BuildNotificationDraftsOptions)
     comments = {},
     acknowledgments = {},
   } = options;
-  const template: NotificationTemplate = {
+  const template: NotificationComposeTemplate = {
     greeting: 'Dear',
     deadlineLine: 'by',
     ...defaultTemplateForTheme(theme),

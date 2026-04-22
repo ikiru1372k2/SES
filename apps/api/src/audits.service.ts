@@ -16,6 +16,7 @@ import { ActivityLogService } from './common/activity-log.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { requestContext } from './common/request-context';
 import { RealtimeGateway } from './realtime/realtime.gateway';
+import { StatusReconcilerService } from './status-reconciler.service';
 
 function serializeIssue(issue: {
   id: string;
@@ -124,6 +125,7 @@ export class AuditsService {
     private readonly activity: ActivityLogService,
     private readonly processAccess: ProcessAccessService,
     private readonly realtime: RealtimeGateway,
+    private readonly statusReconciler: StatusReconcilerService,
   ) {}
 
   private async getRunWithAccess(user: SessionUser, idOrCode: string) {
@@ -296,6 +298,12 @@ export class AuditsService {
       await tx.workbookFile.update({
         where: { id: file.id },
         data: { lastAuditedAt: new Date(result.runAt) },
+      });
+
+      await this.statusReconciler.reconcileAfterAudit(tx, {
+        processId: process.id,
+        functionId: file.functionId,
+        auditRunId: completedRun.id,
       });
 
       if (job) {

@@ -24,7 +24,7 @@ import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
 import { StatusBadge } from '../shared/StatusBadge';
 
-type SortKey = keyof Pick<AuditIssue, 'severity' | 'projectNo' | 'projectName' | 'projectManager' | 'sheetName' | 'projectState' | 'effort' | 'reason'>;
+type SortKey = keyof Pick<AuditIssue, 'severity' | 'projectNo' | 'projectName' | 'projectManager' | 'email' | 'sheetName' | 'projectState' | 'effort' | 'reason'>;
 
 const categoryOptions: IssueCategory[] = ['Overplanning', 'Missing Planning', 'Other'];
 const issueHeaders: Array<{ key: SortKey; label: string }> = [
@@ -32,6 +32,7 @@ const issueHeaders: Array<{ key: SortKey; label: string }> = [
   { key: 'projectNo', label: 'Project No' },
   { key: 'projectName', label: 'Project' },
   { key: 'projectManager', label: 'Manager' },
+  { key: 'email', label: 'Email' },
   { key: 'sheetName', label: 'Sheet' },
   { key: 'projectState', label: 'State' },
   { key: 'effort', label: 'Effort' },
@@ -65,6 +66,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
         issue.projectNo,
         issue.projectName,
         issue.projectManager,
+        issue.email ?? '',
         issue.sheetName,
         issue.projectState,
         issue.effort,
@@ -177,6 +179,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                       <td className="p-3">{issue.projectNo}</td>
                       <td className="p-3">{issue.projectName}</td>
                       <td className="p-3">{issue.projectManager}</td>
+                      <td className="p-3 text-xs text-gray-600 dark:text-gray-300">{issue.email?.trim() ? issue.email : '—'}</td>
                       <td className="p-3">{issue.sheetName}</td>
                       <td className="p-3">{issue.projectState}</td>
                       <td className="p-3">{issue.effort}</td>
@@ -184,7 +187,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                     </tr>
                     {expanded === issue.id ? (
                       <tr className="border-t border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-                        <td colSpan={8} className="p-4">
+                        <td colSpan={9} className="p-4">
                           <div className="grid gap-3 text-sm md:grid-cols-4">
                             <Detail label="Why flagged?" value={issue.reason ?? issue.notes} />
                             <Detail label="Category" value={issue.category ?? 'Audit rule'} />

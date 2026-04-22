@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { createSignedLink } from '../../lib/api/signedLinksApi';
 import { buildNotificationDrafts, isValidEmail, managerKey } from '../../lib/notificationBuilder';
 import { makeDefaultTrackingEntry, PIPELINE_COLUMNS, type PipelineKey, pipelineKey, trackingKey } from '../../lib/tracking';
+import type { LegacyProjectTrackingRow } from '@ses/domain';
 import type {
   AuditIssue,
   AuditProcess,
@@ -61,10 +62,10 @@ export function TrackingTab({ process, result }: { process: AuditProcess; result
   function moveTo(entry: TrackingEntry, target: PipelineKey) {
     if (pipelineKey(entry) === target) return;
     const stageByColumn = {
-      notContacted: 'Not contacted',
-      notified: 'Reminder 1 sent',
-      escalated: 'Teams escalated',
-      resolved: 'Resolved',
+      notContacted: 'NEW',
+      notified: 'SENT',
+      escalated: 'ESCALATED_L1',
+      resolved: 'RESOLVED',
     } as const;
     const nextStage = stageByColumn[target];
     setTrackingStage(process.id, entry.managerName, entry.managerEmail, entry.flaggedProjectCount, nextStage);
@@ -318,7 +319,8 @@ function ManagerCard({
       {expanded && draft ? (
         <div className="mt-2 space-y-2">
           {draft.projects.map((issue) => {
-            const status = entry.projectStatuses?.[issue.projectNo];
+            const lp = entry.projectStatuses.legacyProjects;
+            const status: LegacyProjectTrackingRow | undefined = lp ? lp[issue.projectNo] : undefined;
             const currentStage = status?.stage ?? 'open';
             return (
               <ProjectRow
@@ -345,7 +347,7 @@ function ProjectRow({
   onFeedbackChange,
 }: {
   issue: AuditIssue;
-  status: ProjectTrackingStatus | undefined;
+  status: LegacyProjectTrackingRow | undefined;
   currentStage: ProjectTrackingStage;
   onStageChange: (stage: ProjectTrackingStage) => void;
   onFeedbackChange: (feedback: string) => void;

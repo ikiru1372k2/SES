@@ -90,6 +90,7 @@ export class ProcessesService {
           name: body.name.trim(),
           description: body.description?.trim() ?? '',
           nextAuditDue: fromDateOnly(body.nextAuditDue),
+          tenantId: user.tenantId,
           // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           auditPolicy: createDefaultAuditPolicy() as any,
           createdById: user.id,

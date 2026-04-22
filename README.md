@@ -28,6 +28,7 @@ SES is a full-stack TypeScript application for auditing effort-planning Excel wo
 - Per-manager notification drafts, signed response links, send logging, and tracking board.
 - Socket.IO realtime events and presence for collaborative workflows.
 - CSV/HTML report export and version comparison.
+- **Escalation Center** (`/processes/:id/escalations` and `/workspace/:id/escalations` when tiles routing is off): read-only roll-up of open findings per manager, SLA, and deep links back into tiles. Per-tile **Tracking** is hidden unless `VITE_FEATURE_LEGACY_TILE_TRACKING_TAB=true`. Tile **Notifications** no longer exposes Outlook/Teams/send actions (copy and `.eml` export remain).
 
 ## Tech Stack
 
@@ -138,6 +139,7 @@ Copy `.env.example` to `.env` for local development. Key variables:
 | `SES_COOKIE_SAMESITE` | Cookie SameSite mode: `lax`, `strict`, or `none` |
 | `SES_ALLOW_DEV_LOGIN` | Enables dev login only outside production |
 | `VITE_FEATURE_TILES_DASHBOARD` | Frontend flag. Any value except `false` uses `/processes/...`; `false` keeps legacy-primary `/workspace/...` URLs |
+| `VITE_FEATURE_LEGACY_TILE_TRACKING_TAB` | When `true`, shows the **Tracking** tab inside each function tile workspace. Default (unset) hides it in favor of the Escalation Center |
 
 ## Database And Migrations
 

@@ -9,6 +9,9 @@ import { Dashboard } from './pages/Dashboard';
 import { Debug } from './pages/Debug';
 import { Login } from './pages/Login';
 import { ManagerResponse } from './pages/ManagerResponse';
+import { AdminDirectory } from './pages/AdminDirectory';
+import { EscalationCenter } from './pages/EscalationCenter';
+import { EscalationTemplateAdmin } from './pages/EscalationTemplateAdmin';
 import { ProcessTiles } from './pages/ProcessTiles';
 import { VersionCompare } from './pages/VersionCompare';
 import { Workspace } from './pages/Workspace';
@@ -88,6 +91,7 @@ function ProcessesCompareRedirect() {
 
 const tilesDashboardRoutes: ProtectedRouteDefinition[] = [
   { path: '/processes/:processId', element: <ProcessTiles /> },
+  { path: '/processes/:processId/escalations', element: <EscalationCenter /> },
   { path: '/processes/:processId/:functionId', element: <Workspace /> },
   { path: '/processes/:processId/:functionId/compare', element: <VersionCompare /> },
   { path: '/workspace/:processId', element: <LegacyWorkspaceRedirect /> },
@@ -96,6 +100,7 @@ const tilesDashboardRoutes: ProtectedRouteDefinition[] = [
 
 const legacyWorkspaceRoutes: ProtectedRouteDefinition[] = [
   { path: '/workspace/:processId', element: <ProcessTiles /> },
+  { path: '/workspace/:processId/escalations', element: <EscalationCenter /> },
   { path: '/workspace/:processId/:functionId', element: <Workspace /> },
   { path: '/workspace/:processId/:functionId/compare', element: <VersionCompare /> },
   { path: '/workspace/:processId/compare', element: <WorkspaceShallowCompareRedirect /> },
@@ -114,6 +119,14 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/respond/:token" element={<ManagerResponse />} />
+          <Route
+            path="/admin/templates"
+            element={
+              <ProtectedRoute>
+                <EscalationTemplateAdmin />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/"
@@ -139,6 +152,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Debug />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/directory"
+            element={
+              <ProtectedRoute>
+                <AdminDirectory />
               </ProtectedRoute>
             }
           />

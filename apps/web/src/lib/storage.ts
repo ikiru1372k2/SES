@@ -2,12 +2,14 @@ import type {
   AcknowledgmentStatus,
   AuditProcess,
   IssueAcknowledgment,
-  NotificationTemplate,
+  NotificationComposeTemplate,
   ProjectTrackingStage,
   ProjectTrackingStatus,
+  TrackingChannel,
   TrackingEntry,
   WorkbookFile,
 } from './types';
+import { isEscalationStage, parseProjectStatuses, type EscalationStage } from '@ses/domain';
 import { clear } from 'idb-keyval';
 import { getWorkbookRawData } from './blobStore';
 import { detectWorkbookSheets } from './excelParser';
@@ -17,6 +19,20 @@ import { trackingKey } from './tracking';
 
 export const DATA_KEY = 'effort-auditor-data';
 export const UI_KEY = 'effort-auditor-ui';
+
+const LEGACY_TRACKING_STAGE: Record<string, EscalationStage> = {
+  'Not contacted': 'NEW',
+  'Reminder 1 sent': 'SENT',
+  'Reminder 2 sent': 'AWAITING_RESPONSE',
+  'Teams escalated': 'ESCALATED_L1',
+  'Resolved': 'RESOLVED',
+};
+
+function parseStoredEscalationStage(value: unknown): EscalationStage {
+  if (typeof value === 'string' && isEscalationStage(value)) return value;
+  if (typeof value === 'string' && LEGACY_TRACKING_STAGE[value]) return LEGACY_TRACKING_STAGE[value];
+  return 'NEW';
+}
 
 export function clearBrowserWorkspace(): void {
   try {
@@ -45,30 +61,11 @@ function saveProcesses(processes: AuditProcess[]): void {
 }
 
 export async function loadProcessesFromLocalDb(): Promise<AuditProcess[]> {
-  try {
-    const response = await fetch('/api/local-db', { cache: 'no-store' });
-    if (!response.ok) {
-      return hydrateWorkbookRawData(loadProcesses());
-    }
-    const parsed = await response.json();
-    const processes = parsed.processes ?? [];
-    return hydrateWorkbookRawData(sanitizeProcesses(processes));
-  } catch {
-    return hydrateWorkbookRawData(loadProcesses());
-  }
+  return hydrateWorkbookRawData(loadProcesses());
 }
 
 export async function saveProcessesToLocalDb(processes: AuditProcess[]): Promise<void> {
   saveProcesses(processes);
-  try {
-    await fetch('/api/local-db', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ processes: stripRawDataFromProcesses(processes), version: 1 }),
-    });
-  } catch {
-    // Browser storage remains the fallback when the local file API is unavailable.
-  }
 }
 
 export function displayName(name: string): string {
@@ -222,14 +219,20 @@ function sanitizeTracking(value: unknown, processId: string): Record<string, Tra
       outlookCount: Number(entry.outlookCount ?? 0),
       teamsCount: Number(entry.teamsCount ?? 0),
       lastContactAt: entry.lastContactAt ? String(entry.lastContactAt) : null,
-      stage: entry.stage ?? 'Not contacted',
+      stage: parseStoredEscalationStage(entry.stage),
+      escalationLevel: typeof entry.escalationLevel === 'number' ? entry.escalationLevel : 0,
       resolved: Boolean(entry.resolved),
-      history: Array.isArray(entry.history) ? entry.history.map((event) => ({
-        channel: event.channel ?? 'manual',
-        at: String(event.at ?? new Date().toISOString()),
-        note: String(event.note ?? ''),
-      })) : [],
-      projectStatuses: sanitizeProjectStatuses(entry.projectStatuses),
+      history: Array.isArray(entry.history)
+        ? entry.history.map((event) => ({
+            channel: (event.channel ?? 'manual') as TrackingChannel,
+            kind: typeof event.kind === 'string' ? event.kind : undefined,
+            at: String(event.at ?? new Date().toISOString()),
+            note: String(event.note ?? ''),
+            reason: typeof event.reason === 'string' ? event.reason : undefined,
+            payload: 'payload' in (event as object) ? (event as { payload?: unknown }).payload : undefined,
+          }))
+        : [],
+      projectStatuses: parseProjectStatuses(entry.projectStatuses ?? {}),
     } satisfies TrackingEntry];
   }));
 }
@@ -268,40 +271,13 @@ function sanitizeAcknowledgments(value: unknown, processId: string): Record<stri
   return result;
 }
 
-function sanitizeProjectStatuses(value: unknown): Record<string, ProjectTrackingStatus> {
-  if (!value || typeof value !== 'object') return {};
-  const result: Record<string, ProjectTrackingStatus> = {};
-  for (const [projectNo, rawStatus] of Object.entries(value as Record<string, unknown>)) {
-    if (!rawStatus || typeof rawStatus !== 'object') continue;
-    const status = rawStatus as Partial<ProjectTrackingStatus>;
-    const stage: ProjectTrackingStage =
-      status.stage === 'acknowledged' || status.stage === 'corrected' || status.stage === 'resolved'
-        ? status.stage
-        : 'open';
-    result[projectNo] = {
-      projectNo: String(status.projectNo ?? projectNo),
-      stage,
-      feedback: String(status.feedback ?? ''),
-      history: Array.isArray(status.history)
-        ? status.history.map((event) => ({
-            channel: event.channel ?? 'manual',
-            at: String(event.at ?? new Date().toISOString()),
-            note: String(event.note ?? ''),
-          }))
-        : [],
-      updatedAt: String(status.updatedAt ?? new Date().toISOString()),
-    };
-  }
-  return result;
-}
-
 function sanitizeSavedTemplates(value: unknown): AuditProcess['savedTemplates'] {
   if (!value || typeof value !== 'object') return {};
   const result: AuditProcess['savedTemplates'] = {};
   for (const [name, rawTemplate] of Object.entries(value as Record<string, unknown>)) {
     if (!rawTemplate || typeof rawTemplate !== 'object') continue;
     const entry = rawTemplate as Partial<AuditProcess['savedTemplates'][string]>;
-    const template = (entry.template ?? {}) as Partial<NotificationTemplate>;
+    const template = (entry.template ?? {}) as Partial<NotificationComposeTemplate>;
     result[name] = {
       name: String(entry.name ?? name),
       theme:

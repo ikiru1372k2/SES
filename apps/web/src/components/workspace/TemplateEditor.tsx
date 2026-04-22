@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import type { NotificationTemplate, NotificationTheme } from '../../lib/types';
+import type { NotificationComposeTemplate, NotificationTheme } from '../../lib/types';
 import { Button } from '../shared/Button';
 
 const VARIABLES: Array<{ name: string; label: string }> = [
@@ -11,9 +11,7 @@ const VARIABLES: Array<{ name: string; label: string }> = [
   { name: '{{auditorName}}', label: 'Auditor name' },
 ];
 
-type FieldKey = keyof NotificationTemplate;
-
-const fieldLabels: Record<FieldKey, string> = {
+const fieldLabels = {
   greeting: 'Greeting',
   intro: 'Introduction',
   actionLine: 'Action line',
@@ -21,7 +19,9 @@ const fieldLabels: Record<FieldKey, string> = {
   closing: 'Closing',
   signature1: 'Signature line 1',
   signature2: 'Signature line 2',
-};
+} as const;
+
+type FieldKey = keyof typeof fieldLabels;
 
 export function TemplateEditor({
   template,
@@ -29,9 +29,9 @@ export function TemplateEditor({
   onChange,
   onSaveNamed,
 }: {
-  template: NotificationTemplate;
+  template: NotificationComposeTemplate;
   theme: NotificationTheme;
-  onChange: (template: NotificationTemplate) => void;
+  onChange: (template: NotificationComposeTemplate) => void;
   onSaveNamed: (name: string) => void;
 }) {
   const [focusField, setFocusField] = useState<FieldKey | null>(null);

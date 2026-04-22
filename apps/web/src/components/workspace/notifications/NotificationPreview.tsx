@@ -1,6 +1,6 @@
 import { auditIssueKey } from '../../../lib/auditEngine';
 import { severityBarClass } from '../../../lib/severity';
-import type { NotificationDraft, NotificationTemplate } from '../../../lib/types';
+import type { NotificationDraft, NotificationComposeTemplate } from '../../../lib/types';
 
 export function NotificationPreview({
   draft,
@@ -9,7 +9,7 @@ export function NotificationPreview({
 }: {
   draft: NotificationDraft;
   deadline: string;
-  template: NotificationTemplate;
+  template: NotificationComposeTemplate;
 }) {
   return (
     <div className="mt-4 max-w-3xl font-sans text-sm text-gray-900 dark:text-gray-100">

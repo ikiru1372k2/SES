@@ -16,9 +16,9 @@ export const DraftCard = memo(function DraftCard({
   isActive: boolean;
   onSelect: () => void;
   onCopy: () => void;
-  onOutlook: () => void;
+  onOutlook?: () => void;
   onEml: () => void;
-  onTeams: () => void;
+  onTeams?: () => void;
 }) {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -49,15 +49,19 @@ export const DraftCard = memo(function DraftCard({
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         <ActionButton onClick={onCopy}>Copy</ActionButton>
-        <ActionButton onClick={onOutlook} disabled={!draft.email}>
-          Open Outlook
-        </ActionButton>
+        {onOutlook ? (
+          <ActionButton onClick={onOutlook} disabled={!draft.email}>
+            Open Outlook
+          </ActionButton>
+        ) : null}
         <ActionButton onClick={onEml} disabled={!draft.email}>
           Download .eml
         </ActionButton>
-        <ActionButton onClick={onTeams} disabled={!draft.email}>
-          Teams
-        </ActionButton>
+        {onTeams ? (
+          <ActionButton onClick={onTeams} disabled={!draft.email}>
+            Teams
+          </ActionButton>
+        ) : null}
       </div>
     </div>
   );

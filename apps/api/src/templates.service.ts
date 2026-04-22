@@ -6,7 +6,7 @@ import { ActivityLogService } from './common/activity-log.service';
 import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
 
-function serializeTemplate(template: {
+function serializeComposerTemplate(template: {
   id: string;
   displayCode: string;
   processId: string | null;
@@ -38,26 +38,26 @@ export class TemplatesService {
   async list(processIdOrCode: string | undefined, user: SessionUser) {
     if (processIdOrCode) {
       const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode);
-      const templates = await this.prisma.notificationTemplate.findMany({
+      const templates = await this.prisma.composerNotificationTemplate.findMany({
         where: { processId: process.id },
         orderBy: { createdAt: 'desc' },
       });
-      return templates.map(serializeTemplate);
+      return templates.map(serializeComposerTemplate);
     }
     if (user.role === 'admin') {
-      const templates = await this.prisma.notificationTemplate.findMany({
+      const templates = await this.prisma.composerNotificationTemplate.findMany({
         orderBy: { createdAt: 'desc' },
       });
-      return templates.map(serializeTemplate);
+      return templates.map(serializeComposerTemplate);
     }
     const processIds = await this.processAccess.listProcessIdsForUser(user.id);
-    const templates = await this.prisma.notificationTemplate.findMany({
+    const templates = await this.prisma.composerNotificationTemplate.findMany({
       where: {
         OR: [{ ownerId: user.id }, { processId: { in: processIds } }],
       },
       orderBy: { createdAt: 'desc' },
     });
-    return templates.map(serializeTemplate);
+    return templates.map(serializeComposerTemplate);
   }
 
   async create(
@@ -68,7 +68,7 @@ export class TemplatesService {
       const process = body.processId
         ? await this.processAccess.findAccessibleProcessOrThrow(user, String(body.processId), 'editor')
         : null;
-      const template = await tx.notificationTemplate.create({
+      const template = await tx.composerNotificationTemplate.create({
         data: {
           id: createId(),
           displayCode: await this.identifiers.nextTemplateCode(tx),
@@ -76,7 +76,6 @@ export class TemplatesService {
           ownerId: user.id,
           name: body.name.trim(),
           theme: body.theme,
-          // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
           template: body.template as any,
         },
       });
@@ -84,18 +83,18 @@ export class TemplatesService {
         actorId: user.id,
         actorEmail: user.email,
         processId: process?.id ?? null,
-        entityType: 'notification_template',
+        entityType: 'composer_notification_template',
         entityId: template.id,
         entityCode: template.displayCode,
         action: 'template.saved',
-        after: serializeTemplate(template),
+        after: serializeComposerTemplate(template),
       });
-      return serializeTemplate(template);
+      return serializeComposerTemplate(template);
     });
   }
 
   async delete(idOrCode: string, user: SessionUser) {
-    const template = await this.prisma.notificationTemplate.findFirst({
+    const template = await this.prisma.composerNotificationTemplate.findFirst({
       where: { OR: [{ id: idOrCode }, { displayCode: idOrCode }] },
     });
     if (!template) return { ok: true };
@@ -105,16 +104,16 @@ export class TemplatesService {
       throw new ForbiddenException();
     }
     return this.prisma.$transaction(async (tx) => {
-      await tx.notificationTemplate.delete({ where: { id: template.id } });
+      await tx.composerNotificationTemplate.delete({ where: { id: template.id } });
       await this.activity.append(tx, {
         actorId: user.id,
         actorEmail: user.email,
-        processId: template.processId ?? null,
-        entityType: 'notification_template',
+        processId: template.processId,
+        entityType: 'composer_notification_template',
         entityId: template.id,
         entityCode: template.displayCode,
         action: 'template.deleted',
-        before: serializeTemplate(template),
+        before: serializeComposerTemplate(template),
       });
       return { ok: true };
     });

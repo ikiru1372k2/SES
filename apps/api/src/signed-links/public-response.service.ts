@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { EscalationStage, type Prisma } from '@prisma/client';
 import { createId } from '@ses/domain';
 import { PrismaService } from '../common/prisma.service';
 import { ActivityLogService } from '../common/activity-log.service';
@@ -92,6 +92,7 @@ export class PublicResponseService {
             id: createId(),
             displayCode: await this.identifiers.nextTrackingEventCode(tx),
             trackingId: tracking.id,
+            kind: 'contact',
             channel: 'manager_response',
             note: this.summaryNote(body),
             triggeredById: null,
@@ -102,7 +103,7 @@ export class PublicResponseService {
           await tx.trackingEntry.update({
             where: { id: tracking.id },
             data: {
-              stage: body.action === 'correct' ? 'Resolved' : 'Manager acknowledged',
+              stage: body.action === 'correct' ? EscalationStage.RESOLVED : EscalationStage.RESPONDED,
               resolved: body.action === 'correct' ? true : tracking.resolved,
               lastContactAt: new Date(),
               rowVersion: { increment: 1 },

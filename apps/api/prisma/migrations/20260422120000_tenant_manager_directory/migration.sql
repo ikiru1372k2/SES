@@ -1,0 +1,2 @@
+-- No-op placeholder migration.
+-- This directory exists in the migration chain but has no schema changes.

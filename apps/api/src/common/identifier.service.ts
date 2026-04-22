@@ -118,4 +118,9 @@ export class IdentifierService {
   async nextUserPreferenceId(tx: TxLike): Promise<string> {
     return ulid();
   }
+
+  async nextManagerDirectoryCode(tx: TxLike): Promise<string> {
+    const value = await this.nextSequence(tx, 'MDR', 'tenant');
+    return `MDR-${pad(value, 6)}`;
+  }
 }

@@ -7,6 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum EscalationStage {
+  NEW
+  DRAFTED
+  SENT
+  AWAITING_RESPONSE
+  RESPONDED
+  NO_RESPONSE
+  ESCALATED_L1
+  ESCALATED_L2
+  RESOLVED
+}
+
 model IdentifierCounter {
   id           String   @id
   prefix       String
@@ -17,6 +29,16 @@ model IdentifierCounter {
   updatedAt    DateTime @updatedAt
 
   @@unique([prefix, scopeKey, year])
+}
+
+model Tenant {
+  id                    String                 @id
+  name                  String
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  processes             Process[]
+  managerDirectories    ManagerDirectory[]
+  escalationTemplates   NotificationTemplate[] @relation("TenantEscalationTemplates")
 }
 
 model User {
@@ -39,7 +61,7 @@ model User {
   corrections    IssueCorrection[] @relation("IssueCorrectionBy")
   acknowledgments IssueAcknowledgment[] @relation("IssueAcknowledgmentBy")
   trackingEvents TrackingEvent[]   @relation("TrackingEventBy")
-  templates      NotificationTemplate[] @relation("TemplateOwner")
+  composerTemplates ComposerNotificationTemplate[] @relation("TemplateOwner")
   notifications  Notification[]    @relation("NotificationBy")
   activities     ActivityLog[]     @relation("ActivityActor")
   exports        Export[]          @relation("ExportRequestedBy")
@@ -52,6 +74,8 @@ model User {
   notificationLogs NotificationLog[]
   fileVersions   FileVersion[]     @relation("FileVersionBy")
   fileDrafts     FileDraft[]       @relation("FileDraftBy")
+  managerDirectoriesCreated ManagerDirectory[] @relation("ManagerDirectoryCreatedBy")
+  trackingDraftLocks TrackingEntry[] @relation("TrackingDraftLock")
 }
 
 model Process {
@@ -62,12 +86,16 @@ model Process {
   nextAuditDue      DateTime?
   auditPolicy       Json
   policyVersion     Int                    @default(1)
+  /// Initial SLA window in hours when entering AWAITING_RESPONSE (Issue #72).
+  slaInitialHours   Int                    @default(120)
   createdById       String
+  tenantId          String
   rowVersion        Int                    @default(1)
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
   archivedAt        DateTime?
   createdBy         User                   @relation("ProcessCreatedBy", fields: [createdById], references: [id])
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id])
   members           ProcessMember[]
   files             WorkbookFile[]
   auditRuns         AuditRun[]
@@ -76,7 +104,7 @@ model Process {
   corrections       IssueCorrection[]
   acknowledgments   IssueAcknowledgment[]
   trackingEntries   TrackingEntry[]
-  notificationTemplates NotificationTemplate[]
+  composerNotificationTemplates ComposerNotificationTemplate[]
   notifications     Notification[]
   activities        ActivityLog[]
   exports           Export[]
@@ -88,6 +116,30 @@ model Process {
   processFunctions  ProcessFunction[]
   auditRequests     FunctionAuditRequest[]
   fileDrafts        FileDraft[]
+
+  @@index([tenantId])
+}
+
+model ManagerDirectory {
+  id             String   @id
+  displayCode    String   @unique
+  tenantId       String
+  firstName      String
+  lastName       String
+  email          String
+  normalizedKey  String
+  aliases        Json     @default("[]")
+  active         Boolean  @default(true)
+  source         String
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy      User?    @relation("ManagerDirectoryCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([tenantId, email])
+  @@index([tenantId, normalizedKey])
+  @@index([tenantId, active])
 }
 
 /// System-defined, non-deletable function registry.
@@ -385,47 +437,80 @@ model TrackingEntry {
   managerKey     String
   managerName    String
   managerEmail   String?
-  stage          String
+  stage          EscalationStage @default(NEW)
+  escalationLevel Int      @default(0)
   outlookCount   Int      @default(0)
   teamsCount     Int      @default(0)
   lastContactAt  DateTime?
   resolved       Boolean  @default(false)
   slaDueAt       DateTime?
   projectStatuses Json?
+  composeDraft   Json?
+  draftLockUserId String?
+  draftLockExpiresAt DateTime?
   rowVersion     Int      @default(1)
   updatedAt      DateTime @updatedAt
   process        Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
   events         TrackingEvent[]
   notifications  Notification[]
+  draftLockUser  User?    @relation("TrackingDraftLock", fields: [draftLockUserId], references: [id], onDelete: SetNull)
+  notificationLogs NotificationLog[]
 
   @@unique([processId, managerKey])
 }
 
 model TrackingEvent {
-  id          String   @id
-  displayCode String   @unique
-  trackingId  String
-  channel     String
-  note        String?
-  triggeredById String?
-  requestId   String?
-  at          DateTime @default(now())
-  tracking    TrackingEntry @relation(fields: [trackingId], references: [id], onDelete: Cascade)
-  triggeredBy User?    @relation("TrackingEventBy", fields: [triggeredById], references: [id])
+  id              String   @id
+  displayCode     String   @unique
+  trackingId      String
+  kind            String   @default("contact")
+  channel         String
+  note            String?
+  reason          String?
+  payload         Json?
+  triggeredById   String?
+  requestId       String?
+  at              DateTime @default(now())
+  tracking        TrackingEntry @relation(fields: [trackingId], references: [id], onDelete: Cascade)
+  triggeredBy     User?    @relation("TrackingEventBy", fields: [triggeredById], references: [id])
 }
 
-model NotificationTemplate {
-  id          String   @id
-  displayCode String   @unique
-  processId   String?
-  ownerId     String?
-  name        String
-  theme       String
-  template    Json
-  createdAt   DateTime @default(now())
-  process     Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
-  owner       User?    @relation("TemplateOwner", fields: [ownerId], references: [id])
+/// Saved notification letter themes (composer UI). Table: ComposerNotificationTemplate.
+model ComposerNotificationTemplate {
+  id            String   @id
+  displayCode   String   @unique
+  processId     String?
+  ownerId       String?
+  name          String
+  theme         String
+  template      Json
+  createdAt     DateTime @default(now())
+  process       Process? @relation(fields: [processId], references: [id], onDelete: Cascade)
+  owner         User?    @relation("TemplateOwner", fields: [ownerId], references: [id])
   notifications Notification[]
+
+  @@map("ComposerNotificationTemplate")
+}
+
+/// Stage-based escalation templates (Issue #70). Content seeded in Issue #4.
+model NotificationTemplate {
+  id        String   @id
+  tenantId  String?
+  parentId  String?
+  stage     String
+  subject   String
+  body      String
+  channel   String
+  active    Boolean  @default(true)
+  version   Int      @default(1)
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant?  @relation("TenantEscalationTemplates", fields: [tenantId], references: [id], onDelete: SetNull)
+  parent    NotificationTemplate?  @relation("EscalationTemplateOverride", fields: [parentId], references: [id], onDelete: SetNull)
+  overrides NotificationTemplate[] @relation("EscalationTemplateOverride")
+
+  @@index([tenantId, stage, active])
 }
 
 model Notification {
@@ -442,7 +527,7 @@ model Notification {
   status      String
   process     Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
   tracking    TrackingEntry? @relation(fields: [trackingId], references: [id])
-  template    NotificationTemplate? @relation(fields: [templateId], references: [id])
+  template    ComposerNotificationTemplate? @relation(fields: [templateId], references: [id])
   sentBy      User?    @relation("NotificationBy", fields: [sentById], references: [id])
 }
 
@@ -605,19 +690,24 @@ model NotificationLog {
   displayCode  String   @unique
   processId    String
   actorUserId  String
+  trackingEntryId String?
   managerEmail String
   managerName  String?
   channel      String
   subject      String
   bodyPreview  String
+  resolvedBody String?
+  sources      Json?
   severity     String?
   issueCount   Int      @default(0)
   sentAt       DateTime @default(now())
 
   process Process @relation(fields: [processId], references: [id], onDelete: Cascade)
   actor   User    @relation(fields: [actorUserId], references: [id])
+  trackingEntry TrackingEntry? @relation(fields: [trackingEntryId], references: [id], onDelete: SetNull)
 
   @@index([processId, sentAt])
   @@index([managerEmail, sentAt])
+  @@index([trackingEntryId])
   @@map("notification_log")
 }

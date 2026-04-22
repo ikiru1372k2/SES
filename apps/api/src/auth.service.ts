@@ -1,7 +1,16 @@
-import { ForbiddenException, Inject, Injectable, InternalServerErrorException, OnModuleInit, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  OnModuleInit,
+  UnauthorizedException,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import type { SessionUser } from '@ses/domain';
+import { tenantManagerDirectoryEnabled } from '@ses/domain';
+import { DEFAULT_TENANT_ID } from './common/default-tenant';
 import { PrismaService } from './common/prisma.service';
 import { requestContext } from './common/request-context';
 
@@ -44,13 +53,55 @@ export class AuthService implements OnModuleInit {
     return value || 'ses-dev-secret';
   }
 
-  private serializeUser(payload: TokenPayload): SessionUser {
+  private async resolveSessionTenantContext(
+    userId: string,
+    role: SessionUser['role'],
+  ): Promise<{ tenantId: string; tenantDisplayCode: string; managerDirectoryEnabled: boolean }> {
+    const member = await this.prisma.processMember.findFirst({
+      where: { userId },
+      orderBy: { addedAt: 'asc' },
+      include: { process: { include: { tenant: true } } },
+    });
+    if (member?.process?.tenant) {
+      const t = member.process.tenant;
+      return {
+        tenantId: t.id,
+        tenantDisplayCode: t.name,
+        managerDirectoryEnabled: tenantManagerDirectoryEnabled(null),
+      };
+    }
+    if (role === 'admin') {
+      const t = await this.prisma.tenant.findUnique({ where: { id: DEFAULT_TENANT_ID } });
+      if (!t) {
+        throw new UnauthorizedException('Default tenant is not provisioned');
+      }
+      return {
+        tenantId: t.id,
+        tenantDisplayCode: t.name,
+        managerDirectoryEnabled: tenantManagerDirectoryEnabled(null),
+      };
+    }
+    throw new ForbiddenException('No process membership; cannot resolve tenant');
+  }
+
+  private async buildSessionUser(user: {
+    id: string;
+    displayCode: string;
+    email: string;
+    displayName: string;
+    role: string;
+  }): Promise<SessionUser> {
+    const role = (user.role as SessionUser['role']) || 'auditor';
+    const ctx = await this.resolveSessionTenantContext(user.id, role);
     return {
-      id: payload.sub,
-      displayCode: payload.displayCode,
-      email: payload.email,
-      displayName: payload.displayName,
-      role: payload.role,
+      id: user.id,
+      displayCode: user.displayCode,
+      email: user.email,
+      displayName: user.displayName,
+      role,
+      tenantId: ctx.tenantId,
+      tenantDisplayCode: ctx.tenantDisplayCode,
+      managerDirectoryEnabled: ctx.managerDirectoryEnabled,
     };
   }
 
@@ -155,7 +206,7 @@ export class AuthService implements OnModuleInit {
       data: { lastLoginAt: new Date() },
     });
     requestContext.setUser({ userId: user.id, userCode: user.displayCode, userEmail: user.email });
-    return this.serializeUser(payload);
+    return await this.buildSessionUser(user);
   }
 
   async authenticateRequest(request: Request): Promise<SessionUser> {
@@ -169,13 +220,7 @@ export class AuthService implements OnModuleInit {
     });
     if (!user) throw new UnauthorizedException('User is inactive');
     requestContext.setUser({ userId: user.id, userCode: user.displayCode, userEmail: user.email });
-    return {
-      id: user.id,
-      displayCode: user.displayCode,
-      email: user.email,
-      displayName: user.displayName,
-      role: (user.role as SessionUser['role']) || 'auditor',
-    };
+    return await this.buildSessionUser(user);
   }
 
   async currentUser(request: Request): Promise<SessionUser> {
