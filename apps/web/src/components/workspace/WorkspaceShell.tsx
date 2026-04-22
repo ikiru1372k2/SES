@@ -15,7 +15,15 @@ const tabs: { id: WorkspaceTab; label: string }[] = [
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   const active = useAppStore((state) => state.activeWorkspaceTab);
   const setTab = useAppStore((state) => state.setWorkspaceTab);
-  const visibleTabs = isLegacyTileTrackingTabEnabled() ? tabs : tabs.filter((t) => t.id !== 'tracking');
+  // Notification + Tracking now live exclusively in the Escalation Center.
+  // Tracking has been hidden for a while behind the legacy flag; Notifications
+  // is now hidden unconditionally — the only way to compose a notification is
+  // through the Escalation Center, where it reaches every manager in one place.
+  const visibleTabs = tabs.filter((t) => {
+    if (t.id === 'notifications') return false;
+    if (t.id === 'tracking') return isLegacyTileTrackingTabEnabled();
+    return true;
+  });
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <nav className="flex shrink-0 gap-1 border-b border-gray-200 bg-white px-5 dark:border-gray-800 dark:bg-gray-950">

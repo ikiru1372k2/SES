@@ -4,8 +4,9 @@ import toast from 'react-hot-toast';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_IDS } from '@ses/domain';
 import { EnginePill } from './EnginePill';
+import { computePriority, suggestNextAction } from './nextAction';
 
-export type SortKey = 'issues' | 'stage' | 'lastContact' | 'sla';
+export type SortKey = 'priority' | 'issues' | 'stage' | 'lastContact' | 'sla';
 
 function slaTone(row: ProcessEscalationManagerRow, now: number): 'green' | 'amber' | 'red' | 'grey' {
   if (row.resolved || !row.slaDueAt) return 'grey';
@@ -71,6 +72,10 @@ export function ManagerTable({
   const sorted = useMemo(() => {
     const copy = [...rows];
     copy.sort((a, b) => {
+      if (sortKey === 'priority') {
+        // Default — the row a human should work on next is at the top.
+        return computePriority(b, now) - computePriority(a, now);
+      }
       if (sortKey === 'issues') return b.totalIssues - a.totalIssues;
       if (sortKey === 'stage') return String(a.stage ?? '').localeCompare(String(b.stage ?? ''));
       if (sortKey === 'lastContact') {
@@ -83,7 +88,7 @@ export function ManagerTable({
       return sa - sb;
     });
     return copy;
-  }, [rows, sortKey]);
+  }, [now, rows, sortKey]);
 
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
@@ -146,6 +151,7 @@ export function ManagerTable({
             <th className="px-3 py-2">{sortBtn('stage', 'Stage')}</th>
             <th className="px-3 py-2">{sortBtn('lastContact', 'Last contact')}</th>
             <th className="px-3 py-2">{sortBtn('sla', 'SLA')}</th>
+            <th className="px-3 py-2">Next action</th>
             <th className="w-10 px-2 py-2" aria-label="Actions" />
           </tr>
         </thead>
@@ -212,6 +218,9 @@ export function ManagerTable({
                     <span className="text-xs text-gray-600 dark:text-gray-300">{slaCountdownLabel(row, now)}</span>
                   </div>
                 </td>
+                <td className="px-3 py-2">
+                  <NextActionChip row={row} now={now} />
+                </td>
                 <td className="relative px-2 py-2">
                   <button
                     type="button"
@@ -259,5 +268,22 @@ export function ManagerTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+const NEXT_ACTION_TONE: Record<'gray' | 'blue' | 'amber' | 'red' | 'emerald', string> = {
+  gray:    'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+  blue:    'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+  amber:   'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
+  red:     'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+  emerald: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
+};
+
+function NextActionChip({ row, now }: { row: ProcessEscalationManagerRow; now: number }) {
+  const action = suggestNextAction(row, now);
+  return (
+    <span className={`inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium ${NEXT_ACTION_TONE[action.tone]}`}>
+      {action.label}
+    </span>
   );
 }

@@ -8,7 +8,6 @@ import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
 import { TabPanel } from '../components/workspace/TabPanel';
 import { PreviewTab } from '../components/workspace/PreviewTab';
 import { AuditResultsTab } from '../components/workspace/AuditResultsTab';
-import { NotificationsTab } from '../components/workspace/NotificationsTab';
 import { TrackingTab } from '../components/workspace/TrackingTab';
 import { VersionHistoryTab } from '../components/workspace/VersionHistoryTab';
 import { DraftRestoreBanner } from '../components/workspace/DraftRestoreBanner';
@@ -205,8 +204,8 @@ export function Workspace() {
           </TabPanel>
         ) : null}
         {tab === 'notifications' ? (
-          <TabPanel scroll="split">
-            <NotificationsTab process={scopedProcess} result={result ?? scopedProcess.versions[0]?.result ?? null} />
+          <TabPanel>
+            <NotificationsRedirect processId={process.id} onGoToResults={() => setWorkspaceTab('results')} />
           </TabPanel>
         ) : null}
         {tab === 'tracking' && isLegacyTileTrackingTabEnabled() ? (
@@ -247,5 +246,40 @@ export function Workspace() {
         />
       ) : null}
     </AppShell>
+  );
+}
+
+// Someone landed here from a bookmark or a persisted tab. The old tile-local
+// notifications workflow has been retired; route them to the Escalation
+// Center instead, which is the single source of truth for notify + track.
+function NotificationsRedirect({ processId, onGoToResults }: { processId: string; onGoToResults: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="rounded-full bg-brand/10 p-3 text-brand">
+        <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 11l18-8-8 18-2-8-8-2z" />
+        </svg>
+      </div>
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Notifications moved</h2>
+      <p className="max-w-md text-sm text-gray-600 dark:text-gray-300">
+        Sending notifications and tracking responses now live in the Escalation Center, so every
+        manager receives one consolidated message across all functions.
+      </p>
+      <div className="mt-2 flex gap-2">
+        <Link
+          to={`/processes/${processId}/escalations`}
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover"
+        >
+          Open Escalation Center
+        </Link>
+        <button
+          type="button"
+          onClick={onGoToResults}
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          Back to Audit Results
+        </button>
+      </div>
+    </div>
   );
 }

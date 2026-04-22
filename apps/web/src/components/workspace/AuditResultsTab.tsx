@@ -65,6 +65,41 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   const searchRef = useRef<HTMLInputElement>(null);
   useKeyboardShortcut('/', () => searchRef.current?.focus(), Boolean(result));
   const policyChanged = Boolean(result && isPolicyChanged(process.auditPolicy, result.policySnapshot));
+
+  // Detect a stale result: either the result belongs to a different file
+  // (user switched files without re-running), or the rule codes in the
+  // result don't match the current file's function (legacy runs before
+  // the function engine split). Either way the displayed findings are
+  // misleading — surface a big amber banner instead of silently lying.
+  const staleReason: string | null = (() => {
+    if (!result || !file) return null;
+    if (result.fileId && result.fileId !== file.id) {
+      return 'These results are from a previous file. Run the audit again to refresh them.';
+    }
+    if (file.functionId && result.issues.length > 0) {
+      const prefixFor = (fid: string): string => {
+        if (fid === 'master-data') return 'RUL-MD-';
+        if (fid === 'over-planning') return 'RUL-';
+        return '';
+      };
+      const expectedPrefix = prefixFor(file.functionId);
+      const rogue = result.issues.find((issue) => {
+        const code = issue.ruleCode ?? issue.ruleId ?? '';
+        if (!code) return false;
+        if (file.functionId === 'master-data') return !code.startsWith('RUL-MD-');
+        if (file.functionId === 'over-planning') {
+          // Over-planning covers several RUL-EFFORT/RUL-STATE/RUL-MGR codes,
+          // but not RUL-MD-*.
+          return code.startsWith('RUL-MD-');
+        }
+        return expectedPrefix ? !code.startsWith(expectedPrefix) : false;
+      });
+      if (rogue) {
+        return `These findings were produced by another function's ruleset (${rogue.ruleCode}). Re-run the audit to apply the ${file.functionId} rules.`;
+      }
+    }
+    return null;
+  })();
   const searchIndex = useMemo(() => {
     return (result?.issues ?? []).map((issue) => ({
       issue,
@@ -149,6 +184,39 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
             <MetricCard label="Issues" value={result.issues.length} />
             <MetricCard label="Sheets Audited" value={result.sheets.length} />
           </div>
+
+          {result.issues.length > 0 ? (
+            <EscalationCenterCta
+              processId={process.id}
+              processDisplayCode={process.displayCode}
+              managerCount={
+                new Set(
+                  result.issues
+                    .map((issue) => (issue.projectManager ?? '').trim().toLowerCase())
+                    .filter(Boolean),
+                ).size
+              }
+            />
+          ) : null}
+
+          {staleReason ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+              <div>
+                <div className="font-semibold">Stale audit result</div>
+                <div className="mt-1">{staleReason}</div>
+              </div>
+              {file ? (
+                <button
+                  type="button"
+                  onClick={() => runAudit(process.id, file.id)}
+                  disabled={!hasSelected}
+                  className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+                >
+                  Re-run audit
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           {policyChanged ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
             <div className="font-semibold">Policy used</div>
@@ -452,4 +520,38 @@ function NumberField({ label, value, suffix, onChange }: { label: string; value:
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /> {label}</label>;
+}
+
+// One-click bridge from "I ran an audit" to "I'm notifying the owners".
+// Notifications no longer live inside the tile — the Escalation Center is
+// the single place to compose, send, and track, so we surface the link
+// prominently right under the metric cards.
+function EscalationCenterCta({
+  processId,
+  processDisplayCode,
+  managerCount,
+}: {
+  processId: string;
+  processDisplayCode: string | undefined;
+  managerCount: number;
+}) {
+  const href = `/processes/${encodeURIComponent(processDisplayCode ?? processId)}/escalations`;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/5 p-4 text-sm">
+      <div>
+        <div className="font-semibold text-gray-900 dark:text-white">
+          {managerCount} manager{managerCount === 1 ? '' : 's'} to notify
+        </div>
+        <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+          The Escalation Center is where you compose one message per manager, broadcast to everyone, track SLA, and walk the escalation ladder.
+        </div>
+      </div>
+      <a
+        href={href}
+        className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white hover:bg-brand-hover"
+      >
+        Open Escalation Center →
+      </a>
+    </div>
+  );
 }

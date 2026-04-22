@@ -260,3 +260,102 @@ as a feature). Phase 1 needs a migration + seed change — ship behind a
 migration gate, rerun seed after deploy. Phase 2 is UI-only, safe to iterate
 on a branch. Phase 3 is opportunistic cleanup and goes last so we don't
 churn files we're still rewriting in Phase 1.
+
+---
+
+## 6. Phase 4 — Notification + tracking consolidation (shipped 2026-04-22)
+
+> The individual function tiles (Master Data, Over Planning, Missing Plan,
+> Function Rate, Internal Cost Rate) used to each carry their own
+> Notifications tab and — behind a flag — a Tracking tab. The result was
+> that the same manager, if flagged across two functions, would receive
+> two parallel escalation threads. This phase makes the **Escalation
+> Center the single source of truth** for notify + track across every
+> function.
+
+### The pipeline
+
+```mermaid
+flowchart LR
+  subgraph Per-function tile
+    U[Upload workbook] --> A[Run audit]
+    A --> R[Audit Results tab]
+    R -->|1-click CTA| E
+  end
+  subgraph Escalation Center
+    E[Manager table — priority sorted]
+    E --> NA{Next action?}
+    NA -->|send| C[Composer]
+    NA -->|bulk| B[Bulk dialogs:<br/>ack / snooze / reesc]
+    NA -->|everyone| BR[Broadcast]
+    C --> SEND[Outbound: email / Teams]
+    B --> SEND
+    BR --> SEND
+    SEND --> T[TrackingEntry<br/>+ TrackingEvent]
+    T --> SLA[SLA cron — every 15m]
+    SLA -->|breach| L1[Escalate L1]
+    L1 -->|breach| L2[Escalate L2]
+    T -->|live refresh via Socket.IO| E
+  end
+```
+
+### What changed
+
+- **Tile Notifications tab — gone.** `WorkspaceShell` filters it out;
+  `NotificationsRedirect` catches anyone who bookmarked the old URL
+  (`?tab=notifications`) and routes them to the Escalation Center.
+- **reconcileAfterAudit upserts missing managers.** A fresh manager first
+  seen in an audit used to never appear in the Escalation Center because
+  the reconciler only patched *existing* `TrackingEntry` rows. Now it
+  creates them via `createMany` (with a batched identifier fetch).
+- **Broadcast endpoint.** `POST /api/v1/tracking/bulk/broadcast` expands
+  "every manager with open findings in this process" (optionally filtered
+  by `functionId`) into `trackingIds` and runs the same send pipeline —
+  so the UI never has to hand-select for a send-all flow.
+- **Escalation Center upgrades**:
+  - `AnalyticsStrip` at the top: managers / open findings / SLA breached /
+    due-in-48h / missing-email, all derived from the already-loaded rows
+    (no extra API call).
+  - `BroadcastDialog` header button with channel picker (email / Teams /
+    both), optional function scope, and token-aware body.
+  - `NextActionChip` per row — deterministic "send reminder" / "escalate
+    to L1" / "confirm resolution" / "add to directory" based on stage +
+    SLA + email presence.
+  - `computePriority()` default sort: breached SLAs float to the top;
+    missing-email rows de-weighted so actionable rows come first.
+  - Live refresh: the center subscribes to `tracking.updated /
+    notification.sent / audit.completed` envelopes and invalidates the
+    `['escalations', processId]` + `['tracking-events']` queries, so
+    peer users' actions and the SLA cron both reflect without a reload.
+
+### What the user sees
+
+```
+[Audit tile]
+  Run audit → Audit Results tab
+  ┌─────────────────────────────────┐
+  │ 12 managers to notify           │
+  │ [ Open Escalation Center → ]    │  ← one click
+  └─────────────────────────────────┘
+
+[Escalation Center]
+  Managers  Open  SLA breached  Due 48h  Missing email
+    12      87       3            5         2
+  ─────────────────────────────────────────────────────
+  [ Broadcast ]                          ? (keyboard help)
+  ─────────────────────────────────────────────────────
+  Priority-sorted table; every row has Next action chip.
+  Select rows → c compose · a ack · s snooze · e escalate · r resolve
+```
+
+### What's still deliberately not in scope
+
+- **Real AI.** "Next action" is a rules engine, not a model. We revisit
+  when we have 6 months of outcome data.
+- **Per-user notification preferences.** Managers still get whatever the
+  auditor picks (email / Teams / both). Subscription management is a
+  dedicated phase.
+- **Template version UI.** Templates already have `version + parentId`
+  in the DB; an editor is a future PR.
+- **Cross-process broadcast.** Broadcast is scoped to one process. Cross-
+  process campaigns are a v2.

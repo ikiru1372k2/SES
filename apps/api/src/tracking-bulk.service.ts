@@ -17,6 +17,12 @@ type BulkSendInput = {
   payload: ComposeDraftPayload & { sources: string[] };
 };
 
+type BroadcastInput = {
+  processIdOrCode: string;
+  payload: ComposeDraftPayload & { sources: string[] };
+  filter?: { functionId?: string; includeResolved?: boolean };
+};
+
 @Injectable()
 export class TrackingBulkService {
   constructor(
@@ -171,6 +177,10 @@ export class TrackingBulkService {
    * Push the SLA timer forward by N days without changing the stage. The
    * SLA engine re-checks slaDueAt on its next tick; moving the deadline
    * is the cheapest way to "snooze" without faking progress.
+   *
+   * Each entry gets its own slaDueAt bump (since they start from different
+   * baselines), but the event rows are batched via createMany so the
+   * transaction is O(2N) round-trips at worst instead of O(3N).
    */
   async snooze(trackingIds: string[], days: number, note: string, user: SessionUser) {
     if (!Number.isFinite(days) || days <= 0 || days > 90) {
@@ -180,27 +190,39 @@ export class TrackingBulkService {
     const reason = note.trim() || `bulk_snooze:${days}d`;
     const bumpMs = days * 24 * 60 * 60 * 1000;
     await this.prisma.$transaction(async (tx) => {
-      for (const entry of entries) {
-        const base = entry.slaDueAt ?? new Date();
-        const next = new Date(base.getTime() + bumpMs);
+      // Pre-compute event rows + their display codes up front so the
+      // createMany below is a single round trip.
+      const eventRows = await Promise.all(
+        entries.map(async (entry) => {
+          const base = entry.slaDueAt ?? new Date();
+          const next = new Date(base.getTime() + bumpMs);
+          return {
+            row: {
+              id: createId(),
+              displayCode: await this.identifiers.nextTrackingEventCode(tx),
+              trackingId: entry.id,
+              kind: 'sla_snoozed' as const,
+              channel: 'manual' as const,
+              note: reason,
+              reason: 'bulk_snooze' as const,
+              payload: { days, slaDueAt: next.toISOString() } as object,
+              triggeredById: user.id,
+            },
+            nextDue: next,
+            entryId: entry.id,
+          };
+        }),
+      );
+
+      // slaDueAt differs per entry, so updateMany can't do it in one SQL
+      // call. Keep the per-entry update but drop the nested event insert.
+      for (const r of eventRows) {
         await tx.trackingEntry.update({
-          where: { id: entry.id },
-          data: { slaDueAt: next, rowVersion: { increment: 1 } },
-        });
-        await tx.trackingEvent.create({
-          data: {
-            id: createId(),
-            displayCode: await this.identifiers.nextTrackingEventCode(tx),
-            trackingId: entry.id,
-            kind: 'sla_snoozed',
-            channel: 'manual',
-            note: reason,
-            reason: 'bulk_snooze',
-            payload: { days, slaDueAt: next.toISOString() } as object,
-            triggeredById: user.id,
-          },
+          where: { id: r.entryId },
+          data: { slaDueAt: r.nextDue, rowVersion: { increment: 1 } },
         });
       }
+      await tx.trackingEvent.createMany({ data: eventRows.map((r) => r.row) });
     });
     return { ok: true, count: entries.length, days };
   }
@@ -234,6 +256,55 @@ export class TrackingBulkService {
       }
     }
     return { ok: true, applied, skipped, total: entries.length };
+  }
+
+  /**
+   * Broadcast to every manager with open findings in a process. Optional
+   * filter by functionId (only escalate findings produced by one engine)
+   * or includeResolved (sweep even resolved rows; rarely useful, but
+   * supported for "compliance reminder" workflows).
+   *
+   * Re-uses the same per-entry send pipeline as sendBulk so missing-email
+   * rows are skipped rather than failing the whole call, and every send
+   * creates the usual NotificationLog + TrackingEvent audit trail.
+   */
+  async broadcast(input: BroadcastInput, user: SessionUser) {
+    const process = await this.processAccess.findAccessibleProcessOrThrow(
+      user,
+      input.processIdOrCode,
+      'editor',
+    );
+    const entries = await this.prisma.trackingEntry.findMany({
+      where: {
+        processId: process.id,
+        ...(input.filter?.includeResolved ? {} : { resolved: false }),
+      },
+      select: { id: true, managerName: true, managerEmail: true, projectStatuses: true },
+      orderBy: { managerName: 'asc' },
+    });
+
+    // Optional filter: only include managers who have open findings under
+    // the requested functionId. Done in memory since the count is tiny
+    // and the query would otherwise need a JSON where-clause.
+    const filtered = input.filter?.functionId
+      ? entries.filter((entry) => {
+          const parsed = (entry.projectStatuses ?? {}) as {
+            byEngine?: Record<string, { openCount?: number }>;
+          };
+          const fid = input.filter!.functionId!;
+          return (parsed.byEngine?.[fid]?.openCount ?? 0) > 0;
+        })
+      : entries;
+
+    if (filtered.length === 0) {
+      return { progress: [], success: 0, failed: 0, skipped: 0, total: 0, audience: 0 };
+    }
+
+    const result = await this.sendBulk(
+      { trackingIds: filtered.map((e) => e.id), payload: input.payload },
+      user,
+    );
+    return { ...result, audience: filtered.length };
   }
 }
 

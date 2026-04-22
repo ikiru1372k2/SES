@@ -1,46 +1,71 @@
-import { useEffect } from 'react';
+import { Modal } from '../shared/Modal';
+
+const GROUPS: Array<{ heading: string; rows: Array<[string, string]> }> = [
+  {
+    heading: 'Navigation',
+    rows: [
+      ['j / k or ↓ / ↑', 'Move row selection'],
+      ['Enter', 'Open the selected manager panel'],
+      ['/', 'Focus search'],
+      ['Esc', 'Close panel or clear selection'],
+    ],
+  },
+  {
+    heading: 'Bulk actions (when rows are selected)',
+    rows: [
+      ['c', 'Open the bulk composer'],
+      ['a', 'Acknowledge selected'],
+      ['s', 'Snooze selected'],
+      ['e', 'Re-escalate selected'],
+      ['r', 'Mark selected resolved'],
+    ],
+  },
+  {
+    heading: 'Help',
+    rows: [['?', 'Open this help overlay']],
+  },
+];
 
 export function ShortcutOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' || event.key === '?') {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, open]);
-
-  if (!open) return null;
-
-  const rows: Array<[string, string]> = [
-    ['c', 'Compose'],
-    ['r', 'Resolve'],
-    ['e', 'Escalate now'],
-    ['s', 'Snooze'],
-    ['/', 'Focus search'],
-    ['j / k', 'Row navigation'],
-    ['?', 'Open this help'],
-  ];
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Keyboard shortcuts</h2>
-        <div className="mt-3 space-y-1 text-sm">
-          {rows.map(([key, label]) => (
-            <div key={key} className="flex items-center justify-between rounded border border-gray-200 px-2 py-1 dark:border-gray-700">
-              <kbd className="rounded bg-gray-100 px-1.5 py-0.5 text-xs dark:bg-gray-800">{key}</kbd>
-              <span>{label}</span>
-            </div>
-          ))}
-        </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Keyboard shortcuts"
+      description="Shortcuts are ignored while typing in a text field."
+      size="md"
+      footer={
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          Close
+        </button>
+      }
+    >
+      <div className="space-y-4">
+        {GROUPS.map((group) => (
+          <section key={group.heading}>
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              {group.heading}
+            </h3>
+            <ul className="space-y-1">
+              {group.rows.map(([key, label]) => (
+                <li
+                  key={key}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 px-2 py-1.5 text-sm dark:border-gray-800"
+                >
+                  <span className="text-gray-700 dark:text-gray-200">{label}</span>
+                  <kbd className="rounded-md bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                    {key}
+                  </kbd>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -199,7 +199,10 @@ function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose
       }
     }
     toast.success(`${updated?.versions[0]?.versionName ?? versionName} saved`);
-    setWorkspaceTab('notifications');
+    // Post-save, keep users on Audit Results. The old flow sent them to a
+    // per-tile Notifications tab that no longer exists — notifications now
+    // live in the Escalation Center, which has its own dedicated route.
+    setWorkspaceTab('results');
     onClose();
   }
 

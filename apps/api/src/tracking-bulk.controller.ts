@@ -51,4 +51,17 @@ export class TrackingBulkController {
   ) {
     return this.trackingBulk.reescalate(body.trackingIds, body.note ?? '', user);
   }
+
+  @Post('broadcast')
+  broadcast(
+    @Body()
+    body: {
+      processIdOrCode: string;
+      payload: ComposeDraftPayload & { sources: string[] };
+      filter?: { functionId?: string; includeResolved?: boolean };
+    },
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.trackingBulk.broadcast(body, user);
+  }
 }

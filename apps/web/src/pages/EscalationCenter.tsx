@@ -1,8 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { onRealtimeEvent } from '../realtime/socket';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Megaphone } from 'lucide-react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
+import { FUNCTION_REGISTRY } from '@ses/domain';
 import { AppShell } from '../components/layout/AppShell';
 import { EscalationFilters, type SlaFilter } from '../components/escalations/EscalationFilters';
 import { EscalationPanel } from '../components/escalations/EscalationPanel';
@@ -10,7 +12,15 @@ import { EscalationSummaryBar } from '../components/escalations/EscalationSummar
 import { ManagerTable, type SortKey } from '../components/escalations/ManagerTable';
 import { SavedViewsRail } from '../components/escalations/SavedViewsRail';
 import { ShortcutOverlay } from '../components/escalations/ShortcutOverlay';
+import { AnalyticsStrip } from '../components/escalations/AnalyticsStrip';
 import { BulkComposer } from '../components/escalations/BulkComposer';
+import { BroadcastDialog } from '../components/escalations/BroadcastDialog';
+import {
+  AcknowledgeDialog,
+  ReescalateDialog,
+  SnoozeDialog,
+} from '../components/escalations/BulkActionDialog';
+import toast from 'react-hot-toast';
 import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 import { useCurrentUser } from '../components/auth/authContext';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
@@ -48,10 +58,14 @@ export function EscalationCenter() {
   const [resolveOpen, setResolveOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [bulkComposerOpen, setBulkComposerOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [ackOpen, setAckOpen] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [reescOpen, setReescOpen] = useState(false);
   const [selectedTrackingIds, setSelectedTrackingIds] = useState<Set<string>>(new Set());
   const [currentTime, setCurrentTime] = useState(() => Date.now());
 
-  const sortKey = (search.get('sort') as SortKey) || 'issues';
+  const sortKey = (search.get('sort') as SortKey) || 'priority';
   const engine = (search.get('engine') as FunctionId) || '';
   const sla = (search.get('sla') as SlaFilter) || 'all';
   const assignedToMe = search.get('mine') === '1';
@@ -76,12 +90,37 @@ export function EscalationCenter() {
     if (!process && processId) void hydrateProcesses();
   }, [hydrateProcesses, process, processId]);
 
+  const queryClient = useQueryClient();
+
   const q = useQuery({
     queryKey: ['escalations', processId],
     queryFn: () => fetchProcessEscalations(processId!),
     enabled: Boolean(processId),
     staleTime: 15_000,
   });
+
+  // Live refresh. The realtime gateway emits whenever anyone (another
+  // user, the SLA cron, a bulk-action endpoint) changes tracking state
+  // on this process. Previously the EscalationCenter only refetched on
+  // user interaction; now it refetches quietly in the background so the
+  // page always reflects the current system state.
+  useEffect(() => {
+    if (!processId) return;
+    const off = onRealtimeEvent((envelope) => {
+      if (envelope.processCode !== processId && envelope.processCode !== process?.displayCode) return;
+      if (
+        envelope.event === 'tracking.updated' ||
+        envelope.event === 'notification.sent' ||
+        envelope.event === 'audit.completed'
+      ) {
+        void queryClient.invalidateQueries({ queryKey: ['escalations', processId] });
+        // Invalidate any open tracking-events queries too so the timeline
+        // auto-advances when the SLA cron transitions a stage.
+        void queryClient.invalidateQueries({ queryKey: ['tracking-events'] });
+      }
+    });
+    return off;
+  }, [process?.displayCode, processId, queryClient]);
 
   const stages = useMemo(() => {
     const rows = q.data?.rows ?? [];
@@ -133,17 +172,37 @@ export function EscalationCenter() {
       if (event.key === '?') {
         event.preventDefault();
         setShortcutOpen(true);
+      } else if (event.key === 'Escape' && selectedTrackingIds.size > 0) {
+        // Predictable get-me-out-of-here: clears the current bulk selection
+        // only when nothing more modal is already open.
+        if (!ackOpen && !snoozeOpen && !reescOpen && !bulkComposerOpen) {
+          setSelectedTrackingIds(new Set());
+        }
       } else if (event.key === 'c' && selectedTrackingIds.size > 0) {
         event.preventDefault();
         setBulkComposerOpen(true);
+      } else if (event.key === 'a' && selectedTrackingIds.size > 0) {
+        event.preventDefault();
+        setAckOpen(true);
+      } else if (event.key === 's' && selectedTrackingIds.size > 0) {
+        event.preventDefault();
+        setSnoozeOpen(true);
+      } else if (event.key === 'e' && selectedTrackingIds.size > 0) {
+        event.preventDefault();
+        setReescOpen(true);
       } else if (event.key === 'r' && selectedTrackingIds.size > 0) {
         event.preventDefault();
-        void bulkResolve([...selectedTrackingIds]).then(() => q.refetch());
+        void bulkResolve([...selectedTrackingIds])
+          .then((res) => {
+            toast.success(`${res.count} resolved.`);
+            void q.refetch();
+          })
+          .catch((err: Error) => toast.error(err.message));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [panelOpen, q, selectedTrackingIds]);
+  }, [ackOpen, bulkComposerOpen, panelOpen, q, reescOpen, selectedTrackingIds, snoozeOpen]);
 
   if (!processId) return <Navigate to="/" replace />;
   if (!process) {
@@ -169,6 +228,15 @@ export function EscalationCenter() {
               <ArrowLeft size={14} /> Dashboard
             </Link>
             <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Escalation Center</h1>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setBroadcastOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
+              title="Send one message to every manager with open findings"
+            >
+              <Megaphone size={14} /> Broadcast
+            </button>
           </div>
 
           {q.isError ? (
@@ -192,75 +260,71 @@ export function EscalationCenter() {
             </div>
           ) : null}
 
+          <AnalyticsStrip rows={q.data?.rows ?? []} now={currentTime} />
+
           {summary ? <EscalationSummaryBar summary={summary} /> : null}
 
           {selectedTrackingIds.size > 0 ? (
             <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm">
-              <span>{selectedTrackingIds.size} selected</span>
+              <span className="font-medium text-brand">
+                {selectedTrackingIds.size} selected
+              </span>
+              <span className="text-[11px] text-gray-500">
+                Shortcuts: <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">c</kbd> compose ·{' '}
+                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">a</kbd> ack ·{' '}
+                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">s</kbd> snooze ·{' '}
+                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">e</kbd> escalate ·{' '}
+                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">r</kbd> resolve ·{' '}
+                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">esc</kbd> clear
+              </span>
+              <span className="flex-1" />
               <button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs"
+                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
                 onClick={() => setBulkComposerOpen(true)}
               >
                 Compose
               </button>
               <button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs"
-                onClick={() => {
-                  void bulkAcknowledge([...selectedTrackingIds]).then((res) => {
-                    if (res.skipped.length) {
-                      window.alert(`${res.applied} acknowledged, ${res.skipped.length} skipped.`);
-                    }
-                    void q.refetch();
-                  });
-                }}
+                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
+                onClick={() => setAckOpen(true)}
               >
                 Acknowledge
               </button>
               <button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs"
-                onClick={() => {
-                  const raw = window.prompt('Snooze for how many days? (1 – 90)', '3');
-                  if (!raw) return;
-                  const days = Number.parseInt(raw, 10);
-                  if (!Number.isFinite(days) || days < 1 || days > 90) {
-                    window.alert('Enter a number between 1 and 90.');
-                    return;
-                  }
-                  void bulkSnooze([...selectedTrackingIds], days).then(() => q.refetch());
-                }}
+                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
+                onClick={() => setSnoozeOpen(true)}
               >
                 Snooze
               </button>
               <button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs"
-                onClick={() => {
-                  void bulkReescalate([...selectedTrackingIds]).then((res) => {
-                    if (res.skipped.length) {
-                      window.alert(`${res.applied} re-escalated, ${res.skipped.length} skipped.`);
-                    }
-                    void q.refetch();
-                  });
-                }}
+                className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+                onClick={() => setReescOpen(true)}
               >
                 Re-escalate
               </button>
               <button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs"
+                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
                 onClick={() => {
-                  void bulkResolve([...selectedTrackingIds]).then(() => q.refetch());
+                  void bulkResolve([...selectedTrackingIds])
+                    .then((res) => {
+                      toast.success(`${res.count} resolved.`);
+                      void q.refetch();
+                    })
+                    .catch((err: Error) => toast.error(err.message));
                 }}
               >
                 Resolve
               </button>
               <button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs"
+                className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-500 hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
                 onClick={() => setSelectedTrackingIds(new Set())}
+                aria-label="Clear selection"
               >
                 Clear
               </button>
@@ -318,7 +382,7 @@ export function EscalationCenter() {
                   setPanelOpen(true);
                 }}
                 sortKey={sortKey}
-                onSortKey={(k) => setParam({ sort: k === 'issues' ? null : k })}
+                onSortKey={(k) => setParam({ sort: k === 'priority' ? null : k })}
                 engineFilter={engine}
                 onEngineFromPill={(fid) => setParam({ engine: engine === fid ? null : fid })}
               />
@@ -352,6 +416,46 @@ export function EscalationCenter() {
           setBulkComposerOpen(false);
           void q.refetch();
         }}
+      />
+      <AcknowledgeDialog
+        open={ackOpen}
+        onClose={() => setAckOpen(false)}
+        count={selectedTrackingIds.size}
+        onDone={() => {
+          setSelectedTrackingIds(new Set());
+          void q.refetch();
+        }}
+        runAction={(note) => bulkAcknowledge([...selectedTrackingIds], note || undefined)}
+      />
+      <SnoozeDialog
+        open={snoozeOpen}
+        onClose={() => setSnoozeOpen(false)}
+        count={selectedTrackingIds.size}
+        onDone={() => {
+          setSelectedTrackingIds(new Set());
+          void q.refetch();
+        }}
+        runAction={(days, note) => bulkSnooze([...selectedTrackingIds], days, note || undefined)}
+      />
+      <ReescalateDialog
+        open={reescOpen}
+        onClose={() => setReescOpen(false)}
+        count={selectedTrackingIds.size}
+        onDone={() => {
+          setSelectedTrackingIds(new Set());
+          void q.refetch();
+        }}
+        runAction={(note) => bulkReescalate([...selectedTrackingIds], note || undefined)}
+      />
+      <BroadcastDialog
+        open={broadcastOpen}
+        onClose={() => setBroadcastOpen(false)}
+        onDone={() => void q.refetch()}
+        processIdOrCode={process.displayCode ?? process.id}
+        estimatedAudience={
+          (q.data?.rows ?? []).filter((r) => !r.resolved && Boolean(r.resolvedEmail)).length
+        }
+        functionOptions={FUNCTION_REGISTRY.map((f) => ({ id: f.id, label: f.label }))}
       />
     </AppShell>
   );

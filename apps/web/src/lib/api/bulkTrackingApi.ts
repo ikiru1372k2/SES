@@ -96,3 +96,29 @@ export async function bulkReescalate(trackingIds: string[], note?: string): Prom
   if (!res.ok) throw await parseApiError(res, 'Bulk reescalate failed');
   return (await res.json()) as BulkActionOutcome;
 }
+
+export type BroadcastInput = {
+  processIdOrCode: string;
+  payload: ComposeDraftPayload & { sources: string[] };
+  filter?: { functionId?: string; includeResolved?: boolean };
+};
+
+export type BroadcastOutcome = {
+  progress: Array<Record<string, unknown>>;
+  success: number;
+  failed: number;
+  skipped: number;
+  total: number;
+  audience: number;
+};
+
+export async function broadcastNotification(input: BroadcastInput): Promise<BroadcastOutcome> {
+  const res = await fetch('/api/v1/tracking/bulk/broadcast', {
+    method: 'POST',
+    credentials: 'include',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw await parseApiError(res, 'Broadcast failed');
+  return (await res.json()) as BroadcastOutcome;
+}

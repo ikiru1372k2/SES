@@ -1,6 +1,15 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { StatusReconcilerService } from '../src/status-reconciler.service';
+import type { IdentifierService } from '../src/common/identifier.service';
+
+// Minimal identifier stub — the tests never observe new-manager creation
+// (every mocked audit/tracking pair has the manager already), so
+// nextTrackingCode should never be called. If it is, return a sentinel
+// that would be obvious in any assertion.
+const mockIdentifiers = {
+  nextTrackingCode: async () => 'TRK-TEST-0001',
+} as unknown as IdentifierService;
 
 describe('StatusReconcilerService', () => {
   it('updates only the audited engine slice and aggregate resolved', async () => {
@@ -33,7 +42,7 @@ describe('StatusReconcilerService', () => {
       },
     };
 
-    const svc = new StatusReconcilerService();
+    const svc = new StatusReconcilerService(mockIdentifiers);
     await svc.reconcileAfterAudit(mockTx as never, {
       processId: 'p1',
       functionId: 'master-data',
@@ -78,7 +87,7 @@ describe('StatusReconcilerService', () => {
         },
       },
     };
-    const svc = new StatusReconcilerService();
+    const svc = new StatusReconcilerService(mockIdentifiers);
     await svc.reconcileAfterAudit(mockTx as never, {
       processId: 'p1',
       functionId: 'master-data',

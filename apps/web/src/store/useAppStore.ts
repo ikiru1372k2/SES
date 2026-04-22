@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
+import toast from 'react-hot-toast';
 import {
   DEFAULT_FUNCTION_ID,
   type EscalationStage,
@@ -67,6 +68,12 @@ type AppStore = {
   currentAuditResult: AuditResult | null;
   isAuditRunning: boolean;
   auditProgressText: string;
+  // Monotonic run identifier. Incremented every time runAudit starts.
+  // Each in-flight run captures its own id and drops the final set()
+  // if the store has moved on (user started a new audit, navigated
+  // away, or called cancelAudit). Prevents zombie results from an
+  // abandoned promise clobbering a newer one.
+  auditRunKey: string | null;
   uploads: Record<string, UploadState>;
   fileDrafts: Record<string, FileDraftMetadata>;
   hydrateProcesses: () => Promise<void>;
@@ -88,6 +95,7 @@ type AppStore = {
   updateAuditPolicy: (processId: string, patch: Partial<AuditPolicy>) => void;
   resetAuditPolicy: (processId: string) => void;
   runAudit: (processId: string, fileId: string) => Promise<void>;
+  cancelAudit: () => void;
   saveVersion: (processId: string, details: { versionName: string; notes: string }) => AuditProcess | undefined;
   loadVersion: (processId: string, versionId: string) => void;
   recordTrackingEvent: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, channel: TrackingChannel, note: string) => void;
@@ -142,6 +150,25 @@ function cancelDebouncedWorkspaceSave(): void {
 
 function patchProcess(processes: AuditProcess[], processId: string, updater: (process: AuditProcess) => AuditProcess): AuditProcess[] {
   return processes.map((process) => (process.id === processId ? updater(process) : process));
+}
+
+/**
+ * Resolve a process by id at call-time and only return it if it is
+ * server-backed. Returns `null` if the process has been archived,
+ * deleted, or was never server-backed — in which case the caller
+ * should skip the API mirror silently (the optimistic local patch
+ * remains).
+ *
+ * Prevents the "captured `proc` before await, process went away"
+ * race that existed in every fire-and-forget issue/tracking mutator.
+ */
+function serverBackedProcess(
+  processes: AuditProcess[],
+  processId: string,
+): { displayCode: string } | null {
+  const proc = processes.find((p) => p.id === processId);
+  if (!proc || !proc.serverBacked || !proc.displayCode) return null;
+  return { displayCode: proc.displayCode };
 }
 
 function patchFile(process: AuditProcess, fileId: string, updater: (file: WorkbookFile) => WorkbookFile): AuditProcess {
@@ -236,6 +263,7 @@ export const useAppStore = create<AppStore>()(
       currentAuditResult: null,
       isAuditRunning: false,
       auditProgressText: '',
+      auditRunKey: null,
       uploads: {},
       fileDrafts: {},
 
@@ -482,7 +510,7 @@ export const useAppStore = create<AppStore>()(
           const ref = (file as { displayCode?: string }).displayCode ?? fileId;
           void deleteFileOnApi(ref).catch((err) => {
             // Recovery: local state is already updated; server file will reappear on next reload.
-            console.warn('[files] server delete failed', err);
+            toast.error(err instanceof Error ? `File not deleted on server: ${err.message}` : 'File not deleted on server');
           });
         }
         void deleteWorkbookRawData(fileId);
@@ -540,29 +568,34 @@ export const useAppStore = create<AppStore>()(
         if (!process || !file) return;
         const selected = file.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected);
         if (!selected.length) return;
-        set({ isAuditRunning: true, auditProgressText: `Auditing sheet 1 of ${selected.length}...` });
 
-        // When the process and file are both server-backed we run the audit on
-        // the backend. That lets the RealtimeGateway emit 'audit.completed' to
-        // every connected member of the process room, and keeps the audit_runs
-        // / audit_issues rows as the source of truth. The local engine result
-        // is still computed in parallel below so the UI can render instantly
-        // even if the server round-trip takes a second.
+        // Claim this run with a fresh key. Any earlier in-flight run with
+        // a different key will refuse to commit its result at the end.
+        const runKey = createId();
+        set({
+          isAuditRunning: true,
+          auditProgressText: `Auditing sheet 1 of ${selected.length}...`,
+          auditRunKey: runKey,
+        });
+
+        // Guard helper: returns true iff this is still the active run. If
+        // the user started a new audit, called cancelAudit, or navigated
+        // to a different process, this returns false and the caller drops
+        // the result without touching state.
+        const stillActive = () => get().auditRunKey === runKey;
+
         const fileDisplayCode = (file as { displayCode?: string }).displayCode;
         const useServer = Boolean(process.serverBacked && process.displayCode && fileDisplayCode);
         try {
           if (useServer) {
-            // Server path is authoritative — it runs the per-function engine
-            // and resolves manager emails from the directory. If this fails
-            // we surface the error rather than silently falling back to a
-            // local engine, because the local engine used to run effort
-            // rules against master-data files and produce nonsense findings.
             const apiResult = await runAuditOnApi(process.displayCode!, fileDisplayCode!);
             const apiIssues = await fetchAuditIssues(apiResult.displayCode);
+            if (!stillActive()) return;
             const mapped = mapApiAuditToResult(file.id, apiResult, apiIssues);
             set((state) => ({
               isAuditRunning: false,
               auditProgressText: '',
+              auditRunKey: null,
               currentAuditResult: mapped,
               activeWorkspaceTab: 'results',
               processes: patchProcess(state.processes, processId, (item) =>
@@ -575,12 +608,13 @@ export const useAppStore = create<AppStore>()(
             }));
             return;
           }
-          // Local-only processes (demo mode / no server backing) run the
-          // per-function dispatcher directly in the browser.
+          // Local-only processes run the per-function dispatcher in-browser.
           const result = await runAuditAsync(file, file.functionId, process.auditPolicy);
+          if (!stillActive()) return;
           set((state) => ({
             isAuditRunning: false,
             auditProgressText: '',
+            auditRunKey: null,
             currentAuditResult: result,
             activeWorkspaceTab: 'results',
             processes: patchProcess(state.processes, processId, (item) =>
@@ -592,9 +626,19 @@ export const useAppStore = create<AppStore>()(
             ),
           }));
         } catch (err) {
-          set({ isAuditRunning: false, auditProgressText: '' });
+          // Only clear the in-flight flag if this is still the active run;
+          // otherwise we'd stomp a newer run's progress state.
+          if (stillActive()) {
+            set({ isAuditRunning: false, auditProgressText: '', auditRunKey: null });
+          }
           throw err;
         }
+      },
+
+      cancelAudit: () => {
+        // Moving the key forward is enough: any in-flight run will see its
+        // captured key mismatch at the next checkpoint and bail.
+        set({ isAuditRunning: false, auditProgressText: '', auditRunKey: null });
       },
 
       updateAuditPolicy: (processId, patch) => {
@@ -657,21 +701,47 @@ export const useAppStore = create<AppStore>()(
 
       recordTrackingEvent: (processId, managerName, managerEmail, flaggedProjectCount, channel, note) => {
         const now = new Date().toISOString();
-        // Fire-and-forget upsert (to ensure tracking row exists) + event.
-        const proc = get().processes.find((p) => p.id === processId);
-        if (proc?.serverBacked && proc.displayCode) {
+        // Snapshot the entry we're about to mutate so we can roll back if
+        // the server upsert fails. The previous implementation swallowed
+        // the error to a console.warn, which left the local state out of
+        // sync with the server forever until a page reload.
+        const key = trackingKey(processId, managerEmail);
+        const prior = get().processes.find((p) => p.id === processId)?.notificationTracking[key];
+        const server = serverBackedProcess(get().processes, processId);
+        if (server) {
           const managerKey = managerEmail.toLowerCase().trim();
           void (async () => {
             try {
-              const row = await upsertTrackingOnApi(proc.displayCode!, {
+              // Re-resolve displayCode at send-time in case the process was
+              // replaced between the optimistic patch and now. If it's gone,
+              // fail soft — the catch will roll back and toast.
+              const fresh = serverBackedProcess(get().processes, processId);
+              if (!fresh) throw new Error('Process is no longer available');
+              const row = await upsertTrackingOnApi(fresh.displayCode, {
                 managerKey,
                 managerName,
                 managerEmail,
               });
               await addTrackingEventOnApi(row.displayCode, { channel, note });
             } catch (err) {
-              // Recovery: local state already updated; event will be missing from server timeline.
-              console.warn('[tracking] server event failed', err);
+              // Roll back the optimistic append so the UI reflects reality.
+              set((state) => ({
+                processes: patchProcess(state.processes, processId, (process) => ({
+                  ...process,
+                  notificationTracking: prior
+                    ? { ...process.notificationTracking, [key]: prior }
+                    : (() => {
+                        const next = { ...process.notificationTracking };
+                        delete next[key];
+                        return next;
+                      })(),
+                })),
+              }));
+              toast.error(
+                err instanceof Error
+                  ? `Tracking event not saved: ${err.message}`
+                  : 'Tracking event not saved',
+              );
             }
           })();
         }
@@ -700,20 +770,35 @@ export const useAppStore = create<AppStore>()(
 
       setTrackingStage: (processId, managerName, managerEmail, flaggedProjectCount, stage) => {
         const now = new Date().toISOString();
-        // Fire-and-forget API mirror so the other user gets a live toast.
-        // We don't await here because the existing optimistic-local update
-        // should feel instant; if the API is slow we still render.
-        const proc = get().processes.find((p) => p.id === processId);
-        if (proc?.serverBacked && proc.displayCode) {
-          void upsertTrackingOnApi(proc.displayCode, {
+        // Snapshot before the optimistic set so we can roll back on failure.
+        const key = trackingKey(processId, managerEmail);
+        const prior = get().processes.find((p) => p.id === processId)?.notificationTracking[key];
+        const server = serverBackedProcess(get().processes, processId);
+        if (server) {
+          void upsertTrackingOnApi(server.displayCode, {
             managerKey: managerEmail.toLowerCase().trim(),
             managerName,
             managerEmail,
             stage,
             resolved: stage === 'RESOLVED',
           }).catch((err) => {
-            // Recovery: local store is already patched; re-sync on next page load.
-            console.warn('[tracking] server upsert failed', err);
+            set((state) => ({
+              processes: patchProcess(state.processes, processId, (process) => ({
+                ...process,
+                notificationTracking: prior
+                  ? { ...process.notificationTracking, [key]: prior }
+                  : (() => {
+                      const next = { ...process.notificationTracking };
+                      delete next[key];
+                      return next;
+                    })(),
+              })),
+            }));
+            toast.error(
+              err instanceof Error
+                ? `Stage not saved: ${err.message}`
+                : 'Stage not saved — reverted.',
+            );
           });
         }
         set((state) => ({
@@ -843,9 +928,9 @@ export const useAppStore = create<AppStore>()(
             updatedAt: now,
           })),
         }));
-        const proc = get().processes.find((p) => p.id === processId);
-        if (proc?.serverBacked && proc.displayCode) {
-          void addIssueCommentOnApi(proc.displayCode, issueKey, trimmed)
+        const server = serverBackedProcess(get().processes, processId);
+        if (server) {
+          void addIssueCommentOnApi(server.displayCode, issueKey, trimmed)
             .then((apiComment) => {
               set((state) => ({
                 processes: patchProcess(state.processes, processId, (process) => ({
@@ -860,7 +945,7 @@ export const useAppStore = create<AppStore>()(
               }));
             })
             .catch((err: unknown) => {
-              console.warn('[issues] comment add failed', err);
+              toast.error(err instanceof Error ? `Comment not added: ${err.message}` : 'Comment not added');
             });
         }
       },
@@ -877,10 +962,9 @@ export const useAppStore = create<AppStore>()(
             updatedAt: now,
           })),
         }));
-        const proc = get().processes.find((p) => p.id === processId);
-        if (proc?.serverBacked) {
+        if (serverBackedProcess(get().processes, processId)) {
           void deleteIssueCommentOnApi(commentId).catch((err: unknown) => {
-            console.warn('[issues] comment delete failed', err);
+            toast.error(err instanceof Error ? `Comment not deleted: ${err.message}` : 'Comment not deleted');
           });
         }
       },
@@ -903,10 +987,10 @@ export const useAppStore = create<AppStore>()(
             updatedAt: now,
           })),
         }));
-        const proc = get().processes.find((p) => p.id === processId);
-        if (proc?.serverBacked && proc.displayCode) {
-          void saveIssueCorrectionOnApi(proc.displayCode, issueKey, correction).catch((err: unknown) => {
-            console.warn('[issues] correction save failed', err);
+        const server = serverBackedProcess(get().processes, processId);
+        if (server) {
+          void saveIssueCorrectionOnApi(server.displayCode, issueKey, correction).catch((err: unknown) => {
+            toast.error(err instanceof Error ? `Correction not saved: ${err.message}` : 'Correction not saved');
           });
         }
       },
@@ -920,10 +1004,10 @@ export const useAppStore = create<AppStore>()(
             return { ...process, corrections, updatedAt: now };
           }),
         }));
-        const proc = get().processes.find((p) => p.id === processId);
-        if (proc?.serverBacked && proc.displayCode) {
-          void clearIssueCorrectionOnApi(proc.displayCode, issueKey).catch((err: unknown) => {
-            console.warn('[issues] correction clear failed', err);
+        const server = serverBackedProcess(get().processes, processId);
+        if (server) {
+          void clearIssueCorrectionOnApi(server.displayCode, issueKey).catch((err: unknown) => {
+            toast.error(err instanceof Error ? `Correction not cleared: ${err.message}` : 'Correction not cleared');
           });
         }
       },
@@ -941,10 +1025,10 @@ export const useAppStore = create<AppStore>()(
             updatedAt: now,
           })),
         }));
-        const proc = get().processes.find((p) => p.id === processId);
-        if (proc?.serverBacked && proc.displayCode) {
-          void saveIssueAcknowledgmentOnApi(proc.displayCode, issueKey, { status }).catch((err: unknown) => {
-            console.warn('[issues] acknowledgment save failed', err);
+        const server = serverBackedProcess(get().processes, processId);
+        if (server) {
+          void saveIssueAcknowledgmentOnApi(server.displayCode, issueKey, { status }).catch((err: unknown) => {
+            toast.error(err instanceof Error ? `Acknowledgment not saved: ${err.message}` : 'Acknowledgment not saved');
           });
         }
       },
@@ -1043,6 +1127,7 @@ export const useAppStore = create<AppStore>()(
           currentAuditResult: null,
           isAuditRunning: false,
           auditProgressText: '',
+          auditRunKey: null,
           uploads: {},
           fileDrafts: {},
         });
