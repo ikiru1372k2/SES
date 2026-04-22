@@ -1,4 +1,4 @@
-const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+import { JSON_HEADERS, parseApiError } from './client';
 
 export interface ApiIssueComment {
   id: string;
@@ -34,11 +34,6 @@ export interface ApiIssueAcknowledgment {
   updatedAt: string;
 }
 
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
-}
-
 export async function addIssueCommentOnApi(
   processIdOrCode: string,
   issueKey: string,
@@ -53,7 +48,7 @@ export async function addIssueCommentOnApi(
       body: JSON.stringify({ body }),
     },
   );
-  if (!res.ok) throw await parseError(res, 'Failed to add comment');
+  if (!res.ok) throw await parseApiError(res, 'Failed to add comment');
   return (await res.json()) as ApiIssueComment;
 }
 
@@ -62,13 +57,18 @@ export async function deleteIssueCommentOnApi(commentIdOrCode: string): Promise<
     method: 'DELETE',
     credentials: 'include',
   });
-  if (!res.ok) throw await parseError(res, 'Failed to delete comment');
+  if (!res.ok) throw await parseApiError(res, 'Failed to delete comment');
 }
 
 export async function saveIssueCorrectionOnApi(
   processIdOrCode: string,
   issueKey: string,
-  body: { effort?: number; projectState?: string; projectManager?: string; note: string },
+  body: {
+    effort?: number | undefined;
+    projectState?: string | undefined;
+    projectManager?: string | undefined;
+    note: string;
+  },
 ): Promise<ApiIssueCorrection> {
   const res = await fetch(
     `/api/v1/processes/${encodeURIComponent(processIdOrCode)}/issues/${encodeURIComponent(issueKey)}/correction`,
@@ -79,7 +79,7 @@ export async function saveIssueCorrectionOnApi(
       body: JSON.stringify(body),
     },
   );
-  if (!res.ok) throw await parseError(res, 'Failed to save correction');
+  if (!res.ok) throw await parseApiError(res, 'Failed to save correction');
   return (await res.json()) as ApiIssueCorrection;
 }
 
@@ -94,7 +94,7 @@ export async function clearIssueCorrectionOnApi(
       credentials: 'include',
     },
   );
-  if (!res.ok) throw await parseError(res, 'Failed to clear correction');
+  if (!res.ok) throw await parseApiError(res, 'Failed to clear correction');
 }
 
 export async function saveIssueAcknowledgmentOnApi(
@@ -111,6 +111,6 @@ export async function saveIssueAcknowledgmentOnApi(
       body: JSON.stringify(body),
     },
   );
-  if (!res.ok) throw await parseError(res, 'Failed to save acknowledgment');
+  if (!res.ok) throw await parseApiError(res, 'Failed to save acknowledgment');
   return (await res.json()) as ApiIssueAcknowledgment;
 }

@@ -2,7 +2,7 @@
   "name": "ses",
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19.0"
   },
   "workspaces": [
     "apps/*",
@@ -24,6 +24,9 @@
     "lint": "npm run lint --workspace @ses/web",
     "test": "npm run test --workspace @ses/domain && npm run test --workspace @ses/api && npm run test --workspace @ses/web",
     "test:components": "npm run test:components --workspace @ses/web",
+    "predev": "fuser -k 3210/tcp 3211/tcp 2>/dev/null || true; sleep 1",
+    "dev": "npm run build --workspace @ses/domain && concurrently -k -n api,web -c blue,green \"npm run start:dev --workspace @ses/api\" \"npm run dev --workspace @ses/web\"",
+    "dev:stop": "fuser -k 3210/tcp 3211/tcp 2>/dev/null || true",
     "dev:web": "npm run build --workspace @ses/domain && npm run dev --workspace @ses/web",
     "dev:api": "npm run build --workspace @ses/domain && npm run start:dev --workspace @ses/api",
     "prisma:generate": "npm run prisma:generate --workspace @ses/api",
@@ -31,6 +34,7 @@
     "format": "prettier --write ."
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "prettier": "^3.8.3",
     "typescript": "^5.9.3"
   }

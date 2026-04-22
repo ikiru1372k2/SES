@@ -1,4 +1,4 @@
-const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+import { JSON_HEADERS, parseApiError } from './client';
 
 export interface ApiTrackingEntry {
   id: string;
@@ -19,11 +19,6 @@ export interface ApiTrackingEntry {
   updatedAt: string;
 }
 
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
-}
-
 export async function upsertTrackingOnApi(
   processIdOrCode: string,
   body: {
@@ -41,7 +36,7 @@ export async function upsertTrackingOnApi(
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await parseError(res, 'Tracking update failed');
+  if (!res.ok) throw await parseApiError(res, 'Tracking update failed');
   return (await res.json()) as ApiTrackingEntry;
 }
 
@@ -55,6 +50,6 @@ export async function addTrackingEventOnApi(
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await parseError(res, 'Failed to log tracking event');
+  if (!res.ok) throw await parseApiError(res, 'Failed to log tracking event');
   return (await res.json()) as ApiTrackingEntry;
 }

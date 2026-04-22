@@ -168,6 +168,7 @@ test('createIssueKey produces a stable deterministic key for same inputs', () =>
   const k1 = createIssueKey('scope-A', issue);
   const k2 = createIssueKey('scope-A', issue);
   assert.equal(k1, k2);
+  assert.equal(k1, 'IKY-467E6C');
   assert.ok(k1.startsWith('IKY-'));
 });
 

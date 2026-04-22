@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { applySessionUserForLocalWorkspace } from '../../lib/sessionWorkspace';
 import { fetchProcessesFromApi } from '../../lib/api/processesApi';
 import { useAppStore } from '../../store/useAppStore';
+import { CurrentUserContext, type SessionUserInfo } from './authContext';
 
 /**
  * Guard a tree of routes behind the backend session, and expose the session
@@ -14,30 +15,10 @@ import { useAppStore } from '../../store/useAppStore';
  * first account's local cache.
  */
 
-export interface SessionUserInfo {
-  displayCode: string;
-  displayName: string;
-  email: string;
-  role: 'admin' | 'auditor' | 'viewer';
-}
-
 type SessionState =
   | { phase: 'checking' }
   | { phase: 'authed'; user: SessionUserInfo }
   | { phase: 'unauthed' };
-
-const CurrentUserContext = createContext<SessionUserInfo | null>(null);
-
-export function useCurrentUser(): SessionUserInfo | null {
-  return useContext(CurrentUserContext);
-}
-
-/** Non-null variant for code paths that are only mounted inside AuthGate. */
-export function useCurrentUserOrThrow(): SessionUserInfo {
-  const user = useContext(CurrentUserContext);
-  if (!user) throw new Error('useCurrentUserOrThrow called outside AuthGate');
-  return user;
-}
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const location = useLocation();

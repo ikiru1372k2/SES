@@ -14,7 +14,7 @@ import { VersionHistoryTab } from '../components/workspace/VersionHistoryTab';
 import { DraftRestoreBanner } from '../components/workspace/DraftRestoreBanner';
 import { AppShell } from '../components/layout/AppShell';
 import { PresenceBar } from '../components/shared/PresenceBar';
-import { useCurrentUser } from '../components/auth/AuthGate';
+import { useCurrentUser } from '../components/auth/authContext';
 import { selectHasUnsavedAudit } from '../store/selectors';
 import { useAppStore } from '../store/useAppStore';
 import { processDashboardPath } from '../lib/processRoutes';

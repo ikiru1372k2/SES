@@ -1,4 +1,5 @@
 import type { FunctionId } from '@ses/domain';
+import { JSON_HEADERS, parseApiError } from './client';
 
 export interface ApiTileStats {
   fileCount: number;
@@ -8,16 +9,11 @@ export interface ApiTileStats {
 
 export type ApiTiles = Record<FunctionId, ApiTileStats>;
 
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
-}
-
 export async function fetchProcessTiles(processIdOrCode: string): Promise<ApiTiles> {
   const res = await fetch(`/api/v1/processes/${encodeURIComponent(processIdOrCode)}/tiles`, {
     credentials: 'include',
   });
-  if (!res.ok) throw await parseError(res, 'Failed to load tiles');
+  if (!res.ok) throw await parseApiError(res, 'Failed to load tiles');
   return (await res.json()) as ApiTiles;
 }
 
@@ -30,10 +26,10 @@ export async function requestFunctionAudit(
     {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: JSON_HEADERS,
       body: JSON.stringify(body),
     },
   );
-  if (!res.ok) throw await parseError(res, 'Failed to submit request');
+  if (!res.ok) throw await parseApiError(res, 'Failed to submit request');
   return (await res.json()) as { displayCode: string };
 }

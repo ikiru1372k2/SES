@@ -1,4 +1,4 @@
-const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+import { JSON_HEADERS, parseApiError } from './client';
 
 export interface ApiAuditRunIssue {
   id: string;
@@ -34,11 +34,6 @@ export interface ApiAuditRunSummary {
   jobCode: string | null;
 }
 
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
-}
-
 export async function runAuditOnApi(
   processIdOrCode: string,
   fileIdOrCode: string,
@@ -49,7 +44,7 @@ export async function runAuditOnApi(
     headers: JSON_HEADERS,
     body: JSON.stringify({ fileIdOrCode }),
   });
-  if (!res.ok) throw await parseError(res, 'Audit run failed');
+  if (!res.ok) throw await parseApiError(res, 'Audit run failed');
   return (await res.json()) as ApiAuditRunSummary;
 }
 
@@ -57,6 +52,6 @@ export async function fetchAuditIssues(runIdOrCode: string): Promise<ApiAuditRun
   const res = await fetch(`/api/v1/audit-runs/${encodeURIComponent(runIdOrCode)}/issues`, {
     credentials: 'include',
   });
-  if (!res.ok) throw await parseError(res, 'Failed to load issues');
+  if (!res.ok) throw await parseApiError(res, 'Failed to load issues');
   return (await res.json()) as ApiAuditRunIssue[];
 }

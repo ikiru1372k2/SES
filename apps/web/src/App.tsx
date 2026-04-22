@@ -2,6 +2,7 @@ import { Toaster } from 'react-hot-toast';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DEFAULT_FUNCTION_ID } from '@ses/domain';
+import type { ReactNode } from 'react';
 import { AuthGate } from './components/auth/AuthGate';
 import { CompareProcesses } from './components/dashboard/CompareProcesses';
 import { Dashboard } from './pages/Dashboard';
@@ -21,6 +22,21 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+type ProtectedRouteDefinition = {
+  path: string;
+  element: ReactNode;
+};
+
+function ProtectedRoute({ children }: { children: ReactNode }) {
+  return <AuthGate>{children}</AuthGate>;
+}
+
+function renderProtectedRoutes(routes: ProtectedRouteDefinition[]) {
+  return routes.map(({ path, element }) => (
+    <Route key={path} path={path} element={<ProtectedRoute>{element}</ProtectedRoute>} />
+  ));
+}
 
 function LegacyWorkspaceRedirect() {
   const { processId } = useParams<{ processId: string }>();
@@ -70,118 +86,28 @@ function ProcessesCompareRedirect() {
   );
 }
 
-function TilesDashboardRoutes() {
-  return (
-    <>
-      <Route
-        path="/processes/:processId"
-        element={
-          <AuthGate>
-            <ProcessTiles />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/processes/:processId/:functionId"
-        element={
-          <AuthGate>
-            <Workspace />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/processes/:processId/:functionId/compare"
-        element={
-          <AuthGate>
-            <VersionCompare />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/workspace/:processId"
-        element={
-          <AuthGate>
-            <LegacyWorkspaceRedirect />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/workspace/:processId/compare"
-        element={
-          <AuthGate>
-            <LegacyCompareRedirect />
-          </AuthGate>
-        }
-      />
-    </>
-  );
-}
+const tilesDashboardRoutes: ProtectedRouteDefinition[] = [
+  { path: '/processes/:processId', element: <ProcessTiles /> },
+  { path: '/processes/:processId/:functionId', element: <Workspace /> },
+  { path: '/processes/:processId/:functionId/compare', element: <VersionCompare /> },
+  { path: '/workspace/:processId', element: <LegacyWorkspaceRedirect /> },
+  { path: '/workspace/:processId/compare', element: <LegacyCompareRedirect /> },
+];
 
-function LegacyWorkspacePrimaryRoutes() {
-  return (
-    <>
-      <Route
-        path="/workspace/:processId"
-        element={
-          <AuthGate>
-            <ProcessTiles />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/workspace/:processId/:functionId"
-        element={
-          <AuthGate>
-            <Workspace />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/workspace/:processId/:functionId/compare"
-        element={
-          <AuthGate>
-            <VersionCompare />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/workspace/:processId/compare"
-        element={
-          <AuthGate>
-            <WorkspaceShallowCompareRedirect />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/processes/:processId"
-        element={
-          <AuthGate>
-            <ProcessesDashboardRedirect />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/processes/:processId/:functionId"
-        element={
-          <AuthGate>
-            <ProcessesWorkspaceRedirect />
-          </AuthGate>
-        }
-      />
-      <Route
-        path="/processes/:processId/:functionId/compare"
-        element={
-          <AuthGate>
-            <ProcessesCompareRedirect />
-          </AuthGate>
-        }
-      />
-    </>
-  );
-}
+const legacyWorkspaceRoutes: ProtectedRouteDefinition[] = [
+  { path: '/workspace/:processId', element: <ProcessTiles /> },
+  { path: '/workspace/:processId/:functionId', element: <Workspace /> },
+  { path: '/workspace/:processId/:functionId/compare', element: <VersionCompare /> },
+  { path: '/workspace/:processId/compare', element: <WorkspaceShallowCompareRedirect /> },
+  { path: '/processes/:processId', element: <ProcessesDashboardRedirect /> },
+  { path: '/processes/:processId/:functionId', element: <ProcessesWorkspaceRedirect /> },
+  { path: '/processes/:processId/:functionId/compare', element: <ProcessesCompareRedirect /> },
+];
 
 export default function App() {
   const tilesDashboard = isTilesDashboardEnabled();
+  const workspaceRoutes = tilesDashboard ? tilesDashboardRoutes : legacyWorkspaceRoutes;
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
@@ -192,28 +118,28 @@ export default function App() {
           <Route
             path="/"
             element={
-              <AuthGate>
+              <ProtectedRoute>
                 <Dashboard />
-              </AuthGate>
+              </ProtectedRoute>
             }
           />
 
-          {tilesDashboard ? <TilesDashboardRoutes /> : <LegacyWorkspacePrimaryRoutes />}
+          {renderProtectedRoutes(workspaceRoutes)}
 
           <Route
             path="/compare"
             element={
-              <AuthGate>
+              <ProtectedRoute>
                 <CompareProcesses />
-              </AuthGate>
+              </ProtectedRoute>
             }
           />
           <Route
             path="/debug"
             element={
-              <AuthGate>
+              <ProtectedRoute>
                 <Debug />
-              </AuthGate>
+              </ProtectedRoute>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,15 +1,10 @@
-const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+import { JSON_HEADERS, parseApiError } from './client';
 
 export interface ApiSignedLink {
   token: string;
   url: string;
   expiresAt: string;
   linkCode: string;
-}
-
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
 }
 
 export async function createSignedLink(
@@ -27,6 +22,6 @@ export async function createSignedLink(
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await parseError(res, 'Failed to create signed link');
+  if (!res.ok) throw await parseApiError(res, 'Failed to create signed link');
   return (await res.json()) as ApiSignedLink;
 }

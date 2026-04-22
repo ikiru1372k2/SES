@@ -1,4 +1,4 @@
-const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+import { JSON_HEADERS, parseApiError } from './client';
 
 export interface ProcessMemberRow {
   id: string;
@@ -12,16 +12,11 @@ export interface ProcessMemberRow {
   addedAt: string;
 }
 
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
-}
-
 export async function listMembers(processIdOrCode: string): Promise<ProcessMemberRow[]> {
   const res = await fetch(`/api/v1/processes/${encodeURIComponent(processIdOrCode)}/members`, {
     credentials: 'include',
   });
-  if (!res.ok) throw await parseError(res, 'Failed to load members');
+  if (!res.ok) throw await parseApiError(res, 'Failed to load members');
   return (await res.json()) as ProcessMemberRow[];
 }
 
@@ -35,7 +30,7 @@ export async function addMember(
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await parseError(res, 'Failed to add member');
+  if (!res.ok) throw await parseApiError(res, 'Failed to add member');
   return (await res.json()) as { id: string; displayCode: string; changed: boolean };
 }
 
@@ -44,5 +39,5 @@ export async function removeMember(processIdOrCode: string, memberIdOrCode: stri
     `/api/v1/processes/${encodeURIComponent(processIdOrCode)}/members/${encodeURIComponent(memberIdOrCode)}`,
     { method: 'DELETE', credentials: 'include' },
   );
-  if (!res.ok) throw await parseError(res, 'Failed to remove member');
+  if (!res.ok) throw await parseApiError(res, 'Failed to remove member');
 }

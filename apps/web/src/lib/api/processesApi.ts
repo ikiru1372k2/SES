@@ -1,7 +1,6 @@
 import { normalizeAuditPolicy } from '../auditPolicy';
 import type { AuditPolicy, AuditProcess } from '../types';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+import { JSON_HEADERS, parseApiError } from './client';
 
 export type ApiProcessSummary = {
   id: string;
@@ -64,8 +63,7 @@ export async function createProcessOnApi(name: string, description: string): Pro
     body: JSON.stringify({ name: name.trim(), description: description.trim() }),
   });
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(err.message ?? `Create failed (${res.status})`);
+    throw await parseApiError(res, 'Create failed');
   }
   const row = (await res.json()) as ApiProcessSummary;
   return mapApiProcessToClient(row);
@@ -77,8 +75,7 @@ export async function deleteProcessOnApi(idOrCode: string): Promise<void> {
     credentials: 'include',
   });
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(err.message ?? `Delete failed (${res.status})`);
+    throw await parseApiError(res, 'Delete failed');
   }
 }
 
@@ -94,8 +91,7 @@ export async function updateProcessOnApi(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as { message?: string };
-    throw new Error(err.message ?? `Update failed (${res.status})`);
+    throw await parseApiError(res, 'Update failed');
   }
   const row = (await res.json()) as ApiProcessSummary;
   return mapApiProcessToClient(row);

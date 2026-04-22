@@ -1,175 +1,233 @@
-# SES — Smart Escalation System
+# SES - Smart Escalation System
 
-SES is a full-stack web application for auditing effort-planning Excel workbooks, identifying overplanning and missing-planning risks, preparing manager notifications, and tracking escalation progress.
+SES is a full-stack TypeScript application for auditing effort-planning Excel workbooks, finding planning risks, generating manager notifications, tracking responses, and comparing audit cycles.
 
-## Table of contents
+## Contents
 
-- [Tech stack](#tech-stack)
-- [Project structure](#project-structure)
-- [Core workflow](#core-workflow)
-- [Run locally](#run-locally)
-- [Environment variables](#environment-variables)
-- [Build and test](#build-and-test)
-- [Database](#database)
-- [Architecture overview](#architecture-overview)
+- [Capabilities](#capabilities)
+- [Tech Stack](#tech-stack)
+- [Repository Layout](#repository-layout)
+- [Architecture](#architecture)
+- [Local Development](#local-development)
+- [Environment Variables](#environment-variables)
+- [Database And Migrations](#database-and-migrations)
+- [Scripts](#scripts)
+- [Testing And Quality Gates](#testing-and-quality-gates)
+- [Docker Deployment](#docker-deployment)
+- [Security And Operations](#security-and-operations)
+- [Manual QA Checklist](#manual-qa-checklist)
+- [Contributing](#contributing)
 
----
+## Capabilities
 
-## Tech stack
+- Process dashboard for recurring audit cycles.
+- Function tile workspace for Master Data, Over Planning, Missing Plan, Function Rate, and Internal Cost Rate.
+- Excel upload, sheet selection, preview, audit execution, issue review, and workbook download.
+- PostgreSQL-backed file persistence, file versions, and file drafts.
+- Audit policies, deterministic issue keys, comments, corrections, acknowledgments, and saved versions.
+- Per-manager notification drafts, signed response links, send logging, and tracking board.
+- Socket.IO realtime events and presence for collaborative workflows.
+- CSV/HTML report export and version comparison.
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| API | NestJS 10 | REST endpoints, auth, jobs, WebSocket gateway |
-| Frontend | React 18 + Vite | SPA client |
-| Routing | React Router v7 | Dashboard, workspace, compare, public-response pages |
-| State | Zustand | Process, file, audit, version, tracking state |
-| Database | PostgreSQL 16 + Prisma 6 | Persistent storage for all server-side entities |
-| Cache / pub-sub | Redis 7 | Socket.IO multi-instance adapter |
-| Realtime | Socket.IO | Collaborative presence, audit notifications |
-| Excel parsing | ExcelJS | Read uploaded workbooks, generate audited downloads |
-| Storage | PostgreSQL `BYTEA` | Workbook file bytes persisted with Prisma (see [docs/MIGRATION.md](docs/MIGRATION.md)) |
-| Auth | Cookie-based session (HMAC) | HTTP-only `ses_token` cookie |
-| Tests | Node test runner + tsx | Unit tests for domain and API |
-| Language | TypeScript | End-to-end type safety |
+## Tech Stack
 
----
+| Layer | Technology |
+| --- | --- |
+| Frontend | React 18, Vite, React Router 7, Zustand, TanStack Query, Tailwind CSS |
+| Backend | NestJS 11, Prisma 6, Socket.IO |
+| Shared Logic | `@ses/domain` TypeScript workspace |
+| Database | PostgreSQL 16 |
+| Realtime Adapter | Redis 7 |
+| Workbook Handling | ExcelJS |
+| Auth | HTTP-only cookie session signed with `SES_AUTH_SECRET` |
+| Tests | Node test runner, tsx, Vitest, Testing Library |
 
-## Project structure
+## Repository Layout
 
-```
+```text
 apps/
-  api/                  NestJS backend
-    src/
-      auth.*            Login, session verification
-      audits.*          Audit run creation and retrieval
-      files.*           Workbook upload to Postgres (BYTEA)
-      processes.*       Process CRUD
-      tracking.*        Issue tracking stage management
-      versions.*        Saved audit version management
-      issues.*          Issue queries
-      exports.*         CSV / HTML report generation
-      signed-links/     Manager public-response flow
-      realtime/         Socket.IO gateway + presence registry
-      common/           Guards, filters, Prisma, request context
-      dto/              Zod-validated request/response shapes
-    prisma/
-      schema.prisma     Database schema
-      migrations/       Prisma migration history
-      seed.ts           Development seed data
-    test/               Unit tests (presence, realtime, token service)
+  api/                  NestJS API
+    prisma/             Prisma schema, migrations, seed
+    src/                Controllers, services, auth, realtime, DTOs, common infrastructure
+    test/               API and service tests
 
-  web/                  Vite + React frontend
-    src/
-      components/       Shared and feature-level UI components
-      pages/            Route-level page components
-      store/            Zustand store slices
-      lib/              Domain logic (audit engine, workbook parser, etc.)
-      realtime/         Socket.IO client hook + types
-      api/              Typed API client functions
+  web/                  Vite React app
+    src/components/     Shared and feature UI
+    src/pages/          Route-level pages
+    src/store/          Zustand application state
+    src/lib/            Browser helpers and compatibility re-exports from @ses/domain
+    src/realtime/       Socket.IO client
+    test/               Web and component tests
 
 packages/
-  domain/               Shared pure-logic package
-    src/                Audit rules, policy, notifications, schedule helpers
-    test/               38 unit tests
+  domain/               Shared audit rules, workbook parsing, notifications, schedules, types
 
-docs/
-  ARCHITECTURE.md
-  CONTRIBUTING.md
-  LOGGING.md
-  MIGRATION.md
-  PHASE-0-COVERAGE.md
-  PHASE-0-INVENTORY.md
-  QA.md
+docker/                 Postgres init scripts
 ```
 
----
+## Architecture
 
-## Core workflow
+The browser talks to the NestJS API over `/api/v1/*` and to Socket.IO over `/api/v1/realtime`. The API owns persistence, authorization, uploads, audit runs, signed links, activity logs, and exports. Pure business logic lives in `packages/domain` and is imported by both the API and the web app.
 
-1. **Create a process** — name, description, audit policy.
-2. **Upload a workbook** — Excel bytes are stored in PostgreSQL; metadata in the same database.
-3. **Run an audit** — the API applies the audit rules to the workbook rows and stores the result.
-4. **Review issues** — browse flagged rows by severity, sheet, and manager.
-5. **Prepare notifications** — generate per-manager emails with issue summaries.
-6. **Track responses** — signed links let managers submit corrections without an account.
-7. **Save a version** — snapshot the current audit result for comparison across cycles.
-8. **Compare cycles** — see new, resolved, and changed issues between two versions.
+Request flow:
 
----
-
-## Run locally
-
-### Prerequisites
-
-- Node.js 22 LTS (`node -v`)
-- Docker Desktop (for PostgreSQL and Redis)
-
-### 1 — Start infrastructure
-
-```bash
-docker compose up -d
+```text
+Browser -> NestJS controller -> service -> Prisma/Postgres
+                         \-> @ses/domain for audit, notification, schedule, and workbook logic
 ```
 
-This starts:
-- PostgreSQL on `localhost:5432` (first boot runs `docker/postgres-init.sql`, e.g. `pg_trgm`)
-- Redis on `localhost:6380`
+Important design rules:
 
-Workbook uploads are stored in the database. For capacity planning, assume roughly **25 MiB × concurrent uploads** of transient API memory while files stream to Postgres, plus steady-state disk for `WorkbookFile` / version rows.
+- Keep audit and notification business logic in `packages/domain`.
+- Keep browser-only behavior in `apps/web/src/lib`.
+- Keep database access inside API services/repositories.
+- Do not duplicate workspace implementations per function tile; route every function through the reusable workspace shell.
+- Store workbook bytes in PostgreSQL (`Bytes`/BYTEA), not S3.
 
-### 2 — Configure environment
+## Local Development
 
-```bash
-cp .env.example .env
-```
+Prerequisites:
 
-The defaults in `.env.example` match the Docker Compose service credentials. Edit `SES_AUTH_SECRET` to any 32-character string for local dev.
+- Node.js 20.19 or newer. Node 22.12+ LTS is recommended.
+- Docker Desktop or compatible Docker engine.
 
-### 3 — Install dependencies
+Set up the project:
 
 ```bash
 npm install
+cp .env.example .env
+docker compose up -d
+npm run prisma:generate
+npm run prisma:seed
 ```
 
-### 4 — Apply migrations and seed
+Start both API and web:
 
 ```bash
-cd apps/api
-npx prisma migrate deploy --schema prisma/schema.prisma
-npm run prisma:seed
-cd ../..
+npm run dev
 ```
 
-### 5 — Start the API
+Or start them separately:
 
 ```bash
 npm run dev:api
-```
-
-API runs on `http://localhost:3000`.
-
-### 6 — Start the frontend
-
-In a second terminal:
-
-```bash
 npm run dev:web
 ```
 
-Frontend runs on `http://localhost:3210` and proxies `/api` to port 3000.
+Local services:
 
-### Production-style Docker smoke test
+| Service | URL |
+| --- | --- |
+| Web | `http://127.0.0.1:3210` |
+| API | `http://127.0.0.1:3211/api/v1` |
+| Postgres | `127.0.0.1:5432` |
+| Redis | `127.0.0.1:6380` |
 
-Build and boot the full stack locally:
+## Environment Variables
+
+Copy `.env.example` to `.env` for local development. Key variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Prisma PostgreSQL connection string |
+| `REDIS_URL` | Redis URL for Socket.IO adapter |
+| `SES_AUTH_SECRET` | Cookie signing secret; must be at least 32 chars in production |
+| `SES_CORS_ORIGINS` | Comma-separated allowed web origins |
+| `SES_BASE_URL` | Public web base URL used for generated links |
+| `SES_COOKIE_SECURE` | Set `true` behind HTTPS |
+| `SES_COOKIE_SAMESITE` | Cookie SameSite mode: `lax`, `strict`, or `none` |
+| `SES_ALLOW_DEV_LOGIN` | Enables dev login only outside production |
+| `VITE_FEATURE_TILES_DASHBOARD` | Frontend flag. Any value except `false` uses `/processes/...`; `false` keeps legacy-primary `/workspace/...` URLs |
+
+## Database And Migrations
+
+Prisma schema and migrations live in `apps/api/prisma`.
+
+Apply existing migrations:
+
+```bash
+npm exec --workspace @ses/api prisma migrate deploy --schema apps/api/prisma/schema.prisma
+```
+
+Create a new migration after changing `schema.prisma`:
+
+```bash
+cd apps/api
+npx prisma migrate dev --name <short-description> --schema prisma/schema.prisma
+npx prisma generate --schema prisma/schema.prisma
+cd ../..
+```
+
+Migration guidance:
+
+- Prefer expand/contract changes for risky schema work.
+- Commit `schema.prisma`, migration SQL, and generated lock changes together.
+- Do not rewrite applied migration history unless the deployment owner explicitly approves it.
+- Workbook upload memory should be sized around `max workbook size x concurrent uploads`; the default app limit is 25 MiB per workbook.
+
+## Scripts
+
+Run from the repository root:
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Build domain, start API and web together |
+| `npm run dev:api` | Start NestJS API on port 3211 |
+| `npm run dev:web` | Start Vite web app on port 3210 |
+| `npm run dev:stop` | Stop local API/web ports |
+| `npm run build` | Build domain, API, and web |
+| `npm run typecheck` | Type-check all workspaces |
+| `npm run lint` | Run web ESLint |
+| `npm run test` | Run domain, API, and web tests |
+| `npm run format` | Format the repository with Prettier |
+| `npm run docker:up` | Start local Postgres and Redis |
+| `npm run docker:down` | Stop local Postgres and Redis |
+| `npm run docker:prod:up` | Start the production-style Docker stack |
+
+## Testing And Quality Gates
+
+Before merging production code, run:
+
+```bash
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+```
+
+Focused commands:
+
+```bash
+npm run test --workspace @ses/domain
+npm run test --workspace @ses/api
+npm run test --workspace @ses/web
+npm run test:components --workspace @ses/web
+```
+
+Quality expectations:
+
+- No `console.log` in committed frontend code.
+- Backend logging should use NestJS `Logger`.
+- `console.warn` and `console.error` in the frontend need a recovery path nearby in code.
+- Prisma JSON casts should stay isolated and documented at the Prisma boundary.
+- Shared domain behavior should have tests in `packages/domain/test`.
+
+## Docker Deployment
+
+Production-style local stack:
 
 ```bash
 docker compose -f docker-compose.prod.yml up --build -d
 ```
 
-This stack starts:
-- `web` on `http://localhost:3210`
-- `api` on the internal Docker network at `api:3211`
-- `postgres` on the internal Docker network at `postgres:5432`
-- `redis` on the internal Docker network at `redis:6379`
+Services:
+
+| Service | Address |
+| --- | --- |
+| Web | `http://localhost:3210` |
+| API | Internal Docker host `api:3211` |
+| Postgres | Internal Docker host `postgres:5432` |
+| Redis | Internal Docker host `redis:6379` |
 
 Useful commands:
 
@@ -179,75 +237,79 @@ docker compose -f docker-compose.prod.yml logs -f
 docker compose -f docker-compose.prod.yml down
 ```
 
-The compose file uses a dedicated bridge network named `ses-network`, runs Prisma migrations before the API starts, and only publishes the web port to the host. For EC2, set `SES_AUTH_SECRET` to a long random value and switch `SES_BASE_URL` / `SES_COOKIE_SECURE` to your HTTPS hostname.
-For the included production compose file, set `SES_AUTH_SECRET_DOCKER` so your local dev `.env` does not override it with the shorter development secret.
-
-### Demo Docker stack with dev login
-
-For demos, use the override file so the API seeds the demo users and allows `/api/v1/auth/dev-login`:
+Demo stack with seeded demo login:
 
 ```bash
 docker compose -f docker-compose.prod.yml -f docker-compose.demo.yml up --build -d
 ```
 
-That enables one-click login for:
-- `admin@ses.local`
-- `auditor@ses.local`
+Production checklist:
 
-Use the matching shutdown command:
+- Set `SES_AUTH_SECRET_DOCKER` to a long random value.
+- Set `SES_BASE_URL` to the HTTPS hostname.
+- Set `SES_COOKIE_SECURE=true` behind HTTPS.
+- Restrict `SES_CORS_ORIGINS` to the deployed web origin.
+- Confirm migrations complete before opening traffic.
 
-```bash
-docker compose -f docker-compose.prod.yml -f docker-compose.demo.yml down
-```
+## Security And Operations
 
----
+Current controls:
 
-## Environment variables
+- HTTP-only signed session cookie.
+- Production startup refuses short `SES_AUTH_SECRET` values.
+- Global NestJS auth guard with explicit public-route opt-outs.
+- Helmet security headers.
+- Origin-restricted CORS with credentials.
+- Upload validation for workbook type and size.
+- Escaped notification HTML and sanitized email headers.
+- Request IDs via `X-Request-ID`.
+- Non-root Docker runtime.
 
-See [`.env.example`](.env.example) for the full list with comments. Key variables:
+Security reporting:
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | postgres://ses:ses@127.0.0.1:5432/ses | Prisma connection string |
-| `REDIS_URL` | Yes | redis://127.0.0.1:6380 | Redis for Socket.IO adapter |
-| `SES_AUTH_SECRET` | Yes in prod | — | Cookie signing secret (≥ 32 chars in production) |
-| `SES_CORS_ORIGINS` | No | localhost:3210 | Comma-separated allowed origins |
-| `SES_ALLOW_DEV_LOGIN` | No | — | Set to `true` in dev, or pair with `SES_ALLOW_DEMO_DEV_LOGIN=true` for a production-mode demo stack |
-| `SES_COOKIE_SECURE` | No | false | Set to `true` behind HTTPS |
-| `VITE_FEATURE_TILES_DASHBOARD` | No | (unset) | Frontend only: set in `apps/web/.env`. Use `false` to make `/workspace/...` the canonical routes after create/open; any other value keeps the tile dashboard + `/processes/...` flow. See [docs/MIGRATION.md](docs/MIGRATION.md). |
+For private deployments, report issues directly to the maintainer with the affected commit, reproduction steps, expected impact, and whether workbook data is involved.
 
----
+Operational logging:
 
-## Build and test
+- Backend: use `Logger` from `@nestjs/common`.
+- Frontend: use structured debug events for user-support diagnostics and keep browser console usage intentional.
+- Correlate API failures with the `X-Request-ID` response header.
 
-```bash
-# Type-check all workspaces
-npm run typecheck
+## Manual QA Checklist
 
-# Run all unit tests
-npm run test --workspace @ses/domain
-npm run test --workspace @ses/api
+Use this checklist before promoting changes that touch routing, uploads, drafts, versions, auth, or realtime:
 
-# Build all workspaces
-npm run build
-```
+1. Log in and confirm the dashboard lists accessible processes.
+2. Create a process and confirm it opens the function tile page.
+3. Open each function tile or a representative subset.
+4. Upload a valid workbook and confirm it appears in the sidebar.
+5. Refresh the page and confirm the uploaded file persists.
+6. Download the original workbook from the UI.
+7. Run an audit and confirm results, severity counts, and filters render correctly.
+8. Add a comment, correction, and acknowledgment to an issue.
+9. Generate notification drafts and verify invalid manager emails block send actions.
+10. Save a version and confirm it appears in version history.
+11. Compare two versions and confirm new, resolved, and changed issues are correct.
+12. Sign out, sign back in, and confirm files and versions hydrate from the server.
+13. For collaboration changes, test with a second user and verify process access isolation.
 
----
+## Contributing
 
-## Database
+Commit style:
 
-Uploaded workbooks and related blobs live in **Postgres** (`Bytes` columns), not object storage. Prisma migrations live under `apps/api/prisma/migrations`; new migrations should prefer expand/contract steps and optional `down.sql` where the team agrees on rollback (see [docs/MIGRATION.md](docs/MIGRATION.md)).
+| Prefix | Use For |
+| --- | --- |
+| `feat:` | User-visible features |
+| `fix:` | Bug fixes |
+| `refactor:` | Behavior-preserving code changes |
+| `test:` | Test-only changes |
+| `docs:` | Documentation-only changes |
+| `chore:` | Tooling, dependencies, maintenance |
 
-Prisma manages schema changes. To create a new migration after editing `schema.prisma`:
+Engineering guidelines:
 
-```bash
-cd apps/api
-npx prisma migrate dev --name <description> --schema prisma/schema.prisma
-npx prisma generate --schema prisma/schema.prisma
-```
-
----
-
-## Architecture overview
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed description of the system layers, request flow, and key design decisions.
+- Keep changes focused and reviewable.
+- Reuse existing components, API helpers, and domain functions before adding new abstractions.
+- Add or update tests for behavior changes.
+- Commit dependency changes with the matching `package-lock.json`.
+- Avoid `--force` and `--legacy-peer-deps`; resolve dependency conflicts explicitly.

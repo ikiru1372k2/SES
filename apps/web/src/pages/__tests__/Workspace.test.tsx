@@ -55,7 +55,7 @@ vi.mock('../../store/useAppStore', () => ({
   useAppStore: vi.fn(),
 }));
 
-vi.mock('../../components/auth/AuthGate', () => ({
+vi.mock('../../components/auth/authContext', () => ({
   useCurrentUser: () => ({
     id: 'u1',
     displayCode: 'USR-1',

@@ -1,4 +1,5 @@
 import type { FunctionId } from '@ses/domain';
+import { parseApiError } from './client';
 
 export interface ApiFileSummary {
   id: string;
@@ -31,11 +32,6 @@ export interface ApiUploadResult extends ApiFileSummary {
   clientTempId: string | null;
 }
 
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
-}
-
 export async function uploadFileToApi(
   processIdOrCode: string,
   functionId: FunctionId,
@@ -53,7 +49,7 @@ export async function uploadFileToApi(
       body,
     },
   );
-  if (!res.ok) throw await parseError(res, 'Upload failed');
+  if (!res.ok) throw await parseApiError(res, 'Upload failed');
   return (await res.json()) as ApiUploadResult;
 }
 
@@ -65,7 +61,7 @@ export async function listFilesOnApi(
     ? `/api/v1/processes/${encodeURIComponent(processIdOrCode)}/functions/${encodeURIComponent(functionId)}/files`
     : `/api/v1/processes/${encodeURIComponent(processIdOrCode)}/files`;
   const res = await fetch(url, { credentials: 'include' });
-  if (!res.ok) throw await parseError(res, 'Failed to load files');
+  if (!res.ok) throw await parseApiError(res, 'Failed to load files');
   return (await res.json()) as ApiFileSummary[];
 }
 
@@ -74,7 +70,7 @@ export async function deleteFileOnApi(fileIdOrCode: string): Promise<void> {
     method: 'DELETE',
     credentials: 'include',
   });
-  if (!res.ok) throw await parseError(res, 'Failed to delete file');
+  if (!res.ok) throw await parseApiError(res, 'Failed to delete file');
 }
 
 export async function downloadFileFromApi(fileIdOrCode: string, versionNumber?: number): Promise<Blob> {
@@ -82,7 +78,7 @@ export async function downloadFileFromApi(fileIdOrCode: string, versionNumber?: 
   const res = await fetch(`/api/v1/files/${encodeURIComponent(fileIdOrCode)}/download${suffix}`, {
     credentials: 'include',
   });
-  if (!res.ok) throw await parseError(res, 'Failed to download file');
+  if (!res.ok) throw await parseApiError(res, 'Failed to download file');
   return res.blob();
 }
 

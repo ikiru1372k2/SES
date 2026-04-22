@@ -1,16 +1,12 @@
 import type { FunctionId } from '@ses/domain';
 import type { FileDraftMetadata } from '../types';
-
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
-}
+import { JSON_HEADERS, parseApiError } from './client';
 
 export async function getFileDraftOnApi(processIdOrCode: string, functionId: FunctionId): Promise<FileDraftMetadata> {
   const res = await fetch(`/api/v1/processes/${encodeURIComponent(processIdOrCode)}/functions/${encodeURIComponent(functionId)}/draft`, {
     credentials: 'include',
   });
-  if (!res.ok) throw await parseError(res, 'Failed to load draft');
+  if (!res.ok) throw await parseApiError(res, 'Failed to load draft');
   return (await res.json()) as FileDraftMetadata;
 }
 
@@ -34,7 +30,7 @@ export async function saveFileDraftOnApi(
     credentials: 'include',
     body,
   });
-  if (!res.ok) throw await parseError(res, 'Failed to save draft');
+  if (!res.ok) throw await parseApiError(res, 'Failed to save draft');
   return (await res.json()) as FileDraftMetadata;
 }
 
@@ -46,10 +42,10 @@ export async function promoteFileDraftOnApi(
   const res = await fetch(`/api/v1/processes/${encodeURIComponent(processIdOrCode)}/functions/${encodeURIComponent(functionId)}/draft/promote`, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify({ note }),
   });
-  if (!res.ok) throw await parseError(res, 'Failed to promote draft');
+  if (!res.ok) throw await parseApiError(res, 'Failed to promote draft');
   return (await res.json()) as { file: unknown; versionNumber: number };
 }
 
@@ -58,5 +54,5 @@ export async function deleteFileDraftOnApi(processIdOrCode: string, functionId: 
     method: 'DELETE',
     credentials: 'include',
   });
-  if (!res.ok) throw await parseError(res, 'Failed to discard draft');
+  if (!res.ok) throw await parseApiError(res, 'Failed to discard draft');
 }

@@ -1,4 +1,4 @@
-const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
+import { JSON_HEADERS, parseApiError } from './client';
 
 export interface ApiNotificationLog {
   id: string;
@@ -13,11 +13,6 @@ export interface ApiNotificationLog {
   severity: string | null;
   issueCount: number;
   sentAt: string;
-}
-
-async function parseError(res: Response, fallback: string): Promise<Error> {
-  const err = (await res.json().catch(() => ({}))) as { message?: string };
-  return new Error(err.message ?? `${fallback} (${res.status})`);
 }
 
 export async function recordSendOnApi(
@@ -38,7 +33,7 @@ export async function recordSendOnApi(
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw await parseError(res, 'Failed to record notification send');
+  if (!res.ok) throw await parseApiError(res, 'Failed to record notification send');
   return (await res.json()) as ApiNotificationLog;
 }
 
@@ -54,6 +49,6 @@ export async function fetchNotificationLog(
     `/api/v1/processes/${encodeURIComponent(processCode)}/notifications${qs}`,
     { credentials: 'include' },
   );
-  if (!res.ok) throw await parseError(res, 'Failed to fetch notification log');
+  if (!res.ok) throw await parseApiError(res, 'Failed to fetch notification log');
   return (await res.json()) as ApiNotificationLog[];
 }

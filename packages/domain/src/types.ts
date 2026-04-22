@@ -29,8 +29,18 @@ export interface AuditPolicy {
 
 export interface AuditProcess {
   id: string;
+  /**
+   * Stable human-readable code assigned by the server (PRC-YYYY-NNNN).
+   * Optional because legacy local-only processes may not have one yet.
+   */
   displayCode?: string;
+  /** When true, process metadata is owned by the API; list/create/delete use Postgres. */
+  serverBacked?: boolean;
+  /** Optimistic concurrency token from the API. */
   rowVersion?: number;
+  /** Summary counts from list endpoints before detailed workspace hydration. */
+  serverFilesCount?: number;
+  serverVersionsCount?: number;
   name: string;
   description: string;
   createdAt: string;
@@ -51,14 +61,49 @@ export interface AuditProcess {
 export interface WorkbookFile {
   id: string;
   displayCode?: string;
+  /** Analysis lane / function tile that owns this file. */
+  functionId?: string;
   rowVersion?: number;
   processId?: string;
+  currentVersion?: number;
+  state?: 'uploaded' | 'processing' | 'completed' | 'draft';
+  sizeBytes?: number;
+  mimeType?: string;
   name: string;
   uploadedAt: string;
   lastAuditedAt: string | null;
   isAudited: boolean;
+  serverBacked?: boolean;
   sheets: SheetInfo[];
   rawData: Record<string, unknown[][]>;
+  fileVersions?: FileVersionMetadata[];
+}
+
+export interface FileVersionMetadata {
+  id: string;
+  fileId: string;
+  versionNumber: number;
+  note: string;
+  sizeBytes: number;
+  createdAt: string;
+  isCurrent: boolean;
+  createdBy?: {
+    displayCode: string;
+    displayName: string;
+    email: string;
+  };
+}
+
+export interface FileDraftMetadata {
+  id?: string;
+  userId?: string;
+  processId?: string;
+  functionId?: string;
+  fileName?: string;
+  sizeBytes?: number;
+  updatedAt?: string;
+  createdAt?: string;
+  hasDraft?: boolean;
 }
 
 export interface SheetInfo {
