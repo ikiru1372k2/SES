@@ -477,6 +477,33 @@ npm run prisma:seed
 
 ---
 
+## Continuous deployment (GitHub Actions)
+
+`.github/workflows/cd.yml` fires on every push to `master` and on manual
+`workflow_dispatch`. It SSHs to the production host, fetches the merged
+commit, and runs `./deploy.sh local` on the server.
+
+Required repository secrets (Settings → Secrets and variables → Actions):
+
+| Name              | Value                                                                         |
+|-------------------|-------------------------------------------------------------------------------|
+| `DEPLOY_HOST`     | Hostname or IP of the production server.                                      |
+| `DEPLOY_USER`     | SSH username (e.g. `ubuntu`).                                                 |
+| `DEPLOY_SSH_KEY`  | Full PEM/OpenSSH private key the Action uses to SSH in.                       |
+| `DEPLOY_SSH_PORT` | Optional — defaults to `22` when unset.                                       |
+
+Optional repository variables (Settings → Secrets and variables → Variables):
+
+| Name                | Value                                                                   |
+|---------------------|-------------------------------------------------------------------------|
+| `DEPLOY_DIR`        | Absolute path to the checkout on the remote host. Defaults to `$HOME/ses`. |
+| `DEPLOY_PUBLIC_URL` | Used by GitHub's Environment URL badge on the deploy run.               |
+
+The job pins the remote host key with `ssh-keyscan` before the first
+connect, uses `BatchMode=yes` to fail fast on auth issues, and shreds the
+SSH key at the end of the run. A `concurrency: deploy-production` group
+serialises deploys so back-to-back merges don't race each other.
+
 ## Deploy script (`deploy.sh`)
 
 `deploy.sh` is the one-stop deploy helper. It supports local docker

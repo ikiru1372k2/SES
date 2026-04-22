@@ -1,0 +1,92 @@
+name: Deploy to production
+
+# Fires whenever master moves (normally via PR merge). Tag-based image
+# builds still live in release.yml — this workflow is the pull-from-master
+# + restart-on-host path for continuous deployment.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# One deploy at a time per branch — back-to-back merges don't stomp each
+# other. `cancel-in-progress: false` because we want every merge to land,
+# not just the latest one.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    # Wait on CI to pass before deploying. If CI didn't run (workflow_dispatch),
+    # deploy anyway — operator is explicitly requesting it.
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_PUBLIC_URL }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Check required secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          missing=()
+          [ -z "$DEPLOY_HOST" ]    && missing+=("DEPLOY_HOST")
+          [ -z "$DEPLOY_USER" ]    && missing+=("DEPLOY_USER")
+          [ -z "$DEPLOY_SSH_KEY" ] && missing+=("DEPLOY_SSH_KEY")
+          if [ ${#missing[@]} -ne 0 ]; then
+            echo "::error::Missing required GitHub secrets: ${missing[*]}"
+            echo "Add them in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          port="${DEPLOY_SSH_PORT:-22}"
+          # Pin the host key up front so the first connect can't be MITMed.
+          ssh-keyscan -p "$port" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PORT: ${{ secrets.DEPLOY_SSH_PORT }}
+          # Absolute path to the checkout on the remote host (e.g. /opt/ses).
+          # Falls back to ~/ses if the var isn't set.
+          DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+          GIT_REF: ${{ github.sha }}
+        run: |
+          port="${DEPLOY_SSH_PORT:-22}"
+          remote_dir="${DEPLOY_DIR:-\$HOME/ses}"
+          ssh -i ~/.ssh/id_deploy -p "$port" -o BatchMode=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$GIT_REF" <<'REMOTE'
+            set -Eeuo pipefail
+            target_sha="$1"
+            cd "${DEPLOY_DIR:-$HOME/ses}"
+            echo "[cd] Pulling $target_sha into $(pwd)"
+            git fetch --prune --tags origin
+            # Reset to the exact SHA the workflow was triggered for — resilient
+            # to force-pushes and keeps the deploy reproducible.
+            git reset --hard "$target_sha"
+            git clean -fd
+            echo "[cd] Running deploy.sh local"
+            ./deploy.sh local
+          REMOTE
+
+      - name: Clean up SSH key
+        if: always()
+        run: |
+          shred -u ~/.ssh/id_deploy 2>/dev/null || rm -f ~/.ssh/id_deploy
