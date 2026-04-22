@@ -27,7 +27,8 @@ export type RealtimeEventName =
   | 'activity.appended'
   | 'conflict.row_version'
   | 'process.member_removed'
-  | 'process.deleted';
+  | 'process.deleted'
+  | 'directory.updated';
 
 export interface RealtimeActor {
   id: string;

@@ -144,6 +144,12 @@ export interface AuditResult {
   runAt: string;
   scannedRows: number;
   flaggedRows: number;
+  /**
+   * Deterministic identity of the issue set. Used client-side (Issue #74) to
+   * skip auto-saving a version when two consecutive runs produce the same
+   * findings.
+   */
+  findingsHash?: string;
   issues: AuditIssue[];
   sheets: SheetAuditResult[];
   policySnapshot?: AuditPolicy;

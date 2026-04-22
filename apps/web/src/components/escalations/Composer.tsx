@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_IDS } from '@ses/domain';
 import toast from 'react-hot-toast';
@@ -12,6 +12,7 @@ import {
   sendCompose,
   type ComposeDraftPayload,
 } from '../../lib/api/trackingComposeApi';
+import { useAutosaveOnLeave } from '../../hooks/useAutosaveOnLeave';
 import { Button } from '../shared/Button';
 import { PreviewPane } from './PreviewPane';
 
@@ -194,6 +195,27 @@ export function Composer({
     channel,
     ...(templateId ? { templateId } : {}),
   };
+
+  // Autosave-on-leave (Issue #74): silent flush of whatever the auditor has
+  // typed so far when the tab is hidden, the window unloads, or the route
+  // changes. Only fires when something has actually been edited (dirtyRef),
+  // and never when the drawer is read-only / locked by another user.
+  const dirtyRef = useRef(false);
+  useEffect(() => {
+    dirtyRef.current = true;
+  }, [subject, body, cc, removedEngines, channel, templateId]);
+  const latestPayloadRef = useRef(payload);
+  latestPayloadRef.current = payload;
+  useAutosaveOnLeave(async () => {
+    if (readOnly || !trackingRef || !dirtyRef.current) return;
+    if (!latestPayloadRef.current.body?.trim() && !latestPayloadRef.current.subject?.trim()) return;
+    try {
+      await saveComposeDraft(trackingRef, latestPayloadRef.current);
+      dirtyRef.current = false;
+    } catch {
+      // Autosave is best-effort — never interrupt the user's navigation.
+    }
+  }, Boolean(trackingRef));
 
   return (
     <div className="space-y-4">

@@ -190,6 +190,20 @@ function patchFile(process: AuditProcess, fileId: string, updater: (file: Workbo
  * The backend uses `ruleCode` / `displayCode`; the UI uses `ruleId` / `id`.
  * We map both directions so saved versions keep working.
  */
+/**
+ * Local fallback for AuditResult.findingsHash when the run came from the
+ * in-browser engine (no server hash). Same shape as the server hash so
+ * compare-by-equality works; uniqueness inside a session is enough for
+ * the auto-save dedup, no collision-resistance guarantee needed.
+ */
+function localFindingsSignature(issues: AuditResult['issues']): string {
+  const normalized = issues
+    .map((i) => `${i.issueKey ?? i.id}|${i.ruleCode ?? ''}|${i.severity ?? ''}`)
+    .sort()
+    .join('\n');
+  return `local:${issues.length}:${normalized.length}`;
+}
+
 function mapApiAuditToResult(
   fileId: string,
   run: ApiAuditRunSummary,
@@ -228,6 +242,7 @@ function mapApiAuditToResult(
     runAt: run.completedAt ?? run.startedAt,
     scannedRows: run.scannedRows,
     flaggedRows: run.flaggedRows,
+    findingsHash: run.findingsHash ?? '',
     issues: mapped,
     sheets: sheetSummary,
   };
@@ -598,6 +613,29 @@ export const useAppStore = create<AppStore>()(
 
         const fileDisplayCode = (file as { displayCode?: string }).displayCode;
         const useServer = Boolean(process.serverBacked && process.displayCode && fileDisplayCode);
+
+        // Issue #74: auto-save a SavedVersion after a successful run unless
+        // the new findings are identical to the most recent version for the
+        // same file (dedup by findingsHash — server-computed for server
+        // runs, falls back to issueKey-based signature for local runs).
+        const autoSaveAfterRun = (result: AuditResult) => {
+          const current = get().processes.find((p) => p.id === processId);
+          if (!current) return;
+          const sameFileVersion = current.versions.find((v) => v.result.fileId === result.fileId);
+          const prevHash = sameFileVersion?.result.findingsHash ?? '';
+          const nextHash =
+            result.findingsHash ??
+            localFindingsSignature(result.issues);
+          if (prevHash && nextHash && prevHash === nextHash) {
+            // Same findings — keep the existing version anchor; nothing to save.
+            return;
+          }
+          get().saveVersion(processId, {
+            versionName: `${current.name} - V${current.versions.length + 1}`,
+            notes: '',
+          });
+        };
+
         try {
           if (useServer) {
             const apiResult = await runAuditOnApi(process.displayCode!, fileDisplayCode!);
@@ -618,6 +656,7 @@ export const useAppStore = create<AppStore>()(
                 })),
               ),
             }));
+            autoSaveAfterRun(mapped);
             return;
           }
           // Local-only processes run the per-function dispatcher in-browser.
@@ -637,6 +676,7 @@ export const useAppStore = create<AppStore>()(
               })),
             ),
           }));
+          autoSaveAfterRun(result);
         } catch (err) {
           // Only clear the in-flight flag if this is still the active run;
           // otherwise we'd stomp a newer run's progress state.

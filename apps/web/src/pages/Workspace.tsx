@@ -1,5 +1,6 @@
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Users } from 'lucide-react';
 import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, isValidEmail, type FunctionId } from '@ses/domain';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
@@ -19,6 +20,7 @@ import { useAppStore } from '../store/useAppStore';
 import { isLegacyTileTrackingTabEnabled } from '../lib/featureFlags';
 import { processDashboardPath } from '../lib/processRoutes';
 import { useRealtime } from '../realtime/useRealtime';
+import { onRealtimeEvent } from '../realtime/socket';
 import { directorySuggestions } from '../lib/api/directoryApi';
 import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 
@@ -50,8 +52,8 @@ export function Workspace() {
   const tabFromUrl = searchParams.get('tab');
   const [membersOpen, setMembersOpen] = useState(false);
   const [resolutionOpen, setResolutionOpen] = useState(false);
-  const [unmappedCount, setUnmappedCount] = useState<number | null>(null);
   const hydrateAttemptedRef = useRef(false);
+  const queryClient = useQueryClient();
   const [hydrateFinished, setHydrateFinished] = useState(false);
   // hydrating is true only while we're waiting for hydrateProcesses() to complete.
   // Derived rather than stored so we never need setState in an effect's sync path.
@@ -70,26 +72,37 @@ export function Workspace() {
     return [...names];
   }, [process, functionId, result]);
 
+  // Issue #74: unmapped-manager banner is a React Query rather than a
+  // manual effect so any `directory.updated` realtime event or explicit
+  // invalidation from elsewhere re-runs the suggestion fetch automatically.
+  // The query key embeds the sorted name list so the cache buckets per
+  // distinct input and avoids double-fetches across remounts.
+  const directorySuggestionsKey = useMemo(
+    () => ['directory-suggestions', [...rawManagerNames].sort()] as const,
+    [rawManagerNames],
+  );
+  const suggestionsQ = useQuery({
+    queryKey: directorySuggestionsKey,
+    queryFn: () => directorySuggestions(rawManagerNames),
+    enabled: managerDirectoryOn && rawManagerNames.length > 0,
+    staleTime: 60_000,
+  });
+  const unmappedCount =
+    managerDirectoryOn && rawManagerNames.length > 0 && suggestionsQ.data
+      ? rawManagerNames.filter((name) => !suggestionsQ.data.results[name]?.autoMatch).length
+      : null;
+
+  // Realtime invalidation: directory mutations (resolve, inline add, merge,
+  // archive, delete) must flush the amber banner immediately without a
+  // browser refresh.
   useEffect(() => {
-    if (!managerDirectoryOn || rawManagerNames.length === 0) {
-      setUnmappedCount(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const sug = await directorySuggestions(rawManagerNames);
-        if (cancelled) return;
-        const n = rawManagerNames.filter((name) => !sug.results[name]?.autoMatch).length;
-        setUnmappedCount(n);
-      } catch {
-        if (!cancelled) setUnmappedCount(null);
+    const off = onRealtimeEvent((envelope) => {
+      if (envelope.event === 'directory.updated') {
+        void queryClient.invalidateQueries({ queryKey: ['directory-suggestions'] });
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [rawManagerNames, managerDirectoryOn]);
+    });
+    return off;
+  }, [queryClient]);
 
   // If the user hard-refreshed /workspace/<id> in a tab that has no cached
   // process (incognito, different logged-in user, cleared storage) the store

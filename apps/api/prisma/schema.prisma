@@ -327,6 +327,10 @@ model AuditRun {
   rulesSnapshot  Json
   scannedRows    Int         @default(0)
   flaggedRows    Int         @default(0)
+  /// Deterministic sha256 of the run's issue set (sorted keys).
+  /// Used by clients to skip auto-saving a version when nothing changed
+  /// between two back-to-back runs on the same unmodified file.
+  findingsHash   String      @default("")
   summary        Json
   ranById        String
   startedAt      DateTime    @default(now())

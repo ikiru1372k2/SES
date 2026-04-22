@@ -134,7 +134,13 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
           {activeFile?.lastAuditedAt ? <div className="mt-0.5 text-[11px] text-gray-500">Last run: {new Date(activeFile.lastAuditedAt).toLocaleString()}</div> : null}
         </div>
         <Button
-          title={canSave ? '' : latestResult ? 'No new audit to save.' : 'Run an audit first to save a version.'}
+          title={
+            canSave
+              ? 'Manual save with a custom name — audits already auto-save a version on each new run.'
+              : latestResult
+              ? 'No new audit to save.'
+              : 'Run an audit first to save a version.'
+          }
           disabled={!canSave}
           onClick={() => setVersionModalOpen(true)}
           variant="secondary"
