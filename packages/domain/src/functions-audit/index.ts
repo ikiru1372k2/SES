@@ -42,9 +42,10 @@ export {
   MD_REQUIRED_COLUMNS,
   MD_COLUMNS,
   MD_REVIEW_OTHERS_RULE_CODE,
+  MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE,
   missingFieldRuleCode,
 } from './master-data';
-export { isBadValue, isOthersToken, BAD_VALUE_TOKENS } from './bad-values';
+export { isBadValue, isOthersToken, isNotAssignedToken, BAD_VALUE_TOKENS } from './bad-values';
 export {
   normalizeProcessPolicies,
   createDefaultProcessPolicies,

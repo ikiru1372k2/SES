@@ -1,7 +1,14 @@
 import { CheckCircle2, ChevronRight, Circle, Settings, X } from 'lucide-react';
 import { Fragment, FormEvent, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { getFunctionLabel, isFunctionId } from '@ses/domain';
+import {
+  getFunctionLabel,
+  isFunctionId,
+  MD_COLUMNS,
+  MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE,
+  MD_REQUIRED_COLUMNS,
+  MD_REVIEW_OTHERS_RULE_CODE,
+} from '@ses/domain';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/auditPolicy';
 import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
@@ -34,7 +41,7 @@ const categoryOptions: IssueCategory[] = [
   'Needs Review',
   'Other',
 ];
-const issueHeaders: Array<{ key: SortKey; label: string }> = [
+const ALL_ISSUE_HEADERS: Array<{ key: SortKey; label: string }> = [
   { key: 'severity', label: 'Severity' },
   { key: 'projectNo', label: 'Project No' },
   { key: 'projectName', label: 'Project' },
@@ -45,6 +52,65 @@ const issueHeaders: Array<{ key: SortKey; label: string }> = [
   { key: 'effort', label: 'Effort' },
   { key: 'reason', label: 'Issue' },
 ];
+
+// Master Data findings have no notion of effort hours — every issue is
+// emitted with `effort: 0`, so showing the column is just noise. Hide it
+// for that function. Other columns are useful regardless of the engine.
+function visibleIssueHeaders(functionId: string | undefined): Array<{ key: SortKey; label: string }> {
+  if (functionId === 'master-data') return ALL_ISSUE_HEADERS.filter((h) => h.key !== 'effort');
+  return ALL_ISSUE_HEADERS;
+}
+
+// Map a master-data rule code to the source column's user-facing label.
+//   "RUL-MD-CUSTOMER_NAME-MISSING"          -> "Customer name"
+//   "RUL-MD-PROJECT_PRODUCT-NOT-ASSIGNED"   -> "Project Product"
+//   "RUL-MD-PROJECT_PRODUCT-REVIEW-OTHERS"  -> "Project Product"
+// Returns null if the code does not belong to any master-data column —
+// caller should fall back to the issue's category for non-MD engines.
+function masterDataColumnLabel(ruleCode: string | null | undefined): string | null {
+  if (!ruleCode) return null;
+  for (const col of Object.values(MD_COLUMNS)) {
+    if (ruleCode.startsWith(`RUL-MD-${col.id.toUpperCase()}-`)) return col.label;
+  }
+  return null;
+}
+
+// Friendly label for the Rule status dropdown. The master-data engine
+// emits exactly three rule "types" — every column has a MISSING rule, and
+// Project Product has two extra (NOT-ASSIGNED, REVIEW-OTHERS). The
+// dropdown collapses to those three semantic options regardless of column;
+// the user combines this filter with the Column filter to drill in.
+const MD_RULE_FILTER_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: 'missing',      label: 'Missing' },
+  { value: 'not_assigned', label: 'Not assigned' },
+  { value: 'other',        label: 'Other' },
+];
+
+function matchesMasterDataRuleFilter(ruleCode: string, filter: string): boolean {
+  if (filter === 'not_assigned') return ruleCode === MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE;
+  if (filter === 'other') return ruleCode === MD_REVIEW_OTHERS_RULE_CODE;
+  // 'missing' covers all 27 RUL-MD-<COLUMN>-MISSING codes — including the
+  // Project Product MISSING one. NOT-ASSIGNED and REVIEW-OTHERS are
+  // explicitly excluded so "Missing" doesn't overlap with the other two.
+  if (filter === 'missing') {
+    return (
+      ruleCode !== MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE &&
+      ruleCode !== MD_REVIEW_OTHERS_RULE_CODE &&
+      ruleCode.endsWith('-MISSING')
+    );
+  }
+  return true;
+}
+
+// The authoritative "which rule produced this issue" key. Locally-run
+// audits set `auditStatus` to the rule code, but `mapApiAuditToResult`
+// in the store hard-codes `auditStatus: ''` for server-backed runs and
+// puts the code on `ruleCode` / `ruleId` instead. Using only auditStatus
+// here meant the Rule status dropdown silently came up empty for
+// server-backed audits — fixed by reading from ruleCode first.
+function issueRuleKey(issue: AuditIssue): string {
+  return issue.ruleCode ?? issue.ruleId ?? issue.auditStatus ?? '';
+}
 
 export function AuditResultsTab({ process, file }: { process: AuditProcess; file?: WorkbookFile | undefined }) {
   const result = useAppStore((state) => state.currentAuditResult);
@@ -124,22 +190,74 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const masterData = isFunctionId(file?.functionId) && file!.functionId === 'master-data';
     return searchIndex
       .filter(({ issue }) => !severity || issue.severity === severity)
       .filter(({ issue }) => !sheet || issue.sheetName === sheet)
-      .filter(({ issue }) => !status || issue.auditStatus === status)
-      .filter(({ issue }) => !category || issue.category === category)
+      .filter(({ issue }) => {
+        if (!status) return true;
+        // Master-data uses semantic filter values ('missing' / 'not_assigned'
+        // / 'other'). Other engines use exact rule-code match.
+        if (masterData) return matchesMasterDataRuleFilter(issueRuleKey(issue), status);
+        return issueRuleKey(issue) === status;
+      })
+      .filter(({ issue }) => {
+        if (!category) return true;
+        if (masterData) {
+          // For master-data the dropdown lists column names, so we compare
+          // against the column derived from the issue's rule code, not the
+          // generic `issue.category` (which is "Data Quality" / "Needs
+          // Review" — useful for over-planning, not useful here).
+          return masterDataColumnLabel(issue.ruleCode ?? issue.ruleId) === category;
+        }
+        return issue.category === category;
+      })
       .filter(({ blob }) => !query || blob.includes(query))
       .map(({ issue }) => issue)
       .sort((a, b) => String(a[sort] ?? '').localeCompare(String(b[sort] ?? '')));
-  }, [searchIndex, severity, sheet, status, category, search, sort]);
+  }, [searchIndex, severity, sheet, status, category, search, sort, file?.functionId]);
 
   const sheets = result ? [...new Set(result.issues.map((issue) => issue.sheetName))] : [];
-  const statuses = result ? [...new Set(result.issues.map((issue) => issue.auditStatus))] : [];
   const hasSelected = Boolean(file?.sheets.some((item) => item.status === 'valid' && item.isSelected));
   const functionId = isFunctionId(file?.functionId) ? file!.functionId : undefined;
   const functionLabel = functionId ? getFunctionLabel(functionId) : 'Audit';
   const isMasterData = functionId === 'master-data';
+  const issueHeaders = useMemo(() => visibleIssueHeaders(functionId), [functionId]);
+
+  // Master-data swaps the "All categories" dropdown for a column-name
+  // dropdown — categories like "Data Quality" / "Needs Review" don't help
+  // the auditor narrow down to a specific field. For other engines we keep
+  // the fixed category list so the existing UX is untouched.
+  const categoryFilterOptions = useMemo<Array<{ value: string; label: string }>>(() => {
+    if (!result) return [];
+    if (isMasterData) {
+      // Show every configured master-data column, even if the current
+      // audit found zero issues for it. This makes it obvious to the
+      // auditor *which* columns were checked — selecting a clean column
+      // just shows "0 issues", which is useful confirmation that the
+      // engine looked at it. (Previously the dropdown only listed columns
+      // that had at least one finding, which made it look like missing
+      // columns weren't audited at all.)
+      return MD_REQUIRED_COLUMNS.map((col) => ({ value: col.label, label: col.label }));
+    }
+    return categoryOptions.map((c) => ({ value: c, label: c }));
+  }, [result, isMasterData]);
+
+  // Master-data uses exactly three semantic rule options (Missing /
+  // Not assigned / Other) regardless of how many rule codes the engine
+  // emitted. Combined with the Column filter, the auditor can drill down:
+  // Column=Project Product + Rule=Not assigned → only those rows.
+  // Other engines keep the raw rule codes from issues (existing UX).
+  const ruleFilterOptions = useMemo<Array<{ value: string; label: string }>>(() => {
+    if (!result) return [];
+    if (isMasterData) return [...MD_RULE_FILTER_OPTIONS];
+    const codes = new Set<string>();
+    for (const issue of result.issues) {
+      const key = issueRuleKey(issue);
+      if (key) codes.add(key);
+    }
+    return [...codes].map((code) => ({ value: code, label: code }));
+  }, [result, isMasterData]);
 
   return (
     <div className="space-y-5">
@@ -240,8 +358,8 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
             <div className="flex flex-wrap gap-2">
               <select value={sheet} onChange={(event) => setSheet(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">Sheet</option>{sheets.map((item) => <option key={item}>{item}</option>)}</select>
               <select value={severity} onChange={(event) => setSeverity(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">Severity</option><option>High</option><option>Medium</option><option>Low</option></select>
-              <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">All categories</option>{categoryOptions.map((item) => <option key={item}>{item}</option>)}</select>
-              <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">Rule status</option>{statuses.map((item) => <option key={item}>{item}</option>)}</select>
+              <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">{isMasterData ? 'All columns' : 'All categories'}</option>{categoryFilterOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select>
+              <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">{isMasterData ? 'All rules' : 'Rule status'}</option>{ruleFilterOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select>
               <input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." className="min-w-52 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-sm dark:border-gray-700">
@@ -269,7 +387,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                       <td className="p-3 text-xs text-gray-600 dark:text-gray-300">{issue.email?.trim() ? issue.email : '—'}</td>
                       <td className="p-3">{issue.sheetName}</td>
                       <td className="p-3">{issue.projectState}</td>
-                      <td className="p-3">{issue.effort}</td>
+                      {!isMasterData ? <td className="p-3">{issue.effort}</td> : null}
                       <td className="max-w-lg p-3">
                         <div className="flex flex-wrap items-center gap-1">
                           <Badge tone={issue.category === 'Needs Review' ? 'amber' : issue.category === 'Data Quality' ? 'blue' : 'gray'}>{issue.ruleName ?? issue.auditStatus}</Badge>
@@ -281,7 +399,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                     </tr>
                     {expanded === issue.id ? (
                       <tr className="border-t border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-                        <td colSpan={9} className="p-4">
+                        <td colSpan={isMasterData ? 8 : 9} className="p-4">
                           <div className="grid gap-3 text-sm md:grid-cols-4">
                             <Detail label="Why flagged?" value={issue.reason ?? issue.notes} />
                             <Detail label="Category" value={issue.category ?? 'Audit rule'} />

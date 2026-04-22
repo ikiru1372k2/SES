@@ -6,10 +6,13 @@ import { RULE_CATALOG_BY_FUNCTION, getRuleCatalogForFunction } from '../src/audi
 import {
   getFunctionAuditEngine,
   isBadValue,
+  isNotAssignedToken,
   isOthersToken,
   MD_COLUMNS,
-  missingFieldRuleCode,
+  MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE,
+  MD_REQUIRED_COLUMNS,
   MD_REVIEW_OTHERS_RULE_CODE,
+  missingFieldRuleCode,
   runFunctionAudit,
 } from '../src/functions-audit/index.js';
 import type { WorkbookFile } from '../src/types.js';
@@ -66,7 +69,9 @@ const HEADERS = [
 ];
 
 function rowOverrides(overrides: Partial<Record<string, string>> = {}): string[] {
-  // Sensible defaults — a fully-valid master-data row.
+  // Sensible defaults — a fully-valid master-data row that fills every one
+  // of the 27 audited columns. Override individual cells in the per-test
+  // call to assert specific rule firings.
   const defaults: Record<string, string> = {
     'Country Number': '100',
     'Country Code (Project)': 'CH',
@@ -138,31 +143,44 @@ test('isOthersToken matches only Other/Others (case-insensitive)', () => {
   assert.equal(isOthersToken('SAP PaPM'), false);
 });
 
-test('master-data engine flags all 10 required columns when blank or placeholder', async () => {
-  const file = await buildWorkbook([
-    rowOverrides({
-      'Customer name': '',
-      'End Customer Name': 'null',
-      'Project Manager': 'not assigned',
-      'Project Country Manager': '   ',
-      'Project BU Head': 'N/A',
-      'Account Manager': 'Undefined',
-      'Project Industry': 'not available yet',
-      'End Customer Industry': 'none',
-      'Use Case': 'TBD',
-      'Project Product': 'Pending',
-    }),
-  ]);
+test('isNotAssignedToken matches only "Not assigned" (case-insensitive)', () => {
+  assert.equal(isNotAssignedToken('Not assigned'), true);
+  assert.equal(isNotAssignedToken('NOT ASSIGNED'), true);
+  assert.equal(isNotAssignedToken('not assigned'), true);
+  assert.equal(isNotAssignedToken('not-assigned'), false);
+  assert.equal(isNotAssignedToken('not assigned yet'), false);
+  assert.equal(isNotAssignedToken('SAP PaPM'), false);
+});
 
+test('master-data engine flags every required column when blank or placeholder', async () => {
+  const blanks: Partial<Record<string, string>> = {};
+  for (const column of MD_REQUIRED_COLUMNS) {
+    // First alias is the canonical export header used in HEADERS above.
+    blanks[column.aliases[0]!] = '';
+  }
+  // Cycle a placeholder mix so the test exercises both "blank" and "string
+  // placeholder" branches of isBadValue.
+  const placeholderRotation = ['', 'null', 'N/A', 'not assigned', '   ', 'undefined', 'none', 'TBD', 'not available yet'];
+  MD_REQUIRED_COLUMNS.forEach((column, index) => {
+    if (column.id === MD_COLUMNS.projectProduct.id) return; // covered separately below
+    blanks[column.aliases[0]!] = placeholderRotation[index % placeholderRotation.length]!;
+  });
+  // Force Project Product to blank so it fires the MISSING rule (and only
+  // that one — see the dedicated test below for the three-rule logic).
+  blanks[MD_COLUMNS.projectProduct.aliases[0]!] = '';
+
+  const file = await buildWorkbook([rowOverrides(blanks)]);
   const result = runFunctionAudit('master-data', file, undefined, { issueScope: 'PRC-TEST' });
 
   assert.ok(result.scannedRows >= 1);
   assert.equal(result.flaggedRows, 1);
   const codes = new Set(result.issues.map((issue) => issue.ruleCode));
-  for (const column of Object.values(MD_COLUMNS)) {
+  for (const column of MD_REQUIRED_COLUMNS) {
     assert.ok(codes.has(missingFieldRuleCode(column.id)), `missing rule for column ${column.id}`);
   }
-  assert.equal(result.issues.length, 10);
+  // 27 missing rules, no NOT-ASSIGNED, no REVIEW-OTHERS (Project Product
+  // is blank, not the "Not assigned" / "Other" token).
+  assert.equal(result.issues.length, MD_REQUIRED_COLUMNS.length);
   assert.ok(result.issues.every((issue) => issue.category === 'Data Quality'));
   assert.ok(result.issues.every((issue) => issue.issueKey && issue.issueKey.startsWith('IKY-')));
 });
@@ -177,11 +195,94 @@ test('master-data engine flags Project Product = "Others" as Needs Review (not m
   assert.equal(issue.ruleCode, MD_REVIEW_OTHERS_RULE_CODE);
   assert.equal(issue.category, 'Needs Review');
   assert.equal(issue.severity, 'Medium');
-  assert.match(issue.reason ?? '', /Others/i);
+  assert.match(issue.reason ?? '', /Other/i);
 });
 
-test('master-data engine does not double-count a product that is both missing and needs review', async () => {
+test('master-data engine flags Project Product = "Other, SAP Emarsys" as Needs Review', async () => {
+  // Real-world value from the sample workbook — the auditor needs to look
+  // up which actual product was deployed and replace the "Other" token.
+  const file = await buildWorkbook([rowOverrides({ 'Project Product': 'Other, SAP Emarsys' })]);
+
+  const result = runFunctionAudit('master-data', file, undefined, { issueScope: 'PRC-TEST' });
+
+  assert.equal(result.issues.length, 1);
+  const issue = result.issues[0]!;
+  assert.equal(issue.ruleCode, MD_REVIEW_OTHERS_RULE_CODE);
+  assert.equal(issue.category, 'Needs Review');
+  assert.match(issue.reason ?? '', /Other/i);
+});
+
+test('master-data engine flags Project Product = "Not assigned" as NOT-ASSIGNED (not MISSING)', async () => {
+  // Behaviour change vs. the pre-extension engine: pure "Not assigned"
+  // used to be caught by isBadValue and reported as the generic MISSING
+  // rule. Now it gets its own rule so the auditor can route it
+  // separately in notifications.
+  const file = await buildWorkbook([rowOverrides({ 'Project Product': 'Not assigned' })]);
+
+  const result = runFunctionAudit('master-data', file, undefined, { issueScope: 'PRC-TEST' });
+
+  assert.equal(result.issues.length, 1);
+  const issue = result.issues[0]!;
+  assert.equal(issue.ruleCode, MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE);
+  assert.equal(issue.category, 'Needs Review');
+  assert.equal(issue.severity, 'Medium');
+});
+
+test('master-data engine flags Project Product = "Not assigned, Application Development Services" as NOT-ASSIGNED', async () => {
+  // Real-world value from the sample workbook — partial assignment with
+  // one product known and another deferred. NOT-ASSIGNED still fires.
+  const file = await buildWorkbook([
+    rowOverrides({ 'Project Product': 'Not assigned, Application Development Services for SAP BTP (Business Technology Platform)' }),
+  ]);
+
+  const result = runFunctionAudit('master-data', file, undefined, { issueScope: 'PRC-TEST' });
+
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.issues[0]!.ruleCode, MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE);
+});
+
+test('master-data engine fires both NOT-ASSIGNED and REVIEW-OTHERS when both tokens present', async () => {
+  const file = await buildWorkbook([rowOverrides({ 'Project Product': 'Not assigned, Other, SAP X' })]);
+
+  const result = runFunctionAudit('master-data', file, undefined, { issueScope: 'PRC-TEST' });
+
+  const codes = new Set(result.issues.map((issue) => issue.ruleCode));
+  assert.ok(codes.has(MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE));
+  assert.ok(codes.has(MD_REVIEW_OTHERS_RULE_CODE));
+  assert.equal(result.issues.length, 2);
+  // The row counts as flagged once even though two rules fired.
+  assert.equal(result.flaggedRows, 1);
+});
+
+test('master-data engine does not false-positive REVIEW-OTHERS on substrings like "Other industries"', async () => {
+  // "Other industries" is a single comma-token, NOT equal to "other" — so
+  // the comma-split + token-equality check correctly skips it. (The
+  // workbook header is Project Industry, not Project Product, but using
+  // Project Product here is the cleanest way to test the detector logic.)
+  const file = await buildWorkbook([rowOverrides({ 'Project Product': 'Other industries' })]);
+
+  const result = runFunctionAudit('master-data', file, undefined, { issueScope: 'PRC-TEST' });
+
+  // No findings — "Other industries" is a real product name, not a review
+  // marker.
+  assert.equal(result.issues.length, 0);
+});
+
+test('master-data engine does not double-count a product that is both blank and Other-eligible', async () => {
+  // Blank takes precedence over the comma-split check — the row gets
+  // exactly one MISSING finding for Project Product, no review rules.
   const file = await buildWorkbook([rowOverrides({ 'Project Product': '' })]);
+
+  const result = runFunctionAudit('master-data', file, undefined, { issueScope: 'PRC-TEST' });
+
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.issues[0]!.ruleCode, missingFieldRuleCode(MD_COLUMNS.projectProduct.id));
+});
+
+test('master-data engine falls back to MISSING for Project Product placeholders that are not "Not assigned" / "Other"', async () => {
+  // "TBD" is a generic placeholder caught by isBadValue but not by either
+  // of the two review tokens — engine emits MISSING (not NOT-ASSIGNED).
+  const file = await buildWorkbook([rowOverrides({ 'Project Product': 'TBD' })]);
 
   const result = runFunctionAudit('master-data', file, undefined, { issueScope: 'PRC-TEST' });
 
@@ -223,14 +324,16 @@ test('rule catalogs are strictly separated per function', () => {
   }
 });
 
-test('master-data catalog contains exactly the 10 required-field rules plus the Others review rule', () => {
+test('master-data catalog contains a missing rule for every required column plus the two Project Product review rules', () => {
   const masterData = getRuleCatalogForFunction('master-data');
-  assert.equal(masterData.length, 11);
+  // 27 missing rules (one per required column) + NOT-ASSIGNED + REVIEW-OTHERS = 29
+  assert.equal(masterData.length, MD_REQUIRED_COLUMNS.length + 2);
   const codes = new Set(masterData.map((rule) => rule.ruleCode));
-  for (const column of Object.values(MD_COLUMNS)) {
+  for (const column of MD_REQUIRED_COLUMNS) {
     assert.ok(codes.has(missingFieldRuleCode(column.id)), `master-data must own ${column.id}`);
   }
   assert.ok(codes.has(MD_REVIEW_OTHERS_RULE_CODE));
+  assert.ok(codes.has(MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE));
 });
 
 test('unbuilt functions have empty catalogs, not inherited rules', () => {

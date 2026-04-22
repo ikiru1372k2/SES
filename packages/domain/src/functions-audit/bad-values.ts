@@ -44,3 +44,15 @@ const OTHERS_TOKENS = new Set(['other', 'others']);
 export function isOthersToken(value: unknown): boolean {
   return OTHERS_TOKENS.has(normalizeCell(value));
 }
+
+// "Not assigned" is also a Project Product manual-review token. The user
+// explicitly typed it instead of leaving the cell blank, so it's distinct
+// from a generic missing-field finding — the auditor needs to follow up
+// and pick a real product. Other columns still treat 'not assigned' as a
+// bad value (see BAD_VALUE_TOKENS); this helper is only consumed by the
+// Project Product engine path.
+const NOT_ASSIGNED_TOKENS = new Set(['not assigned']);
+
+export function isNotAssignedToken(value: unknown): boolean {
+  return NOT_ASSIGNED_TOKENS.has(normalizeCell(value));
+}

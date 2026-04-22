@@ -1,6 +1,6 @@
 import { createIssueKey } from '../../auditEngine';
 import type { AuditIssue, AuditResult, WorkbookFile } from '../../types';
-import { isBadValue, isOthersToken } from '../bad-values';
+import { isBadValue, isNotAssignedToken, isOthersToken } from '../bad-values';
 import type { FunctionAuditEngine, FunctionAuditOptions, RowObject } from '../types';
 import {
   MD_COLUMNS,
@@ -13,6 +13,7 @@ import {
 } from './columns';
 import {
   MASTER_DATA_RULES_BY_CODE,
+  MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE,
   MD_REVIEW_OTHERS_RULE_CODE,
   missingFieldRuleCode,
 } from './rules';
@@ -115,6 +116,81 @@ function pushIssue(
   });
 }
 
+// Project Product is the only column with three possible findings:
+//   - MISSING       — empty cell, or a generic placeholder like "n/a"/"tbd"
+//   - NOT-ASSIGNED  — any comma-separated token equals "not assigned"
+//                     ("Not assigned" alone, or "Not assigned, SAP X")
+//   - REVIEW-OTHERS — any comma-separated token equals "other" / "others"
+//                     ("Other" alone, or "Other, SAP Emarsys")
+//
+// A value can fire both NOT-ASSIGNED and REVIEW-OTHERS (e.g. "Not assigned,
+// Other, SAP X") — both findings are emitted because they reflect distinct
+// review questions for the auditor. A blank cell only fires MISSING; the
+// review checks are skipped to avoid double-counting.
+//
+// "Other industries" does NOT fire REVIEW-OTHERS — comma-split returns a
+// single token "other industries" which is not equal to "other".
+function auditProjectProduct(args: {
+  file: WorkbookFile;
+  sheetName: string;
+  rowIndex: number;
+  row: RowObject;
+  options: FunctionAuditOptions;
+  issues: AuditIssue[];
+}): boolean {
+  const { file, sheetName, rowIndex, row, options, issues } = args;
+  const raw = readCell(row, MD_COLUMNS.projectProduct.aliases);
+  const text = raw === null || raw === undefined ? '' : String(raw).trim();
+
+  const pushProductIssue = (ruleCode: string, observed: unknown, message: string) => {
+    pushIssue(issues, { file, sheetName, rowIndex, row, ruleCode, observed, message, options });
+  };
+
+  if (text === '') {
+    pushProductIssue(
+      missingFieldRuleCode(MD_COLUMNS.projectProduct.id),
+      raw,
+      'Project Product is missing.',
+    );
+    return true;
+  }
+
+  const parts = text.split(',').map((part) => part.trim()).filter(Boolean);
+  let flagged = false;
+
+  if (parts.some((part) => isNotAssignedToken(part))) {
+    flagged = true;
+    pushProductIssue(
+      MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE,
+      raw,
+      'Project Product contains "Not assigned" — auditor review required.',
+    );
+  }
+
+  if (parts.some((part) => isOthersToken(part))) {
+    flagged = true;
+    pushProductIssue(
+      MD_REVIEW_OTHERS_RULE_CODE,
+      raw,
+      'Project Product contains "Other" / "Others" — auditor review required.',
+    );
+  }
+
+  if (!flagged && isBadValue(text)) {
+    // Generic placeholder like "n/a", "tbd", "?", "null", "none" — fall
+    // through to MISSING so we don't silently ignore the row. (Note: pure
+    // "not assigned" is intercepted above, not here.)
+    flagged = true;
+    pushProductIssue(
+      missingFieldRuleCode(MD_COLUMNS.projectProduct.id),
+      raw,
+      'Project Product is missing or uses a placeholder value.',
+    );
+  }
+
+  return flagged;
+}
+
 function auditRow(args: {
   file: WorkbookFile;
   sheetName: string;
@@ -127,6 +203,10 @@ function auditRow(args: {
   let flagged = false;
 
   for (const column of MD_REQUIRED_COLUMNS) {
+    // Project Product is handled by `auditProjectProduct` below — three
+    // possible rule codes vs. one for every other required field.
+    if (column.id === MD_COLUMNS.projectProduct.id) continue;
+
     const raw = readCell(row, column.aliases);
     if (isBadValue(raw)) {
       flagged = true;
@@ -143,22 +223,8 @@ function auditRow(args: {
     }
   }
 
-  const product = readCell(row, MD_COLUMNS.projectProduct.aliases);
-  // If the product is already flagged as missing, don't also flag it for
-  // "needs review" — that would double-count the same cell.
-  if (!isBadValue(product) && isOthersToken(product)) {
-    flagged = true;
-    pushIssue(issues, {
-      file,
-      sheetName,
-      rowIndex,
-      row,
-      ruleCode: MD_REVIEW_OTHERS_RULE_CODE,
-      observed: product,
-      message: 'Project Product is "Other/Others" — auditor review required.',
-      options,
-    });
-  }
+  const productFlagged = auditProjectProduct({ file, sheetName, rowIndex, row, options, issues });
+  if (productFlagged) flagged = true;
 
   return flagged;
 }
