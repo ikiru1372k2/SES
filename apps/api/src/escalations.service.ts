@@ -16,30 +16,33 @@ export class EscalationsService {
   async getForProcess(idOrCode: string, user: SessionUser): Promise<ProcessEscalationsPayload> {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');
 
-    const issues: AggregatorIssueRow[] = [];
-
-    for (const fn of FUNCTION_REGISTRY) {
-      const run = await this.prisma.auditRun.findFirst({
-        where: {
-          processId: process.id,
-          file: { functionId: fn.id },
-          OR: [{ status: 'completed' }, { completedAt: { not: null } }],
-        },
-        orderBy: [{ completedAt: { sort: 'desc', nulls: 'last' } }, { startedAt: 'desc' }],
-        select: {
-          issues: {
-            select: {
-              issueKey: true,
-              projectManager: true,
-              email: true,
-              projectNo: true,
-              projectName: true,
+    const runs = await Promise.all(
+      FUNCTION_REGISTRY.map((fn) =>
+        this.prisma.auditRun.findFirst({
+          where: {
+            processId: process.id,
+            file: { functionId: fn.id },
+            OR: [{ status: 'completed' }, { completedAt: { not: null } }],
+          },
+          orderBy: [{ completedAt: { sort: 'desc', nulls: 'last' } }, { startedAt: 'desc' }],
+          select: {
+            issues: {
+              select: {
+                issueKey: true,
+                projectManager: true,
+                email: true,
+                projectNo: true,
+                projectName: true,
+              },
             },
           },
-        },
-      });
-      if (!run) continue;
-      const engineId = fn.id as FunctionId;
+        }),
+      ),
+    );
+    const issues: AggregatorIssueRow[] = [];
+    runs.forEach((run, index) => {
+      if (!run) return;
+      const engineId = FUNCTION_REGISTRY[index]!.id as FunctionId;
       for (const iss of run.issues) {
         issues.push({
           issueKey: iss.issueKey,
@@ -50,7 +53,7 @@ export class EscalationsService {
           projectName: iss.projectName,
         });
       }
-    }
+    });
 
     const trackingRows = await this.prisma.trackingEntry.findMany({
       where: { processId: process.id },

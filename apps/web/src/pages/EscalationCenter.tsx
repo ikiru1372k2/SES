@@ -49,6 +49,7 @@ export function EscalationCenter() {
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [bulkComposerOpen, setBulkComposerOpen] = useState(false);
   const [selectedTrackingIds, setSelectedTrackingIds] = useState<Set<string>>(new Set());
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   const sortKey = (search.get('sort') as SortKey) || 'issues';
   const engine = (search.get('engine') as FunctionId) || '';
@@ -91,9 +92,13 @@ export function EscalationCenter() {
     return [...s].sort();
   }, [q.data?.rows]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => setCurrentTime(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const filteredRows = useMemo(() => {
     const rows = q.data?.rows ?? [];
-    const now = Date.now();
     return rows.filter((row) => {
       if (engine && (row.countsByEngine[engine] ?? 0) === 0) return false;
       if (assignedToMe && currentUser?.email) {
@@ -102,12 +107,12 @@ export function EscalationCenter() {
       }
       if (selectedStages.size > 0 && row.stage && !selectedStages.has(String(row.stage))) return false;
       if (sla !== 'all') {
-        const b = slaBucket(row, now);
+        const b = slaBucket(row, currentTime);
         if (b !== sla) return false;
       }
       return true;
     });
-  }, [assignedToMe, currentUser?.email, engine, q.data?.rows, selectedStages, sla]);
+  }, [assignedToMe, currentTime, currentUser?.email, engine, q.data?.rows, selectedStages, sla]);
 
   const toggleStage = (stage: string) => {
     const next = new Set(selectedStages);
@@ -138,7 +143,7 @@ export function EscalationCenter() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [q, selectedTrackingIds]);
+  }, [panelOpen, q, selectedTrackingIds]);
 
   if (!processId) return <Navigate to="/" replace />;
   if (!process) {

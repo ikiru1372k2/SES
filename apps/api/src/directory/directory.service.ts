@@ -31,6 +31,16 @@ function displayNameFromEntry(firstName: string, lastName: string): string {
   return `${sanitizeHeader(firstName)} ${sanitizeHeader(lastName)}`.trim();
 }
 
+function splitFullName(name: string): { firstName: string; lastName: string } {
+  const parts = sanitizeHeader(name).trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return { firstName: '', lastName: '' };
+  if (parts.length === 1) return { firstName: parts[0] ?? '', lastName: '' };
+  return {
+    firstName: parts.slice(0, -1).join(' '),
+    lastName: parts[parts.length - 1] ?? '',
+  };
+}
+
 @Injectable()
 export class DirectoryService {
   constructor(
@@ -363,6 +373,117 @@ export class DirectoryService {
       });
     });
     return this.serializeEntry(created);
+  }
+
+  async createManager(
+    user: SessionUser,
+    payload: { code: string; name: string; email: string; active?: boolean },
+  ) {
+    this.requireAdmin(user);
+    this.requireManagerDirectoryEnabled(user);
+    const tenantId = this.requireTenant(user);
+    const code = sanitizeHeader(payload.code).trim().toUpperCase();
+    const name = sanitizeHeader(payload.name).trim();
+    const email = sanitizeHeader(payload.email).trim().toLowerCase();
+
+    if (!/^[A-Z0-9_-]{2,16}$/.test(code)) {
+      throw new BadRequestException({ field: 'code', message: 'Code must match ^[A-Z0-9_-]{2,16}$.' });
+    }
+    if (name.length < 2 || name.length > 80) {
+      throw new BadRequestException({ field: 'name', message: 'Name must be 2-80 characters.' });
+    }
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      throw new BadRequestException({ field: 'email', message: 'Email is not valid.' });
+    }
+
+    const { firstName, lastName } = splitFullName(name);
+    if (!firstName) throw new BadRequestException({ field: 'name', message: 'Name is required.' });
+    const nk = normalizeManagerKey(firstName, lastName);
+
+    let created;
+    try {
+      created = await this.prisma.$transaction(async (tx) => {
+        const dupCode = await tx.managerDirectory.findFirst({
+          where: { tenantId, displayCode: code },
+          select: { id: true },
+        });
+        if (dupCode) throw new ConflictException({ field: 'code', message: 'Code already in use.' });
+        const dupEmail = await tx.managerDirectory.findFirst({
+          where: { tenantId, email },
+          select: { id: true },
+        });
+        if (dupEmail) throw new ConflictException({ field: 'email', message: 'Email already in use.' });
+        return tx.managerDirectory.create({
+          data: {
+            id: createId(),
+            displayCode: code,
+            tenantId,
+            firstName,
+            lastName,
+            email,
+            normalizedKey: nk,
+            aliases: [],
+            active: payload.active ?? true,
+            source: 'manual',
+            createdById: user.id,
+          },
+        });
+      });
+    } catch (error) {
+      const prismaLike = error as { code?: string; meta?: { target?: string[] | string } };
+      if (prismaLike.code === 'P2002') {
+        const target = Array.isArray(prismaLike.meta?.target)
+          ? prismaLike.meta?.target.join(',')
+          : String(prismaLike.meta?.target ?? '');
+        if (target.includes('email')) {
+          throw new ConflictException({ field: 'email', message: 'Email already in use.' });
+        }
+        if (target.includes('displayCode')) {
+          throw new ConflictException({ field: 'code', message: 'Code already in use.' });
+        }
+        throw new ConflictException({ field: 'code', message: 'Code already in use.' });
+      }
+      throw error;
+    }
+    return this.serializeEntry(created);
+  }
+
+  async deleteManager(user: SessionUser, id: string): Promise<void> {
+    this.requireAdmin(user);
+    this.requireManagerDirectoryEnabled(user);
+    const tenantId = this.requireTenant(user);
+    const entry = await this.prisma.managerDirectory.findFirst({ where: { id, tenantId } });
+    if (!entry) throw new NotFoundException('Manager not found');
+
+    const activeAuditRuleRefs = await this.prisma.trackingEntry.count({
+      where: {
+        resolved: false,
+        OR: [
+          { managerEmail: { equals: entry.email, mode: 'insensitive' } },
+          { managerKey: entry.email.toLowerCase().trim() },
+        ],
+        process: { tenantId, archivedAt: null },
+      },
+    });
+    if (activeAuditRuleRefs > 0) {
+      throw new ConflictException({
+        message: `Cannot delete — manager is still used by ${activeAuditRuleRefs} active audit rules.`,
+      });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.managerDirectory.delete({ where: { id: entry.id } });
+      await this.activity.append(tx, {
+        actorId: user.id,
+        actorEmail: user.email,
+        processId: null,
+        entityType: 'manager_directory',
+        entityId: entry.id,
+        entityCode: entry.displayCode,
+        action: 'directory.manager.deleted',
+        metadata: { targetId: entry.id, targetCode: entry.displayCode, tenantId },
+      });
+    });
   }
 
   async archiveBulk(user: SessionUser, body: { ids: string[] }) {

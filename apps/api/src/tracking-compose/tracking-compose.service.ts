@@ -60,7 +60,7 @@ export class TrackingComposeService {
   ) {}
 
   private tenantId(_user: SessionUser) {
-    return DEFAULT_TENANT_ID;
+    return _user.tenantId ?? DEFAULT_TENANT_ID;
   }
 
   private async loadEntry(idOrCode: string, user: SessionUser) {

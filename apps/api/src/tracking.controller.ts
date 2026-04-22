@@ -34,8 +34,8 @@ export class TrackingController {
   patch(
     @Param('idOrCode') idOrCode: string,
     @Body() body: {
-      managerKey: string;
-      managerName: string;
+      managerKey?: string;
+      managerName?: string;
       managerEmail?: string;
       stage?: string;
       resolved?: boolean;

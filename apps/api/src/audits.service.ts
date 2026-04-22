@@ -8,7 +8,7 @@ import {
   buildIssuesCsv,
   createId,
   createIssueKey,
-  runAudit,
+  runFunctionAudit,
 } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';
 import { IdentifierService } from './common/identifier.service';
@@ -237,7 +237,7 @@ export class AuditsService {
       });
 
       // PRISMA-JSON: auditPolicy is stored as Json; cast satisfies domain runAudit signature
-      const result = runAudit(domainFile, process.auditPolicy as any, {
+      const result = runFunctionAudit(file.functionId, domainFile, process.auditPolicy as any, {
         issueScope: process.displayCode,
         runCode,
       });
@@ -257,13 +257,21 @@ export class AuditsService {
       };
 
       for (const issue of issuesWithCodes) {
+        // Every engine must emit a ruleCode that exists in AUDIT_RULE_CATALOG
+        // so the AuditIssue → AuditRule FK holds. We never silently coerce
+        // a Master Data finding into an effort-engine rule, so fail loud
+        // if an engine ever returns an issue without one.
+        const resolvedRuleCode = issue.ruleCode ?? issue.ruleId;
+        if (!resolvedRuleCode) {
+          throw new Error(`Audit engine returned issue ${issue.id} without a ruleCode.`);
+        }
         await tx.auditIssue.create({
           data: {
             id: issue.id,
             displayCode: issue.displayCode!,
             issueKey: issue.issueKey!,
             auditRunId: createdRun.id,
-            ruleCode: issue.ruleCode || issue.ruleId || 'RUL-EFFORT-OVERPLAN-HIGH',
+            ruleCode: resolvedRuleCode,
             projectNo: issue.projectNo,
             projectName: issue.projectName,
             sheetName: issue.sheetName,

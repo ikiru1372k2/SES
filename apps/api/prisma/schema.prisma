@@ -457,6 +457,8 @@ model TrackingEntry {
   notificationLogs NotificationLog[]
 
   @@unique([processId, managerKey])
+  @@index([processId, stage, slaDueAt])
+  @@index([processId, managerEmail])
 }
 
 model TrackingEvent {

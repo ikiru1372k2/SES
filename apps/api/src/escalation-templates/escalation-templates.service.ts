@@ -43,7 +43,7 @@ export class EscalationTemplatesService {
   ) {}
 
   private tenantId(_user: SessionUser) {
-    return DEFAULT_TENANT_ID;
+    return _user.tenantId ?? DEFAULT_TENANT_ID;
   }
 
   async listMerged(user: SessionUser, stageKey?: string, includeInactive?: boolean) {

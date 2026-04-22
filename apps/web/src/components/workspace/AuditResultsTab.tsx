@@ -1,6 +1,7 @@
 import { CheckCircle2, ChevronRight, Circle, Settings, X } from 'lucide-react';
 import { Fragment, FormEvent, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import { getFunctionLabel, isFunctionId } from '@ses/domain';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/auditPolicy';
 import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
@@ -26,7 +27,13 @@ import { StatusBadge } from '../shared/StatusBadge';
 
 type SortKey = keyof Pick<AuditIssue, 'severity' | 'projectNo' | 'projectName' | 'projectManager' | 'email' | 'sheetName' | 'projectState' | 'effort' | 'reason'>;
 
-const categoryOptions: IssueCategory[] = ['Overplanning', 'Missing Planning', 'Other'];
+const categoryOptions: IssueCategory[] = [
+  'Overplanning',
+  'Missing Planning',
+  'Data Quality',
+  'Needs Review',
+  'Other',
+];
 const issueHeaders: Array<{ key: SortKey; label: string }> = [
   { key: 'severity', label: 'Severity' },
   { key: 'projectNo', label: 'Project No' },
@@ -95,6 +102,9 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   const sheets = result ? [...new Set(result.issues.map((issue) => issue.sheetName))] : [];
   const statuses = result ? [...new Set(result.issues.map((issue) => issue.auditStatus))] : [];
   const hasSelected = Boolean(file?.sheets.some((item) => item.status === 'valid' && item.isSelected));
+  const functionId = isFunctionId(file?.functionId) ? file!.functionId : undefined;
+  const functionLabel = functionId ? getFunctionLabel(functionId) : 'Audit';
+  const isMasterData = functionId === 'master-data';
 
   return (
     <div className="space-y-5">
@@ -102,14 +112,23 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-xl font-semibold text-gray-950 dark:text-white">Audit Results</h2>
-            {policyChanged ? <Badge tone="amber">Policy changed - re-run audit</Badge> : null}
+            {functionId ? <Badge tone="blue">{functionLabel}</Badge> : null}
+            {policyChanged && !isMasterData ? <Badge tone="amber">Policy changed - re-run audit</Badge> : null}
           </div>
-          <p className="mt-1 text-sm text-gray-500">{result ? `${result.issues.length} issue${result.issues.length === 1 ? '' : 's'} found across ${result.sheets.length} audited sheet${result.sheets.length === 1 ? '' : 's'}.` : policySummary(process.auditPolicy)}</p>
+          <p className="mt-1 text-sm text-gray-500">
+            {result
+              ? `${result.issues.length} issue${result.issues.length === 1 ? '' : 's'} found across ${result.sheets.length} audited sheet${result.sheets.length === 1 ? '' : 's'}.`
+              : isMasterData
+                ? 'Master Data audit flags rows where required fields are blank, null, "not assigned", or set to a placeholder, plus "Others" products that need manual review.'
+                : policySummary(process.auditPolicy)}
+          </p>
         </div>
-        <button onClick={() => setSettingsOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
-          <Settings size={16} />
-          QGC Settings
-        </button>
+        {!isMasterData ? (
+          <button onClick={() => setSettingsOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
+            <Settings size={16} />
+            QGC Settings
+          </button>
+        ) : null}
       </div>
 
       {!result ? (
@@ -117,7 +136,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
           <div className="space-y-1 text-left">
             <Step done={Boolean(file)}>Upload a workbook</Step>
             <Step done={hasSelected}>Select sheets in the sidebar</Step>
-            <Step done={false}>Run audit with the QGC policy</Step>
+            <Step done={false}>{isMasterData ? 'Run Master Data audit' : 'Run audit with the QGC policy'}</Step>
             <Step done={false}>Save a version for traceability</Step>
           </div>
           {file ? <button onClick={() => runAudit(process.id, file.id)} disabled={!hasSelected} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Run Audit</button> : null}
@@ -183,7 +202,14 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
                       <td className="p-3">{issue.sheetName}</td>
                       <td className="p-3">{issue.projectState}</td>
                       <td className="p-3">{issue.effort}</td>
-                      <td className="max-w-lg p-3"><Badge>{issue.ruleName ?? issue.auditStatus}</Badge><div className="mt-1 text-gray-700 dark:text-gray-200">{issue.reason ?? issue.notes}</div><div className="mt-1 hidden text-xs text-gray-400 group-hover:block">Click for details, notes, and corrections</div></td>
+                      <td className="max-w-lg p-3">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Badge tone={issue.category === 'Needs Review' ? 'amber' : issue.category === 'Data Quality' ? 'blue' : 'gray'}>{issue.ruleName ?? issue.auditStatus}</Badge>
+                          {issue.category === 'Needs Review' ? <Badge tone="amber">Needs review</Badge> : null}
+                        </div>
+                        <div className="mt-1 text-gray-700 dark:text-gray-200">{issue.reason ?? issue.notes}</div>
+                        <div className="mt-1 hidden text-xs text-gray-400 group-hover:block">Click for details, notes, and corrections</div>
+                      </td>
                     </tr>
                     {expanded === issue.id ? (
                       <tr className="border-t border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">

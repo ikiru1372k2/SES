@@ -76,6 +76,15 @@ type UpsertBody = {
   projectStatuses?: Record<string, unknown>;
 };
 
+type PatchBody = {
+  managerKey?: string;
+  managerName?: string;
+  managerEmail?: string;
+  stage?: string;
+  resolved?: boolean;
+  projectStatuses?: Record<string, unknown>;
+};
+
 function coerceStage(value: string | undefined, fallback: EscalationStage): EscalationStage {
   if (value === undefined || value === null) return fallback;
   if (isEscalationStage(value)) return value;
@@ -178,7 +187,7 @@ export class TrackingService {
     return result.serialized;
   }
 
-  async patchEntry(entryIdOrCode: string, body: UpsertBody, user: SessionUser) {
+  async patchEntry(entryIdOrCode: string, body: PatchBody, user: SessionUser) {
     const prior = await this.prisma.trackingEntry.findFirst({
       where: { OR: [{ id: entryIdOrCode }, { displayCode: entryIdOrCode }] },
       include: { events: { orderBy: { at: 'asc' } } },

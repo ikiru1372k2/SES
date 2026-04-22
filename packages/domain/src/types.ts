@@ -7,7 +7,16 @@ export type { ProjectStatusesV2, EngineProjectStatus, EngineSubStatus, ProjectSt
 export type SheetStatus = 'valid' | 'duplicate' | 'invalid';
 export type Severity = 'High' | 'Medium' | 'Low';
 export type WorkspaceTab = 'preview' | 'results' | 'notifications' | 'tracking' | 'versions' | 'analytics';
-export type IssueCategory = 'Overplanning' | 'Missing Planning' | 'Other' | 'Effort Threshold' | 'Missing Data' | 'Planning Risk' | 'Capacity Risk';
+export type IssueCategory =
+  | 'Overplanning'
+  | 'Missing Planning'
+  | 'Other'
+  | 'Effort Threshold'
+  | 'Missing Data'
+  | 'Planning Risk'
+  | 'Capacity Risk'
+  | 'Data Quality'
+  | 'Needs Review';
 export type NotificationTheme =
   | 'Company Reminder'
   | 'Executive Summary'

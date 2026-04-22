@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import { AddManagerForm } from './AddManagerForm';
+import { DeleteManagerButton } from './DeleteManagerButton';
 import {
   directoryArchiveBulk,
   directoryList,
@@ -32,6 +34,40 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function matchesFilters(row: DirectoryEntry, currentFilter: 'active' | 'archived' | 'all', currentSearch: string) {
+    const activeMatch =
+      currentFilter === 'all' ||
+      (currentFilter === 'active' && row.active) ||
+      (currentFilter === 'archived' && !row.active);
+    if (!activeMatch) return false;
+    const needle = currentSearch.trim().toLowerCase();
+    if (!needle) return true;
+    const fullName = `${row.firstName} ${row.lastName}`.trim().toLowerCase();
+    return (
+      row.displayCode.toLowerCase().includes(needle) ||
+      fullName.includes(needle) ||
+      row.email.toLowerCase().includes(needle)
+    );
+  }
+
+  function prependCreatedManager(row: DirectoryEntry) {
+    if (matchesFilters(row, filter, search)) {
+      setItems((prev) => [row, ...prev]);
+      return;
+    }
+    toast.success('Manager added (not visible under current filter).');
+  }
+
+  function removeManager(id: string) {
+    setItems((prev) => prev.filter((item) => item.id !== id));
+    setSelected((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -124,6 +160,7 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
               <th className="p-2">Name</th>
               <th className="p-2">Email</th>
               <th className="p-2">Active</th>
+              <th className="p-2 w-12">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -133,16 +170,30 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
                   <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)} />
                 </td>
                 <td className="p-2 font-mono text-xs">{row.displayCode}</td>
-                <td className="p-2">
+                <td className="p-2 truncate max-w-56" title={`${row.firstName} ${row.lastName}`.trim()}>
                   {row.firstName} {row.lastName}
                 </td>
-                <td className="p-2">{row.email}</td>
-                <td className="p-2">{row.active ? 'yes' : 'no'}</td>
+                <td className="p-2 truncate max-w-64" title={row.email}>{row.email}</td>
+                <td className="p-2">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      row.active
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+                    }`}
+                  >
+                    {row.active ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td className="p-2">
+                  <DeleteManagerButton manager={row} onDeleted={removeManager} />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <AddManagerForm items={items} onCreated={prependCreatedManager} />
     </div>
   );
 }

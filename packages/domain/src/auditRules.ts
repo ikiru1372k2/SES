@@ -1,4 +1,5 @@
 import type { IssueCategory, Severity } from './types';
+import { MASTER_DATA_RULE_CATALOG } from './functions-audit/master-data/rules';
 
 export interface RuleCatalogEntry {
   ruleCode: string;
@@ -11,7 +12,7 @@ export interface RuleCatalogEntry {
   paramsSchema: Record<string, unknown>;
 }
 
-export const AUDIT_RULE_CATALOG: RuleCatalogEntry[] = [
+const OVER_PLANNING_RULES: RuleCatalogEntry[] = [
   {
     ruleCode: 'RUL-EFFORT-OVERPLAN-HIGH',
     name: 'Overplanned effort',
@@ -86,6 +87,15 @@ export const AUDIT_RULE_CATALOG: RuleCatalogEntry[] = [
     isEnabledDefault: true,
     paramsSchema: { type: 'object', properties: {}, additionalProperties: false },
   },
+];
+
+// Global catalog used by the DB seed, the RulesService fallback, and any
+// future consumer that wants a flat list. Per-function rulesets are defined
+// in their own modules (e.g. functions-audit/master-data/rules.ts) and
+// appended here so they seed into AuditRule and the AuditIssue FK holds.
+export const AUDIT_RULE_CATALOG: RuleCatalogEntry[] = [
+  ...OVER_PLANNING_RULES,
+  ...MASTER_DATA_RULE_CATALOG,
 ];
 
 export const AUDIT_RULES_BY_CODE = new Map(AUDIT_RULE_CATALOG.map((rule) => [rule.ruleCode, rule]));

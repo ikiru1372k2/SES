@@ -13,6 +13,32 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function request(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`${base}${path}`, {
+    credentials: 'include',
+    ...init,
+    headers: { ...JSON_HEADERS, ...(init?.headers ?? {}) },
+  });
+  return res;
+}
+
+export class DirectoryFieldError extends Error {
+  readonly field: string | undefined;
+  readonly status: number;
+
+  constructor(message: string, status: number, field: string | undefined) {
+    super(message);
+    this.name = 'DirectoryFieldError';
+    this.status = status;
+    this.field = field;
+  }
+}
+
+async function parseDirectoryFieldError(res: Response): Promise<DirectoryFieldError> {
+  const body = (await res.json().catch(() => ({}))) as { field?: string; message?: string };
+  return new DirectoryFieldError(body.message ?? `Directory API (${res.status})`, res.status, body.field);
+}
+
 export type DirectoryEntry = {
   id: string;
   displayCode: string;
@@ -108,4 +134,34 @@ export async function directoryPatch(
     `/${encodeURIComponent(id)}`,
     { method: 'PATCH', body: JSON.stringify(body) },
   );
+}
+
+export type CreateManagerPayload = {
+  code: string;
+  name: string;
+  email: string;
+  active: boolean;
+};
+
+export async function createManager(payload: CreateManagerPayload, signal?: AbortSignal) {
+  const init: RequestInit = { method: 'POST', body: JSON.stringify(payload) };
+  if (signal) init.signal = signal;
+  const res = await request('/managers', init);
+  if (!res.ok) {
+    if (res.status === 400 || res.status === 409) throw await parseDirectoryFieldError(res);
+    throw await parseApiError(res, 'Directory API');
+  }
+  return (await res.json()) as DirectoryEntry;
+}
+
+export async function deleteManager(id: string, signal?: AbortSignal) {
+  const init: RequestInit = { method: 'DELETE' };
+  if (signal) init.signal = signal;
+  const res = await request(`/managers/${encodeURIComponent(id)}`, init);
+  if (res.status === 204 || res.status === 404) return { status: res.status as 204 | 404 };
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string };
+    return { status: 409 as const, message: body.message ?? 'Cannot delete manager.' };
+  }
+  throw await parseApiError(res, 'Directory API');
 }

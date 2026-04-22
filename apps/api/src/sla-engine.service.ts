@@ -83,7 +83,7 @@ export class SlaEngineService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleEntry(entryId: string, now: Date) {
-    let publishMessage: { message: string; link: string } | undefined;
+    let publishMessage: { message: string; link: string; processId: string } | undefined;
     await this.prisma.$transaction(async (tx) => {
       const entry = await tx.trackingEntry.findFirst({
         where: { id: entryId },
@@ -148,12 +148,14 @@ export class SlaEngineService implements OnModuleInit, OnModuleDestroy {
       publishMessage = {
         message: `${entry.managerName} breached SLA - ${stageToQueue} draft queued`,
         link: `/processes/${entry.process.displayCode}/escalations`,
+        processId: entry.processId,
       };
     });
     if (publishMessage !== undefined) {
       await this.notifications.publish(publishMessage.message, {
         link: publishMessage.link,
         kind: 'sla_breach',
+        processId: publishMessage.processId,
       });
     }
   }

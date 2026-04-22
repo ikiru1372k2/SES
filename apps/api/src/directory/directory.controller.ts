@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Query, Param, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Patch, Post, Query, Param, UseGuards, HttpCode } from '@nestjs/common';
 import type { SessionUser, DirectoryRowInput } from '@ses/domain';
 import { AuthGuard } from '../auth.guard';
 import { CurrentUser } from '../common/current-user';
@@ -46,6 +46,14 @@ export class DirectoryController {
   @Post('entries')
   createEntry(@CurrentUser() user: SessionUser, @Body() body: DirectoryRowInput) {
     return this.directory.createManualEntry(user, body);
+  }
+
+  @Post('managers')
+  createManager(
+    @CurrentUser() user: SessionUser,
+    @Body() body: { code: string; name: string; email: string; active?: boolean },
+  ) {
+    return this.directory.createManager(user, body);
   }
 
   @Post('archive-bulk')
@@ -112,5 +120,11 @@ export class DirectoryController {
     },
   ) {
     return this.directory.patchEntry(user, id, body);
+  }
+
+  @Delete('managers/:id')
+  @HttpCode(204)
+  async deleteManager(@CurrentUser() user: SessionUser, @Param('id') id: string) {
+    await this.directory.deleteManager(user, id);
   }
 }

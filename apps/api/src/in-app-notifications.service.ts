@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
 import { createId } from '@ses/domain';
 import { IdentifierService } from './common/identifier.service';
+import { ProcessAccessService } from './common/process-access.service';
 import { PrismaService } from './common/prisma.service';
 
 type NotificationRecord = {
@@ -23,6 +24,7 @@ export class InAppNotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly identifiers: IdentifierService,
+    private readonly processAccess: ProcessAccessService,
   ) {}
 
   private async readPreference(userId: string) {
@@ -32,9 +34,13 @@ export class InAppNotificationsService {
   }
 
   async list(user: SessionUser) {
+    const processIds = await this.processAccess.listProcessIdsForUser(user.id);
     const [events, prefState] = await Promise.all([
       this.prisma.activityLog.findMany({
-        where: { entityType: 'in_app_notification' },
+        where: {
+          entityType: 'in_app_notification',
+          OR: [{ processId: null }, { processId: { in: processIds } }],
+        },
         orderBy: { occurredAt: 'desc' },
         take: 50,
       }),
@@ -65,9 +71,13 @@ export class InAppNotificationsService {
   }
 
   async markAllRead(user: SessionUser) {
+    const processIds = await this.processAccess.listProcessIdsForUser(user.id);
     const [all, prefState] = await Promise.all([
       this.prisma.activityLog.findMany({
-        where: { entityType: 'in_app_notification' },
+        where: {
+          entityType: 'in_app_notification',
+          OR: [{ processId: null }, { processId: { in: processIds } }],
+        },
         select: { id: true },
       }),
       this.readPreference(user.id),
@@ -78,11 +88,12 @@ export class InAppNotificationsService {
     return { ok: true };
   }
 
-  async publish(message: string, opts?: { link?: string; kind?: string }) {
+  async publish(message: string, opts?: { link?: string; kind?: string; processId?: string }) {
     await this.prisma.activityLog.create({
       data: {
         id: createId(),
         displayCode: await this.identifiers.nextActivityCode(this.prisma),
+        processId: opts?.processId ?? null,
         entityType: 'in_app_notification',
         action: 'notification.created',
         metadata: {
