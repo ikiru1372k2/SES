@@ -9,7 +9,25 @@ export type ComposeDraftPayload = {
   cc: string[];
   removedEngineIds?: string[];
   channel?: 'email' | 'teams' | 'both';
+  /** Issue #75: auditor-only note captured with the handoff. */
+  authorNote?: string;
+  /** Issue #75: ISO-8601 date for the {{dueDate}} slot. */
+  deadlineAt?: string | null;
 };
+
+/**
+ * Issue #75: what the server returns after recording a send. The client
+ * uses these to drive the mailto / Teams handoff — no extra preview call.
+ */
+export interface SendComposeResult {
+  ok: boolean;
+  notificationLogId: string;
+  channel: 'email' | 'teams' | 'both';
+  subject: string;
+  body: string;
+  to: string;
+  cc: string[];
+}
 
 export async function fetchComposeStatus(trackingIdOrCode: string) {
   const res = await fetch(`/api/v1/tracking/${encodeURIComponent(trackingIdOrCode)}/compose-status`, {
@@ -51,7 +69,10 @@ export async function discardComposeDraft(trackingIdOrCode: string) {
   return (await res.json()) as { ok: boolean; stage: string };
 }
 
-export async function sendCompose(trackingIdOrCode: string, body: ComposeDraftPayload & { sources: string[] }) {
+export async function sendCompose(
+  trackingIdOrCode: string,
+  body: ComposeDraftPayload & { sources: string[] },
+): Promise<SendComposeResult> {
   const res = await fetch(`/api/v1/tracking/${encodeURIComponent(trackingIdOrCode)}/send`, {
     method: 'POST',
     credentials: 'include',
@@ -59,5 +80,15 @@ export async function sendCompose(trackingIdOrCode: string, body: ComposeDraftPa
     body: JSON.stringify(body),
   });
   if (!res.ok) throw await parseApiError(res, 'Send failed');
-  return (await res.json()) as { ok: boolean; notificationLogId: string };
+  return (await res.json()) as SendComposeResult;
+}
+
+export async function forceReescalate(trackingIdOrCode: string) {
+  const res = await fetch(`/api/v1/tracking/${encodeURIComponent(trackingIdOrCode)}/force-reescalate`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: JSON_HEADERS,
+  });
+  if (!res.ok) throw await parseApiError(res, 'Force re-escalate failed');
+  return (await res.json()) as { ok: boolean; stage: string };
 }

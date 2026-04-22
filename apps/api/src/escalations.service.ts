@@ -68,6 +68,8 @@ export class EscalationsService {
         resolved: true,
         lastContactAt: true,
         slaDueAt: true,
+        outlookCount: true,
+        teamsCount: true,
         draftLockExpiresAt: true,
         draftLockUser: { select: { displayName: true } },
       },
@@ -83,6 +85,8 @@ export class EscalationsService {
       slaDueAt: t.slaDueAt,
       id: t.id,
       displayCode: t.displayCode,
+      outlookCount: t.outlookCount,
+      teamsCount: t.teamsCount,
     }));
 
     const payload = aggregateEscalations(process.id, issues, tracking);

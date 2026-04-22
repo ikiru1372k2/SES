@@ -711,6 +711,11 @@ model NotificationLog {
   sources      Json?
   severity     String?
   issueCount   Int      @default(0)
+  /// Auditor-only freeform note captured alongside a handoff (Issue #75).
+  /// Not shown to the manager; used for post-hoc explanation in the activity feed.
+  authorNote   String   @default("")
+  /// Due date surfaced to the recipient via the {{dueDate}} slot (Issue #75).
+  deadlineAt   DateTime?
   sentAt       DateTime @default(now())
 
   process Process @relation(fields: [processId], references: [id], onDelete: Cascade)

@@ -45,4 +45,14 @@ export class TrackingComposeController {
   ) {
     return this.composeService.send(idOrCode, user, body);
   }
+
+  // Issue #75: admin-only cycle reset. Zeroes outlookCount / teamsCount
+  // so the channel gate re-opens at Outlook #1.
+  @Post('tracking/:idOrCode/force-reescalate')
+  forceReescalate(
+    @Param('idOrCode') idOrCode: string,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.composeService.forceReescalate(idOrCode, user);
+  }
 }
