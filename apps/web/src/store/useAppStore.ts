@@ -17,7 +17,7 @@ import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updatePr
 import { uploadFileToApi, deleteFileOnApi, listFilesOnApi, type ApiFileSummary } from '../lib/api/filesApi';
 import { listFileVersionsOnApi } from '../lib/api/fileVersionsApi';
 import { deleteFileDraftOnApi, getFileDraftOnApi, promoteFileDraftOnApi, saveFileDraftOnApi } from '../lib/api/fileDraftsApi';
-import { fetchAuditIssues, runAuditOnApi, type ApiAuditRunIssue, type ApiAuditRunSummary } from '../lib/api/auditsApi';
+import { fetchAuditIssues, fetchLatestAuditRunForFile, runAuditOnApi, type ApiAuditRunIssue, type ApiAuditRunSummary } from '../lib/api/auditsApi';
 import { upsertTrackingOnApi, addTrackingEventOnApi } from '../lib/api/trackingApi';
 import {
   addIssueCommentOnApi,
@@ -96,6 +96,12 @@ type AppStore = {
   resetAuditPolicy: (processId: string) => void;
   runAudit: (processId: string, fileId: string) => Promise<void>;
   cancelAudit: () => void;
+  // Pull the latest completed audit run for (processId, fileId) from the
+  // server and hydrate `currentAuditResult` from it. Used when the user
+  // arrives on the Audit Results tab from a deep link (Escalation Center
+  // "Open evidence", a bookmarked URL, a hard refresh, etc.) and the
+  // in-session result was wiped by a navigation.
+  hydrateLatestAuditResult: (processId: string, fileId: string) => Promise<void>;
   saveVersion: (processId: string, details: { versionName: string; notes: string }) => AuditProcess | undefined;
   loadVersion: (processId: string, versionId: string) => void;
   recordTrackingEvent: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, channel: TrackingChannel, note: string) => void;
@@ -191,6 +197,12 @@ function mapApiAuditToResult(
 ): AuditResult {
   const mapped = issues.map((issue) => ({
     id: issue.displayCode,
+    // issueKey is the stable cross-run identity (IKY-xxxxxx) used by the
+    // Escalation Center's deep-link highlight and by the issue-comments /
+    // corrections / acknowledgments stores. Without this line,
+    // issue.issueKey is undefined on the client and ?issue=... URL params
+    // silently find nothing.
+    issueKey: issue.issueKey,
     projectNo: issue.projectNo ?? '',
     projectName: issue.projectName ?? '',
     sheetName: issue.sheetName ?? '',
@@ -639,6 +651,41 @@ export const useAppStore = create<AppStore>()(
         // Moving the key forward is enough: any in-flight run will see its
         // captured key mismatch at the next checkpoint and bail.
         set({ isAuditRunning: false, auditProgressText: '', auditRunKey: null });
+      },
+
+      hydrateLatestAuditResult: async (processId, fileId) => {
+        const process = get().processes.find((item) => item.id === processId || item.displayCode === processId);
+        const file = process?.files.find((item) => item.id === fileId);
+        if (!process || !file) return;
+        // Only meaningful for server-backed processes — local-only audits
+        // already hold their result in memory (or it's gone after a reload,
+        // which is expected for that mode).
+        if (!process.serverBacked) return;
+        const fileDisplayCode = (file as { displayCode?: string }).displayCode ?? file.id;
+        const processRef = process.displayCode ?? process.id;
+
+        // If we already have a fresh in-session result for this file, no
+        // need to re-fetch — keep what runAudit produced (it has live
+        // post-audit hooks like directory resolution applied).
+        const existing = get().currentAuditResult;
+        if (existing && existing.fileId === fileId) return;
+
+        try {
+          const apiResult = await fetchLatestAuditRunForFile(processRef, fileDisplayCode);
+          if (!apiResult) return; // No completed run yet — leave currentAuditResult null.
+          const apiIssues = await fetchAuditIssues(apiResult.displayCode);
+          const mapped = mapApiAuditToResult(file.id, apiResult, apiIssues);
+          set((state) => ({
+            currentAuditResult: mapped,
+            processes: patchProcess(state.processes, processId, (item) => ({
+              ...item,
+              latestAuditResult: mapped,
+            })),
+          }));
+        } catch {
+          // Non-fatal — the tab will just show "No audit run yet". Don't
+          // toast: this is invoked on navigation, not a user-driven action.
+        }
       },
 
       updateAuditPolicy: (processId, patch) => {

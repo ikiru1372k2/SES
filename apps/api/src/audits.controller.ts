@@ -19,6 +19,19 @@ export class AuditsController {
     return this.auditsService.run(idOrCode, body, user);
   }
 
+  // Latest completed audit run for a file. The web client calls this when
+  // the user lands on the Audit Results tab via a deep link (Escalation
+  // Center "Open evidence", a bookmark, etc.) and there's no in-session
+  // result cached. Mirrors the shape of GET audit-runs/:idOrCode.
+  @Get('processes/:idOrCode/files/:fileIdOrCode/audit-runs/latest')
+  latestForFile(
+    @Param('idOrCode') idOrCode: string,
+    @Param('fileIdOrCode') fileIdOrCode: string,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.auditsService.latestForFile(idOrCode, fileIdOrCode, user);
+  }
+
   @Get('audit-runs/:idOrCode')
   get(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
     return this.auditsService.get(idOrCode, user);

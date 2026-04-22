@@ -39,7 +39,7 @@ export function FindingsTab({ processId, row }: { processId: string; row: Proces
                       {f.projectName ? ` — ${f.projectName}` : ''}
                     </span>
                     <Link
-                      to={`${workspacePath(processId, engine)}?tab=results`}
+                      to={`${workspacePath(processId, engine)}?tab=results&issue=${encodeURIComponent(f.issueKey)}`}
                       className="shrink-0 text-xs text-brand hover:underline"
                     >
                       Open evidence

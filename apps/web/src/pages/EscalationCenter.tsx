@@ -331,7 +331,14 @@ export function EscalationCenter() {
             </div>
           ) : null}
 
-          <div className="flex min-h-[480px] gap-4">
+          {/* Fixed-height panel so the ManagerTable's existing
+              `overflow-auto` scrolls internally instead of growing
+              unbounded. The page itself still scrolls normally for
+              everything above and below — this just caps the manager
+              list at ~560px so users can see several rows and scroll
+              the rest within the panel rather than losing the summary
+              cards when paging through 15+ managers. */}
+          <div className="flex h-[560px] gap-4">
             <EscalationFilters
               stages={stages}
               selectedStages={selectedStages}
@@ -353,7 +360,7 @@ export function EscalationCenter() {
                 }}
               />
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col">
               <ManagerTable
                 processId={process.id}
                 rows={filteredRows}

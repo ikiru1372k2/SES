@@ -395,6 +395,38 @@ export class AuditsService {
     return run.issues.map(serializeIssue);
   }
 
+  // Latest completed audit run for a given file. Used by the web client
+  // when the user lands on the Audit Results tab via a deep link (e.g.
+  // "Open evidence" from the Escalation Center) — at that point the
+  // Zustand `currentAuditResult` is null because the run wasn't initiated
+  // from this browser session, and there's no other client-side cache of
+  // the issue list. Returns 404 if no completed run exists for the file
+  // yet (caller should treat as "no audit run yet").
+  async latestForFile(processIdOrCode: string, fileIdOrCode: string, user: SessionUser) {
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode);
+    const file = await this.prisma.workbookFile.findFirst({
+      where: {
+        processId: process.id,
+        OR: [{ id: fileIdOrCode }, { displayCode: fileIdOrCode }],
+      },
+      select: { id: true },
+    });
+    if (!file) throw new NotFoundException(`File ${fileIdOrCode} not found`);
+    const run = await this.prisma.auditRun.findFirst({
+      where: {
+        processId: process.id,
+        fileId: file.id,
+        OR: [{ status: 'completed' }, { completedAt: { not: null } }],
+      },
+      orderBy: [{ completedAt: 'desc' }, { startedAt: 'desc' }],
+      include: {
+        issues: { include: { auditRun: true, rule: true }, orderBy: { displayCode: 'asc' } },
+      },
+    });
+    if (!run) throw new NotFoundException(`No completed audit run for file ${fileIdOrCode}`);
+    return serializeRun(run);
+  }
+
   private async createExport(
     kind: string,
     format: string,

@@ -10,11 +10,18 @@ export function AppShell({
   process,
   sidebar,
   topBarAccessory,
+  contentScrolls = true,
   children,
 }: {
   process?: AuditProcess | undefined;
   sidebar?: ReactNode;
   topBarAccessory?: ReactNode;
+  // Set to false when the page renders its own internal scroll region
+  // (e.g. EscalationCenter's manager list has sticky header + scrolling
+  // rows). With this off, <main> is overflow-hidden and the page itself
+  // doesn't scroll as a whole — the inner region handles it. Default true
+  // preserves existing behaviour for every other page.
+  contentScrolls?: boolean;
   children: ReactNode;
 }) {
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
@@ -65,7 +72,7 @@ export function AppShell({
             </aside>
           )
         ) : null}
-        <main className={`flex min-w-0 flex-1 flex-col ${sidebar ? 'overflow-hidden' : 'overflow-y-auto'}`}>{children}</main>
+        <main className={`flex min-w-0 flex-1 flex-col ${sidebar || !contentScrolls ? 'overflow-hidden' : 'overflow-y-auto'}`}>{children}</main>
       </div>
     </div>
   );

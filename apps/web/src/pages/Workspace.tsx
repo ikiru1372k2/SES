@@ -35,6 +35,7 @@ export function Workspace() {
   const processes = useAppStore((state) => state.processes);
   const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
   const hydrateFunctionWorkspace = useAppStore((state) => state.hydrateFunctionWorkspace);
+  const hydrateLatestAuditResult = useAppStore((state) => state.hydrateLatestAuditResult);
   const fileDrafts = useAppStore((state) => state.fileDrafts);
   const promoteFileDraft = useAppStore((state) => state.promoteFileDraft);
   const discardFileDraft = useAppStore((state) => state.discardFileDraft);
@@ -114,6 +115,20 @@ export function Workspace() {
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams, setWorkspaceTab, tabFromUrl]);
+
+  // When the user lands on the Audit Results tab without an in-session
+  // result (deep link from the Escalation Center, bookmarked URL, hard
+  // refresh, …) fetch the latest completed run from the server. The
+  // store action no-ops if `currentAuditResult` is already populated for
+  // this file, so this is safe to fire on every render of the results tab.
+  useEffect(() => {
+    if (tab !== 'results') return;
+    if (!processRecordId) return;
+    const targetFileId = process?.activeFileId
+      ?? process?.files.find((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId)?.id;
+    if (!targetFileId) return;
+    void hydrateLatestAuditResult(processRecordId, targetFileId);
+  }, [tab, processRecordId, process?.activeFileId, process?.files, functionId, hydrateLatestAuditResult]);
 
   // Subscribe to realtime updates for this process. The hook accepts either
   // a PRC-* display code or a UUID; the server resolves either. When the

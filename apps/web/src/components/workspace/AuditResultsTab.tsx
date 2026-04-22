@@ -1,6 +1,7 @@
 import { CheckCircle2, ChevronRight, Circle, Settings, X } from 'lucide-react';
-import { Fragment, FormEvent, useMemo, useRef, useState } from 'react';
+import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
+import { useSearchParams } from 'react-router-dom';
 import {
   getFunctionLabel,
   isFunctionId,
@@ -113,7 +114,27 @@ function issueRuleKey(issue: AuditIssue): string {
 }
 
 export function AuditResultsTab({ process, file }: { process: AuditProcess; file?: WorkbookFile | undefined }) {
-  const result = useAppStore((state) => state.currentAuditResult);
+  // The Zustand `currentAuditResult` is only populated by an interactive
+  // run from this same browser session — it gets cleared whenever the user
+  // navigates between processes or functions (see useAppStore lines 321,
+  // 388, hydrateFunctionWorkspace, etc.). When the user lands here from
+  // an "Open evidence" link in the Escalation Center, that state is null
+  // and the tab would otherwise show "No audit run yet" even though the
+  // findings exist on the server. Fall back to (a) the process-level
+  // cached result that runAudit writes when it completes, then to (b) the
+  // most recent saved version. PreviewTab already follows the same
+  // pattern (Workspace.tsx:198,213).
+  const liveResult = useAppStore((state) => state.currentAuditResult);
+  const result = useMemo(() => {
+    if (liveResult && (!file || liveResult.fileId === file.id)) return liveResult;
+    if (process.latestAuditResult && (!file || process.latestAuditResult.fileId === file.id)) {
+      return process.latestAuditResult;
+    }
+    // process.versions is sorted newest-first elsewhere; index 0 is latest.
+    const latestVersion = process.versions?.[0]?.result;
+    if (latestVersion && (!file || latestVersion.fileId === file.id)) return latestVersion;
+    return null;
+  }, [liveResult, file, process.latestAuditResult, process.versions]);
   const runAudit = useAppStore((state) => state.runAudit);
   const addIssueComment = useAppStore((state) => state.addIssueComment);
   const deleteIssueComment = useAppStore((state) => state.deleteIssueComment);
@@ -131,6 +152,73 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   const searchRef = useRef<HTMLInputElement>(null);
   useKeyboardShortcut('/', () => searchRef.current?.focus(), Boolean(result));
   const policyChanged = Boolean(result && isPolicyChanged(process.auditPolicy, result.policySnapshot));
+
+  // Deep-link highlight: when the user arrived via `?issue=<issueKey>`
+  // (e.g. clicking "Open evidence" in the Escalation Center), find the
+  // matching row, clear filters that would hide it, expand it, scroll
+  // it into view, and flash a ring around it.
+  //
+  // The scroll is tricky because the result may arrive asynchronously
+  // (hydrateLatestAuditResult) AND the row is only rendered after we
+  // expand it. An effect that depends on `highlightedRowId` fires
+  // synchronously after state update but BEFORE the row has mounted, so
+  // `ref.current` is still null at that moment. The workaround is a
+  // callback ref — React invokes it the instant the <tr> attaches to
+  // the DOM, which is exactly when we can scroll.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightIssueKey = searchParams.get('issue');
+  const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
+  const [flashRowId, setFlashRowId] = useState<string | null>(null);
+  const scrollPerformedRef = useRef<string | null>(null);
+
+  // Callback ref: React calls this with the <tr> node when it mounts,
+  // and with `null` when it unmounts. We use the mount call to trigger
+  // the scroll exactly once per deep link (tracked by scrollPerformedRef
+  // so switching highlight targets later still works, but repeat
+  // renders of the same target don't keep scrolling).
+  //
+  // IMPORTANT: use element.scrollIntoView — not window.scrollTo — because
+  // the actual scroll container here is a flex child of <main> with
+  // `overflow-y-auto` (see TabPanel.tsx). The window doesn't scroll at
+  // all. scrollIntoView walks up the ancestor chain to the nearest
+  // scrollable parent on its own, so it just works.
+  const attachHighlightRef = (node: HTMLTableRowElement | null) => {
+    if (!node || !highlightedRowId) return;
+    if (scrollPerformedRef.current === highlightedRowId) return;
+    scrollPerformedRef.current = highlightedRowId;
+    // Delay one frame so the expanded detail panel also mounts and the
+    // browser can include it in the scroll bounds. Without this, the
+    // expanded detail renders below the fold after we scroll.
+    requestAnimationFrame(() => {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  };
+
+  useEffect(() => {
+    if (!highlightIssueKey || !result) return;
+    const target = result.issues.find((issue) => issue.issueKey === highlightIssueKey);
+    if (!target) return; // Result loaded but issue not in it (yet / anymore). Wait or give up quietly.
+    // Found — latch, clear filters, expand, consume the URL param.
+    setHighlightedRowId(target.id);
+    setFlashRowId(target.id);
+    setSeverity('');
+    setCategory('');
+    setStatus('');
+    setSearch('');
+    setExpanded(target.id);
+    const next = new URLSearchParams(searchParams);
+    next.delete('issue');
+    setSearchParams(next, { replace: true });
+  }, [highlightIssueKey, result, searchParams, setSearchParams]);
+
+  // Auto-dismiss the amber flash after a few seconds so it doesn't stick
+  // around forever. The expanded state stays (the user may want to read
+  // the details), but the visual attention-grabber fades out.
+  useEffect(() => {
+    if (!flashRowId) return;
+    const t = window.setTimeout(() => setFlashRowId(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [flashRowId]);
 
   // Detect a stale result: either the result belongs to a different file
   // (user switched files without re-running), or the rule codes in the
@@ -379,7 +467,11 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
               <tbody>
                 {filtered.map((issue) => (
                   <Fragment key={issue.id}>
-                    <tr onClick={() => setExpanded(expanded === issue.id ? '' : issue.id)} className="group cursor-pointer border-t border-gray-100 align-top even:bg-gray-50/60 hover:bg-gray-100 dark:border-gray-700 dark:even:bg-gray-900/40 dark:hover:bg-gray-700">
+                    <tr
+                      ref={highlightedRowId === issue.id ? attachHighlightRef : null}
+                      onClick={() => setExpanded(expanded === issue.id ? '' : issue.id)}
+                      className={`group cursor-pointer border-t border-gray-100 align-top even:bg-gray-50/60 hover:bg-gray-100 dark:border-gray-700 dark:even:bg-gray-900/40 dark:hover:bg-gray-700 ${flashRowId === issue.id ? 'bg-amber-100 dark:bg-amber-900/40 ring-2 ring-amber-500 ring-inset' : ''}`}
+                    >
                       <td className="p-3"><div className="flex items-center gap-2"><ChevronRight size={15} className={`transition ${expanded === issue.id ? 'rotate-90' : ''}`} /><Badge tone={severityTone[issue.severity]}>{issue.severity}</Badge></div></td>
                       <td className="p-3">{issue.projectNo}</td>
                       <td className="p-3">{issue.projectName}</td>

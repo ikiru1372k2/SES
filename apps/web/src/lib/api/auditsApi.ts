@@ -55,3 +55,19 @@ export async function fetchAuditIssues(runIdOrCode: string): Promise<ApiAuditRun
   if (!res.ok) throw await parseApiError(res, 'Failed to load issues');
   return (await res.json()) as ApiAuditRunIssue[];
 }
+
+// Latest completed audit run for a file. Returns null when the server has
+// no completed run yet (404), so callers can render the "No audit run yet"
+// empty state without surfacing an error toast. Other failures still throw.
+export async function fetchLatestAuditRunForFile(
+  processIdOrCode: string,
+  fileIdOrCode: string,
+): Promise<ApiAuditRunSummary | null> {
+  const res = await fetch(
+    `/api/v1/processes/${encodeURIComponent(processIdOrCode)}/files/${encodeURIComponent(fileIdOrCode)}/audit-runs/latest`,
+    { credentials: 'include' },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) throw await parseApiError(res, 'Failed to load latest audit run');
+  return (await res.json()) as ApiAuditRunSummary;
+}
