@@ -141,8 +141,24 @@ build_domain() {
 }
 
 start_dev_servers() {
-  log "Starting web (3210) + API (3211) — Ctrl+C to stop"
-  exec npm run dev
+  local web_port=3210
+  local api_port=3211
+  local lan_ip="${DEV_HOST_IP:-192.168.68.127}"
+  local base_origins="http://127.0.0.1:${web_port},http://localhost:${web_port},http://${lan_ip}:${web_port}"
+
+  if [[ -n "${SES_CORS_ORIGINS:-}" ]]; then
+    export SES_CORS_ORIGINS="${SES_CORS_ORIGINS},${base_origins}"
+  else
+    export SES_CORS_ORIGINS="${base_origins}"
+  fi
+  export HOST="0.0.0.0"
+
+  log "Starting web (${web_port}) + API (${api_port}) — Ctrl+C to stop"
+  step "Web: http://localhost:${web_port} and http://${lan_ip}:${web_port}"
+  step "API: http://localhost:${api_port} and http://${lan_ip}:${api_port}"
+  exec npx concurrently -k -n api,web -c blue,green \
+    "npm run start:dev --workspace @ses/api" \
+    "npm run dev:lan --workspace @ses/web"
 }
 
 reset_database() {
