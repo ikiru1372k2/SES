@@ -61,7 +61,6 @@ export function Workspace() {
 
   const rawManagerNames = useMemo(() => {
     if (!process) return [];
-    const functionFiles = process.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId);
     const auditResult = result ?? process.versions[0]?.result ?? null;
     const names = new Set<string>();
     for (const issue of auditResult?.issues ?? []) {
@@ -70,7 +69,7 @@ export function Workspace() {
       if (!isValidEmail(issue.email)) names.add(n);
     }
     return [...names];
-  }, [process, functionId, result]);
+  }, [process, result]);
 
   // Issue #74: unmapped-manager banner is a React Query rather than a
   // manual effect so any `directory.updated` realtime event or explicit

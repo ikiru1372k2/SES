@@ -1,8 +1,18 @@
+import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { Workspace } from '../Workspace';
 import type { AuditProcess, AuditVersion, WorkbookFile } from '../../lib/types';
+
+// Issue #74: Workspace now uses useQuery for the unmapped-manager banner,
+// so tests must wrap it in a QueryClientProvider. Retries off to keep
+// failures deterministic.
+function withQueryClient(ui: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
 
 const policy = {
   highEffortThreshold: 900,
@@ -97,11 +107,13 @@ describe('Workspace', () => {
     vi.mocked(useAppStore).mockImplementation((selector) => selector({ ...baseStore } as never));
 
     render(
-      <MemoryRouter initialEntries={['/processes/p-ws/over-planning']}>
-        <Routes>
-          <Route path="/processes/:processId/:functionId" element={<Workspace />} />
-        </Routes>
-      </MemoryRouter>,
+      withQueryClient(
+        <MemoryRouter initialEntries={['/processes/p-ws/over-planning']}>
+          <Routes>
+            <Route path="/processes/:processId/:functionId" element={<Workspace />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
     );
 
     expect(screen.getByText('hydrated.xlsx')).toBeInTheDocument();
@@ -122,11 +134,13 @@ describe('Workspace', () => {
     );
 
     render(
-      <MemoryRouter initialEntries={['/processes/p-ws/over-planning']}>
-        <Routes>
-          <Route path="/processes/:processId/:functionId" element={<Workspace />} />
-        </Routes>
-      </MemoryRouter>,
+      withQueryClient(
+        <MemoryRouter initialEntries={['/processes/p-ws/over-planning']}>
+          <Routes>
+            <Route path="/processes/:processId/:functionId" element={<Workspace />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
     );
 
     expect(screen.getByText(/Unsaved draft available/i)).toBeInTheDocument();

@@ -3,8 +3,6 @@ import type {
   AuditProcess,
   IssueAcknowledgment,
   NotificationComposeTemplate,
-  ProjectTrackingStage,
-  ProjectTrackingStatus,
   TrackingChannel,
   TrackingEntry,
   WorkbookFile,

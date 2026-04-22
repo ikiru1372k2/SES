@@ -198,7 +198,10 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
     if (!highlightIssueKey || !result) return;
     const target = result.issues.find((issue) => issue.issueKey === highlightIssueKey);
     if (!target) return; // Result loaded but issue not in it (yet / anymore). Wait or give up quietly.
-    // Found — latch, clear filters, expand, consume the URL param.
+    // Found — latch, clear filters, expand, consume the URL param. Deliberate
+    // one-shot effect consuming `?issue=` from the URL; not a sync with an
+    // external system, so the set-state-in-effect rule doesn't apply here.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setHighlightedRowId(target.id);
     setFlashRowId(target.id);
     setSeverity('');
@@ -206,6 +209,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
     setStatus('');
     setSearch('');
     setExpanded(target.id);
+    /* eslint-enable react-hooks/set-state-in-effect */
     const next = new URLSearchParams(searchParams);
     next.delete('issue');
     setSearchParams(next, { replace: true });
@@ -303,7 +307,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
       .filter(({ blob }) => !query || blob.includes(query))
       .map(({ issue }) => issue)
       .sort((a, b) => String(a[sort] ?? '').localeCompare(String(b[sort] ?? '')));
-  }, [searchIndex, severity, sheet, status, category, search, sort, file?.functionId]);
+  }, [searchIndex, severity, sheet, status, category, search, sort, file]);
 
   const sheets = result ? [...new Set(result.issues.map((issue) => issue.sheetName))] : [];
   const hasSelected = Boolean(file?.sheets.some((item) => item.status === 'valid' && item.isSelected));

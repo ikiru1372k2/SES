@@ -31,7 +31,7 @@ describe('ManagerTable', () => {
 
     render(
       <ManagerTable
-        processId="p1"
+        now={0}
         rows={rows}
         selectedTrackingIds={new Set()}
         onToggleTracking={vi.fn()}
@@ -59,7 +59,7 @@ describe('ManagerTable', () => {
 
     render(
       <ManagerTable
-        processId="p1"
+        now={0}
         rows={rows}
         selectedTrackingIds={new Set()}
         onToggleTracking={vi.fn()}
@@ -90,7 +90,7 @@ describe('ManagerTable', () => {
 
     render(
       <ManagerTable
-        processId="p1"
+        now={0}
         rows={rows}
         selectedTrackingIds={new Set()}
         onToggleTracking={vi.fn()}

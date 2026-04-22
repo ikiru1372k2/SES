@@ -14,7 +14,12 @@ import { useLocation } from 'react-router-dom';
  */
 export function useAutosaveOnLeave(flush: () => void | Promise<void>, enabled: boolean = true): void {
   const flushRef = useRef(flush);
-  flushRef.current = flush;
+  // React purity rule: never mutate a ref during render. Sync through an
+  // effect so the unload listeners still call the latest callback without
+  // touching `.current` in the render phase.
+  useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
   const location = useLocation();
   const lastPath = useRef(location.pathname + location.search);
 

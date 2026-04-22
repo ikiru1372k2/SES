@@ -164,7 +164,7 @@ export function EscalationCenter() {
       if (needsVerification && !(row.stage === 'RESOLVED' && !row.verifiedAt)) return false;
       return true;
     });
-  }, [assignedToMe, currentTime, currentUser?.email, engine, needsVerification, q.data?.rows, selectedStages, sla]);
+  }, [assignedToMe, currentTime, currentUser, engine, needsVerification, q.data?.rows, selectedStages, sla]);
 
   const toggleStage = (stage: string) => {
     const next = new Set(selectedStages);
@@ -399,8 +399,8 @@ export function EscalationCenter() {
             </div>
             <div className="flex min-w-0 flex-1 flex-col">
               <ManagerTable
-                processId={process.id}
                 rows={filteredRows}
+                now={currentTime}
                 selectedTrackingIds={selectedTrackingIds}
                 onToggleTracking={(trackingId) => {
                   setSelectedTrackingIds((prev) => {

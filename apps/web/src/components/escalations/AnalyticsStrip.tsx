@@ -4,7 +4,9 @@ import { AlertTriangle, CheckCircle2, Clock, Flame, Mail, Users } from 'lucide-r
 
 interface Props {
   rows: ProcessEscalationManagerRow[];
-  now?: number;
+  /** Caller-supplied "now" in ms — lets the parent drive ticking via a state
+   *  update without this component calling the impure `Date.now()` in render. */
+  now: number;
 }
 
 /**
@@ -18,7 +20,7 @@ interface Props {
  * who's the worst offender. Anything more belongs on a separate
  * analytics page.
  */
-export function AnalyticsStrip({ rows, now = Date.now() }: Props) {
+export function AnalyticsStrip({ rows, now }: Props) {
   const analytics = useMemo(() => {
     const total = rows.length;
     let openFindings = 0;
