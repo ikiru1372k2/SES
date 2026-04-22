@@ -59,6 +59,8 @@ import { TrackingComposeController } from './tracking-compose/tracking-compose.c
 import { TrackingComposeService } from './tracking-compose/tracking-compose.service';
 import { TrackingStageController } from './tracking-stage/tracking-stage.controller';
 import { TrackingStageService } from './tracking-stage/tracking-stage.service';
+import { TrackingAttachmentsController } from './tracking-attachments/tracking-attachments.controller';
+import { TrackingAttachmentsService } from './tracking-attachments/tracking-attachments.service';
 import { OutboundDeliveryService } from './outbound/outbound-delivery.service';
 import { TrackingBulkController } from './tracking-bulk.controller';
 import { TrackingBulkService } from './tracking-bulk.service';
@@ -103,6 +105,7 @@ import { SlaEngineService } from './sla-engine.service';
     EscalationTemplatesController,
     TrackingComposeController,
     TrackingStageController,
+    TrackingAttachmentsController,
     TrackingBulkController,
     InAppNotificationsController,
     SavedViewsController,
@@ -144,6 +147,7 @@ import { SlaEngineService } from './sla-engine.service';
     EscalationTemplatesService,
     TrackingComposeService,
     TrackingStageService,
+    TrackingAttachmentsService,
     TrackingBulkService,
     InAppNotificationsService,
     SavedViewsService,

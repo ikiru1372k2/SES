@@ -78,6 +78,7 @@ model User {
   trackingDraftLocks TrackingEntry[] @relation("TrackingDraftLock")
   trackingVerifications TrackingEntry[] @relation("TrackingVerifier")
   trackingStageComments TrackingStageComment[] @relation("TrackingStageCommentBy")
+  trackingAttachments TrackingAttachment[] @relation("TrackingAttachmentBy")
 }
 
 model Process {
@@ -473,6 +474,7 @@ model TrackingEntry {
   verifiedBy     User?    @relation("TrackingVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
   notificationLogs NotificationLog[]
   stageComments  TrackingStageComment[]
+  attachments    TrackingAttachment[]
 
   @@unique([processId, managerKey])
   @@index([processId, stage, slaDueAt])
@@ -499,6 +501,30 @@ model TrackingStageComment {
 
   @@index([trackingEntryId, stage])
   @@index([trackingEntryId, createdAt])
+}
+
+/// Issue #77: inline-BYTEA attachments tied to a TrackingEntry. Evidence
+/// auditors upload (screenshots, forwarded manager replies, policy docs,
+/// correction PDFs). Soft-deleted via `deletedAt` for an append-only audit
+/// trail; callers must always filter on `deletedAt IS NULL`.
+model TrackingAttachment {
+  id              String        @id
+  displayCode     String        @unique
+  trackingEntryId String
+  uploadedById    String
+  fileName        String
+  mimeType        String
+  sizeBytes       Int
+  content         Bytes
+  comment         String        @default("")
+  createdAt       DateTime      @default(now())
+  deletedAt       DateTime?
+
+  trackingEntry   TrackingEntry @relation(fields: [trackingEntryId], references: [id], onDelete: Cascade)
+  uploadedBy      User          @relation("TrackingAttachmentBy", fields: [uploadedById], references: [id])
+
+  @@index([trackingEntryId])
+  @@index([trackingEntryId, deletedAt])
 }
 
 model TrackingEvent {

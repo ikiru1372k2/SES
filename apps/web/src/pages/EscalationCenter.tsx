@@ -120,6 +120,9 @@ export function EscalationCenter() {
         // Invalidate any open tracking-events queries too so the timeline
         // auto-advances when the SLA cron transitions a stage.
         void queryClient.invalidateQueries({ queryKey: ['tracking-events'] });
+        // Issue #77: attachments list rides on the same tracking.updated
+        // channel so a sibling auditor's upload shows up live.
+        void queryClient.invalidateQueries({ queryKey: ['tracking-attachments'] });
       } else if (envelope.event === 'directory.updated') {
         // Issue #74: a Manager Directory mutation (inline-add, alias,
         // merge, archive, delete) invalidates the "unmapped manager"

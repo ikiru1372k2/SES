@@ -5,6 +5,7 @@ import { BadgeCheck } from 'lucide-react';
 import type { ProcessEscalationManagerRow } from '@ses/domain';
 import { verifyTracking } from '../../lib/api/trackingStageApi';
 import { ActivityFeed } from './ActivityFeed';
+import { AttachmentsTab } from './AttachmentsTab';
 import { Composer } from './Composer';
 import { FindingsTab } from './FindingsTab';
 
@@ -121,11 +122,10 @@ export function EscalationPanel({
             <button
               key={id}
               type="button"
-              disabled={id === 'attachments'}
               onClick={() => setTab(id)}
               className={`flex-1 px-2 py-2 font-medium ${
                 tab === id ? 'border-b-2 border-brand text-brand' : 'text-gray-500'
-              } disabled:cursor-not-allowed disabled:opacity-50`}
+              }`}
             >
               {label}
             </button>
@@ -138,7 +138,7 @@ export function EscalationPanel({
             <ActivityFeed trackingIdOrCode={row.trackingId ?? row.trackingDisplayCode} row={row} />
           ) : null}
           {tab === 'attachments' ? (
-            <p className="text-sm text-gray-500">Attachments will be available in a later release.</p>
+            <AttachmentsTab trackingIdOrCode={row.trackingId ?? row.trackingDisplayCode} />
           ) : null}
         </div>
         {canVerify && trackingRef ? (
