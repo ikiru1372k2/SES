@@ -68,6 +68,8 @@ export class EscalationsService {
         resolved: true,
         lastContactAt: true,
         slaDueAt: true,
+        verifiedAt: true,
+        verifiedBy: { select: { displayName: true } },
         outlookCount: true,
         teamsCount: true,
         draftLockExpiresAt: true,
@@ -106,6 +108,8 @@ export class EscalationsService {
           escalationLevel: t.escalationLevel,
           draftLockExpiresAt: t.draftLockExpiresAt?.toISOString() ?? null,
           draftLockUserDisplayName: t.draftLockUser?.displayName ?? null,
+          verifiedAt: t.verifiedAt?.toISOString() ?? null,
+          verifiedByName: t.verifiedBy?.displayName ?? null,
         },
       ]),
     );
@@ -121,6 +125,8 @@ export class EscalationsService {
         escalationLevel: extra?.escalationLevel ?? 0,
         draftLockExpiresAt: extra?.draftLockExpiresAt ?? null,
         draftLockUserDisplayName: extra?.draftLockUserDisplayName ?? null,
+        verifiedAt: extra?.verifiedAt ?? null,
+        verifiedByName: extra?.verifiedByName ?? null,
       };
     });
 

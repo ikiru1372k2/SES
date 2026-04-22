@@ -123,4 +123,9 @@ export class IdentifierService {
     const value = await this.nextSequence(tx, 'MDR', 'tenant');
     return `MDR-${pad(value, 6)}`;
   }
+
+  async nextStageCommentCode(tx: TxLike): Promise<string> {
+    const value = await this.nextSequence(tx, 'TSC');
+    return `TSC-${pad(value, 9)}`;
+  }
 }

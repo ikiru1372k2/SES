@@ -1,11 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
+import type { ProcessEscalationManagerRow } from '@ses/domain';
 import { fetchTrackingEvents } from '../../lib/api/escalationsApi';
+import { StageGraph } from './StageGraph';
 import { TrackingTimeline } from './TrackingTimeline';
 
 // Thin container — the rendering lives in the reusable TrackingTimeline
 // so both this panel and anywhere else that wants an activity feed can
-// use the same presentation.
-export function ActivityFeed({ trackingIdOrCode }: { trackingIdOrCode: string | null }) {
+// use the same presentation. Issue #76 adds a StageGraph on top to give
+// auditors a one-glance read on where the ladder is at.
+export function ActivityFeed({
+  trackingIdOrCode,
+  row,
+}: {
+  trackingIdOrCode: string | null;
+  row?: ProcessEscalationManagerRow | null;
+}) {
   const q = useQuery({
     queryKey: ['tracking-events', trackingIdOrCode],
     queryFn: () => fetchTrackingEvents(trackingIdOrCode!),
@@ -20,21 +29,25 @@ export function ActivityFeed({ trackingIdOrCode }: { trackingIdOrCode: string | 
   if (!trackingIdOrCode) {
     return <p className="text-sm text-gray-500">No tracking record for this manager.</p>;
   }
-  if (q.isLoading) {
-    return (
-      <ol className="relative space-y-3 pl-6">
-        <span aria-hidden className="absolute left-[11px] top-2 h-[calc(100%-1rem)] w-px bg-gray-200 dark:bg-gray-800" />
-        {[0, 1, 2].map((i) => (
-          <li key={i} className="relative">
-            <span className="absolute -left-[20px] top-0 inline-block h-6 w-6 animate-pulse rounded-full bg-gray-200 dark:bg-gray-800" />
-            <div className="h-16 animate-pulse rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
-          </li>
-        ))}
-      </ol>
-    );
-  }
-  if (q.isError) {
-    return <p className="text-sm text-red-600">{(q.error as Error).message}</p>;
-  }
-  return <TrackingTimeline events={q.data ?? []} />;
+
+  return (
+    <div className="space-y-4">
+      {row ? <StageGraph row={row} trackingIdOrCode={trackingIdOrCode} /> : null}
+      {q.isLoading ? (
+        <ol className="relative space-y-3 pl-6">
+          <span aria-hidden className="absolute left-[11px] top-2 h-[calc(100%-1rem)] w-px bg-gray-200 dark:bg-gray-800" />
+          {[0, 1, 2].map((i) => (
+            <li key={i} className="relative">
+              <span className="absolute -left-[20px] top-0 inline-block h-6 w-6 animate-pulse rounded-full bg-gray-200 dark:bg-gray-800" />
+              <div className="h-16 animate-pulse rounded-lg border border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900" />
+            </li>
+          ))}
+        </ol>
+      ) : q.isError ? (
+        <p className="text-sm text-red-600">{(q.error as Error).message}</p>
+      ) : (
+        <TrackingTimeline events={q.data ?? []} />
+      )}
+    </div>
+  );
 }

@@ -69,6 +69,9 @@ export function EscalationCenter() {
   const engine = (search.get('engine') as FunctionId) || '';
   const sla = (search.get('sla') as SlaFilter) || 'all';
   const assignedToMe = search.get('mine') === '1';
+  // Issue #76: surface RESOLVED-but-unverified rows so auditors can finish
+  // the verification step without hunting for them.
+  const needsVerification = search.get('needsVerification') === '1';
 
   const selectedStages = useMemo(() => parseStagesParam(search.get('stages')), [search]);
 
@@ -155,9 +158,10 @@ export function EscalationCenter() {
         const b = slaBucket(row, currentTime);
         if (b !== sla) return false;
       }
+      if (needsVerification && !(row.stage === 'RESOLVED' && !row.verifiedAt)) return false;
       return true;
     });
-  }, [assignedToMe, currentTime, currentUser?.email, engine, q.data?.rows, selectedStages, sla]);
+  }, [assignedToMe, currentTime, currentUser?.email, engine, needsVerification, q.data?.rows, selectedStages, sla]);
 
   const toggleStage = (stage: string) => {
     const next = new Set(selectedStages);
@@ -235,6 +239,18 @@ export function EscalationCenter() {
             </Link>
             <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Escalation Center</h1>
             <span className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setParam({ needsVerification: needsVerification ? null : '1' })}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium ${
+                needsVerification
+                  ? 'border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100'
+                  : 'border border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300'
+              }`}
+              title="Show only rows marked RESOLVED that still need auditor verification"
+            >
+              Needs verification
+            </button>
             <button
               type="button"
               onClick={() => {
