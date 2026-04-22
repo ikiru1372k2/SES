@@ -39,8 +39,8 @@ function slaCountdownLabel(row: ProcessEscalationManagerRow, now: number): strin
 }
 
 export function ManagerTable({
-  processId,
   rows,
+  now,
   selectedTrackingIds,
   onToggleTracking,
   onToggleAllVisible,
@@ -52,8 +52,9 @@ export function ManagerTable({
   engineFilter,
   onEngineFromPill,
 }: {
-  processId: string;
   rows: ProcessEscalationManagerRow[];
+  /** Supplied by the page so the table doesn't call `Date.now()` in render. */
+  now: number;
   selectedTrackingIds: Set<string>;
   onToggleTracking: (trackingId: string) => void;
   onToggleAllVisible: (trackingIds: string[]) => void;
@@ -65,7 +66,6 @@ export function ManagerTable({
   engineFilter: FunctionId | '';
   onEngineFromPill: (engine: FunctionId) => void;
 }) {
-  const now = Date.now();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [menuRow, setMenuRow] = useState<number | null>(null);
 

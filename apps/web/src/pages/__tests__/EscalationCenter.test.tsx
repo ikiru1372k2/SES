@@ -145,8 +145,12 @@ describe('EscalationCenter', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Escalation Center' })).toBeInTheDocument();
-    const openFindingsCell = screen.getByText('Open findings').parentElement!;
-    expect(within(openFindingsCell).getByText('4')).toBeInTheDocument();
+    // Two distinct places surface "Open findings" now: the AnalyticsStrip tile
+    // and the EscalationSummaryBar. Pick the summary-bar element specifically
+    // (the one inside a `text-gray-500` label) and assert its "4".
+    const openFindingsLabels = screen.getAllByText('Open findings');
+    const summaryBarLabel = openFindingsLabels.find((el) => el.tagName === 'DIV')!;
+    expect(within(summaryBarLabel.parentElement!).getByText('4')).toBeInTheDocument();
     expect(screen.getByText(/aren't in the directory/i)).toBeInTheDocument();
   });
 

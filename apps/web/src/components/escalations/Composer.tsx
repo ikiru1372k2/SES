@@ -104,16 +104,24 @@ export function Composer({
     return [];
   }, [row.escalationLevel]);
 
+  // Initialise CC from the escalation level when the selected manager changes
+  // (a different manager often means different stakeholders). Deliberate
+  // derived-state-on-external-change pattern.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCc(defaultCc);
   }, [defaultCc, row.managerKey]);
 
+  // Preselect the first template once templates finish loading — the
+  // dropdown is initialised from server data, not derivable at mount time.
   useEffect(() => {
     const t = templatesQ.data?.[0];
     if (!t) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
     setTemplateId(t.id);
     setSubject(t.subject);
     setBody(t.body);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [templatesQ.data]);
 
   // Refresh the resolved preview whenever we enter preview mode so the
@@ -121,6 +129,7 @@ export function Composer({
   useEffect(() => {
     if (viewMode !== 'preview' || !trackingRef) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPreviewLoading(true);
     const previewBody: Partial<ComposeDraftPayload> = {
       subject,
@@ -207,6 +216,48 @@ export function Composer({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Autosave-on-leave (Issue #74): silent flush of whatever the auditor has
+  // typed so far when the tab is hidden, the window unloads, or the route
+  // changes. Only fires when something has actually been edited (dirtyRef),
+  // and never when the drawer is read-only / locked by another user.
+  //
+  // Hooks MUST be called unconditionally and before any early return — the
+  // `readOnly` / `trackingRef` guards live inside the callback itself.
+  const dirtyRef = useRef(false);
+  useEffect(() => {
+    dirtyRef.current = true;
+  }, [subject, body, cc, removedEngines, templateId, authorNote, deadlineAt]);
+  const latestPayloadRef = useRef<ComposeDraftPayload>({
+    subject,
+    body,
+    cc,
+    removedEngineIds: [...removedEngines],
+    authorNote,
+    deadlineAt: deadlineAt || null,
+    ...(templateId ? { templateId } : {}),
+  });
+  useEffect(() => {
+    latestPayloadRef.current = {
+      subject,
+      body,
+      cc,
+      removedEngineIds: [...removedEngines],
+      authorNote,
+      deadlineAt: deadlineAt || null,
+      ...(templateId ? { templateId } : {}),
+    };
+  }, [subject, body, cc, removedEngines, templateId, authorNote, deadlineAt]);
+  useAutosaveOnLeave(async () => {
+    if (readOnly || !trackingRef || !dirtyRef.current) return;
+    if (!latestPayloadRef.current.body?.trim() && !latestPayloadRef.current.subject?.trim()) return;
+    try {
+      await saveComposeDraft(trackingRef, latestPayloadRef.current);
+      dirtyRef.current = false;
+    } catch {
+      // Autosave is best-effort — never interrupt the user's navigation.
+    }
+  }, Boolean(trackingRef));
+
   if (!trackingRef) {
     return <p className="text-sm text-amber-700">No tracking row yet — save tracking from the workspace first.</p>;
   }
@@ -257,27 +308,6 @@ export function Composer({
     deadlineAt: deadlineAt || null,
     ...(templateId ? { templateId } : {}),
   };
-
-  // Autosave-on-leave (Issue #74): silent flush of whatever the auditor has
-  // typed so far when the tab is hidden, the window unloads, or the route
-  // changes. Only fires when something has actually been edited (dirtyRef),
-  // and never when the drawer is read-only / locked by another user.
-  const dirtyRef = useRef(false);
-  useEffect(() => {
-    dirtyRef.current = true;
-  }, [subject, body, cc, removedEngines, templateId, authorNote, deadlineAt]);
-  const latestPayloadRef = useRef(payload);
-  latestPayloadRef.current = payload;
-  useAutosaveOnLeave(async () => {
-    if (readOnly || !trackingRef || !dirtyRef.current) return;
-    if (!latestPayloadRef.current.body?.trim() && !latestPayloadRef.current.subject?.trim()) return;
-    try {
-      await saveComposeDraft(trackingRef, latestPayloadRef.current);
-      dirtyRef.current = false;
-    } catch {
-      // Autosave is best-effort — never interrupt the user's navigation.
-    }
-  }, Boolean(trackingRef));
 
   const outlookGateReason = cycleComplete
     ? 'Cycle complete — resolve or force re-escalate.'

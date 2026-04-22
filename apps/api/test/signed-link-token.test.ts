@@ -51,8 +51,13 @@ describe('SignedLinkTokenService', () => {
       allowedActions: ['acknowledge'],
     });
     const [payloadPart, sigPart] = issued.token.split('.');
-    // Flip one character in the payload — signature no longer matches.
-    const flipped = payloadPart!.slice(0, -1) + (payloadPart!.slice(-1) === 'A' ? 'B' : 'A');
+    // Flip a character in the middle of the payload. Must NOT touch the last
+    // base64url char — for a 32-byte HMAC encoded as 43 chars the trailing
+    // char's low 2 bits are padding, so flipping A↔B there decodes to the
+    // same bytes and the test becomes flaky.
+    const i = Math.max(1, Math.floor(payloadPart!.length / 2));
+    const flippedChar = payloadPart![i] === 'A' ? 'B' : 'A';
+    const flipped = payloadPart!.slice(0, i) + flippedChar + payloadPart!.slice(i + 1);
     const tampered = `${flipped}.${sigPart}`;
     assert.equal(svc.verify(tampered), null);
   });
@@ -64,7 +69,11 @@ describe('SignedLinkTokenService', () => {
       allowedActions: ['acknowledge'],
     });
     const [payloadPart, sigPart] = issued.token.split('.');
-    const flipped = sigPart!.slice(0, -1) + (sigPart!.slice(-1) === 'X' ? 'Y' : 'X');
+    // Same reason as the payload-tamper test: flip a middle byte, not the
+    // trailing padding-bit char, so the decode genuinely differs.
+    const i = Math.max(1, Math.floor(sigPart!.length / 2));
+    const flippedChar = sigPart![i] === 'A' ? 'B' : 'A';
+    const flipped = sigPart!.slice(0, i) + flippedChar + sigPart!.slice(i + 1);
     const tampered = `${payloadPart}.${flipped}`;
     assert.equal(svc.verify(tampered), null);
   });

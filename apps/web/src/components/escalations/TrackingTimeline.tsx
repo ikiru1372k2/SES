@@ -107,7 +107,9 @@ export function TrackingTimeline({
   emptyLabel?: string;
 }) {
   const rendered = useMemo(() => events.map(summarize), [events]);
-  const now = useMemo(() => Date.now(), [events.length]);
+  // `relativeTime` already defaults `now` to `Date.now()` internally; we
+  // pass nothing here so the timeline re-evaluates per render without
+  // calling an impure function in the render body itself.
 
   if (!events.length) {
     return (
@@ -139,7 +141,7 @@ export function TrackingTimeline({
                   className="text-[11px] text-gray-500"
                   title={new Date(event.at).toLocaleString()}
                 >
-                  {relativeTime(event.at, now)}
+                  {relativeTime(event.at)}
                 </span>
               </div>
               {event.subtitle ? (
