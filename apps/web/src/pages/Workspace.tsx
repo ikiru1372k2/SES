@@ -1,5 +1,5 @@
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, Navigate, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Users } from 'lucide-react';
 import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, isValidEmail, type FunctionId } from '@ses/domain';
@@ -9,9 +9,8 @@ import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
 import { TabPanel } from '../components/workspace/TabPanel';
 import { PreviewTab } from '../components/workspace/PreviewTab';
 import { AuditResultsTab } from '../components/workspace/AuditResultsTab';
-import { TrackingTab } from '../components/workspace/TrackingTab';
-import { VersionHistoryTab } from '../components/workspace/VersionHistoryTab';
 import { DraftRestoreBanner } from '../components/workspace/DraftRestoreBanner';
+import { UnsavedAuditDialog } from '../components/workspace/UnsavedAuditDialog';
 import { AppShell } from '../components/layout/AppShell';
 import { PresenceBar } from '../components/shared/PresenceBar';
 import { useCurrentUser } from '../components/auth/authContext';
@@ -24,7 +23,17 @@ import { onRealtimeEvent } from '../realtime/socket';
 import { directorySuggestions } from '../lib/api/directoryApi';
 import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 
+// E5: cold tabs — Analytics, Version History, and the legacy Tracking tab
+// each pull sizable dependencies (recharts, per-tab logic). Most users hit
+// Preview + Audit Results only; the rest are worth lazy-loading so initial
+// workspace open doesn't pay their cost.
 const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
+const VersionHistoryTab = lazy(() =>
+  import('../components/workspace/VersionHistoryTab').then((module) => ({ default: module.VersionHistoryTab })),
+);
+const TrackingTab = lazy(() =>
+  import('../components/workspace/TrackingTab').then((module) => ({ default: module.TrackingTab })),
+);
 
 export function Workspace() {
   // New surface: /processes/:processId/:functionId — back-compat with old
@@ -151,6 +160,9 @@ export function Workspace() {
     onEvicted: () => navigate('/'),
   });
 
+  // Last-resort safety net for tab-close / hard-refresh / browser-back,
+  // which useBlocker can't intercept. The custom UnsavedAuditDialog below
+  // handles all in-app navigation — that's where the rich diff UI lives.
   useEffect(() => {
     if (!hasUnsavedAudit) return;
     const handler = (event: BeforeUnloadEvent) => {
@@ -160,6 +172,21 @@ export function Workspace() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedAudit]);
+
+  // Intercept in-app navigation (clicks on router Links / programmatic
+  // navigate()) and show the UnsavedAuditDialog with a rich diff summary.
+  const shouldBlock = useCallback<(args: { currentLocation: { pathname: string }; nextLocation: { pathname: string } }) => boolean>(
+    ({ currentLocation, nextLocation }) => {
+      if (!hasUnsavedAudit) return false;
+      // Same-pathname transitions (tab changes via URL search params) don't
+      // count as leaving the workspace.
+      if (currentLocation.pathname === nextLocation.pathname) return false;
+      return true;
+    },
+    [hasUnsavedAudit],
+  );
+  const blocker = useBlocker(shouldBlock);
+  const requestSaveAsNewVersion = useAppStore((state) => state.requestSaveAsNewVersion);
 
   if (hydrating) {
     return (
@@ -237,12 +264,16 @@ export function Workspace() {
         ) : null}
         {tab === 'tracking' && isLegacyTileTrackingTabEnabled() ? (
           <TabPanel scroll="split">
-            <TrackingTab process={scopedProcess} result={result ?? scopedProcess.versions[0]?.result ?? null} />
+            <Suspense fallback={<div className="p-5 text-sm text-gray-500">Loading tracking…</div>}>
+              <TrackingTab process={scopedProcess} result={result ?? scopedProcess.versions[0]?.result ?? null} />
+            </Suspense>
           </TabPanel>
         ) : null}
         {tab === 'versions' ? (
           <TabPanel>
-            <VersionHistoryTab process={scopedProcess} file={activeFile} functionId={functionId} />
+            <Suspense fallback={<div className="p-5 text-sm text-gray-500">Loading version history…</div>}>
+              <VersionHistoryTab process={scopedProcess} file={activeFile} functionId={functionId} />
+            </Suspense>
           </TabPanel>
         ) : null}
         {tab === 'analytics' ? (
@@ -272,6 +303,26 @@ export function Workspace() {
           }}
         />
       ) : null}
+      <UnsavedAuditDialog
+        open={blocker.state === 'blocked'}
+        process={process}
+        latestResult={result ?? process.latestAuditResult ?? null}
+        activeFileId={activeFile?.id}
+        onUpdate={() => {
+          // saveOverCurrentVersion has already run inside the dialog; we
+          // just need to resume navigation.
+          blocker.proceed?.();
+        }}
+        onSaveAsNew={() => {
+          // Open the Save-as-new modal owned by TopBar, then cancel the
+          // block so the user can interact with it. They can retry
+          // navigation once they've saved.
+          requestSaveAsNewVersion();
+          blocker.reset?.();
+        }}
+        onLeave={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
+      />
     </AppShell>
   );
 }

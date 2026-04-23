@@ -17,6 +17,23 @@ import type { RealtimeEnvelope } from './types';
 
 let socket: Socket | null = null;
 const envelopeListeners = new Set<(envelope: RealtimeEnvelope) => void>();
+// F5: surfaced so the UI can show a "Reconnecting…" pill. Listeners receive
+// the new connection state on every transition.
+export type RealtimeConnectionState = 'connected' | 'connecting' | 'disconnected';
+let connectionState: RealtimeConnectionState = 'connecting';
+const connectionListeners = new Set<(state: RealtimeConnectionState) => void>();
+
+function setConnectionState(next: RealtimeConnectionState): void {
+  if (connectionState === next) return;
+  connectionState = next;
+  for (const listener of connectionListeners) {
+    try {
+      listener(next);
+    } catch (err) {
+      console.error('[realtime] connection listener threw', err);
+    }
+  }
+}
 
 function ensureSocket(): Socket {
   if (socket) return socket;
@@ -48,7 +65,27 @@ function ensureSocket(): Socket {
     console.warn('[realtime] server error:', reason);
   });
 
+  socket.on('connect', () => setConnectionState('connected'));
+  socket.on('disconnect', () => setConnectionState('disconnected'));
+  socket.on('reconnect_attempt', () => setConnectionState('connecting'));
+  socket.io.on('reconnect_attempt', () => setConnectionState('connecting'));
+  socket.io.on('reconnect', () => setConnectionState('connected'));
+
   return socket;
+}
+
+export function getConnectionState(): RealtimeConnectionState {
+  ensureSocket();
+  return connectionState;
+}
+
+/** Subscribe to realtime connection-state transitions. Returns unsubscribe fn. */
+export function onConnectionState(listener: (state: RealtimeConnectionState) => void): () => void {
+  ensureSocket();
+  connectionListeners.add(listener);
+  return () => {
+    connectionListeners.delete(listener);
+  };
 }
 
 export function getSocket(): Socket {
@@ -71,4 +108,6 @@ export function disconnectSocket(): void {
   socket.disconnect();
   socket = null;
   envelopeListeners.clear();
+  connectionListeners.clear();
+  connectionState = 'disconnected';
 }

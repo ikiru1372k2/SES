@@ -9,6 +9,7 @@ import { downloadAuditedWorkbook } from '../../lib/excelParser';
 import type { AuditProcess, WorkbookFile } from '../../lib/types';
 import { selectCorrectionCount } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
+import { usePrompt } from '../shared/ConfirmProvider';
 import { EmptyState } from '../shared/EmptyState';
 import { MetricCard } from '../shared/MetricCard';
 
@@ -23,6 +24,7 @@ export function VersionHistoryTab({
 }) {
   const loadVersion = useAppStore((state) => state.loadVersion);
   const hydrateFunctionWorkspace = useAppStore((state) => state.hydrateFunctionWorkspace);
+  const prompt = usePrompt();
   const [fromId, setFromId] = useState(process.versions[1]?.versionId ?? process.versions[0]?.versionId ?? '');
   const [toId, setToId] = useState(process.versions[0]?.versionId ?? '');
   const [activeTab, setActiveTab] = useState<'newIssues' | 'resolvedIssues' | 'changedIssues'>('newIssues');
@@ -44,7 +46,18 @@ export function VersionHistoryTab({
               <p className="mt-1 text-xs text-gray-500">Source workbook snapshots are separate from saved audit versions.</p>
             </div>
             <button
-              onClick={() => void saveFileVersion(process, file, hydrateFunctionWorkspace)}
+              onClick={async () => {
+                const note = await prompt({
+                  title: 'Save source file version',
+                  description: 'Optional note for this snapshot of the raw workbook.',
+                  placeholder: 'e.g. Pre-month-end freeze',
+                  multiline: true,
+                  confirmLabel: 'Save file version',
+                });
+                if (note === null) return;
+                await createFileVersionOnApi(file.displayCode ?? file.id, note);
+                await hydrateFunctionWorkspace(process.id, (file.functionId ?? 'master-data') as FunctionId);
+              }}
               className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700"
             >
               Save file version
@@ -140,16 +153,6 @@ export function VersionHistoryTab({
       ) : null}
     </div>
   );
-}
-
-async function saveFileVersion(
-  process: AuditProcess,
-  file: WorkbookFile,
-  hydrateFunctionWorkspace: (processId: string, functionId: FunctionId) => Promise<void>,
-) {
-  const note = window.prompt('Optional note for this source file version', '') ?? '';
-  await createFileVersionOnApi(file.displayCode ?? file.id, note);
-  await hydrateFunctionWorkspace(process.id, (file.functionId ?? 'master-data') as FunctionId);
 }
 
 function formatBytes(bytes: number): string {

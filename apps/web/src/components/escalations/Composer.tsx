@@ -16,6 +16,7 @@ import {
 import { openMailto, openTeamsChat } from '../../lib/outbound/clientHandoff';
 import { useAutosaveOnLeave } from '../../hooks/useAutosaveOnLeave';
 import { Button } from '../shared/Button';
+import { useConfirm } from '../shared/ConfirmProvider';
 import { PreviewPane } from './PreviewPane';
 
 type SendChannel = 'email' | 'teams';
@@ -56,6 +57,7 @@ export function Composer({
   onDone: () => void;
 }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const trackingRef = row.trackingId ?? row.trackingDisplayCode;
 
   // Issue #75 — Composer defaults to Preview so the auditor reviews before
@@ -283,14 +285,26 @@ export function Composer({
     setCcInput('');
   }
 
-  function removeCc(email: string) {
-    if (!window.confirm('Remove this CC recipient? They may miss important context.')) return;
+  async function removeCc(email: string) {
+    const ok = await confirm({
+      title: `Remove ${email} from CC?`,
+      description: 'They may miss important context.',
+      confirmLabel: 'Remove',
+      tone: 'destructive',
+    });
+    if (!ok) return;
     setCc(cc.filter((c) => c !== email));
   }
 
-  function toggleEngineRemove(fid: FunctionId, count: number) {
+  async function toggleEngineRemove(fid: FunctionId, count: number) {
     if (!removedEngines.has(fid)) {
-      if (!window.confirm(`Remove ${fid} section? ${count} finding(s) still open in tracking.`)) return;
+      const ok = await confirm({
+        title: `Remove ${fid} section?`,
+        description: `${count} finding${count === 1 ? '' : 's'} still open in tracking.`,
+        confirmLabel: 'Remove',
+        tone: 'destructive',
+      });
+      if (!ok) return;
       setRemovedEngines(new Set([...removedEngines, fid]));
     } else {
       const n = new Set(removedEngines);
@@ -365,7 +379,7 @@ export function Composer({
             <span key={c} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">
               {c}
               {!readOnly ? (
-                <button type="button" className="text-gray-500 hover:text-red-600" onClick={() => removeCc(c)} aria-label={`Remove ${c}`}>
+                <button type="button" className="text-gray-500 hover:text-red-600" onClick={() => void removeCc(c)} aria-label={`Remove ${c}`}>
                   ×
                 </button>
               ) : null}
@@ -432,7 +446,7 @@ export function Composer({
                       className="ml-2 text-red-600 hover:underline"
                       onClick={(e) => {
                         e.preventDefault();
-                        toggleEngineRemove(fid, n);
+                        void toggleEngineRemove(fid, n);
                       }}
                     >
                       {open ? 'Remove' : 'Restore'}

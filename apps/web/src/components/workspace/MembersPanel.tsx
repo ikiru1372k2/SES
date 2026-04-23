@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import toast from 'react-hot-toast';
 import { addMember, listMembers, removeMember, type ProcessMemberRow } from '../../lib/api/membersApi';
 import { Button } from '../shared/Button';
+import { useConfirm } from '../shared/ConfirmProvider';
 import { Skeleton } from '../shared/Skeleton';
 
 type Permission = 'viewer' | 'editor' | 'owner';
@@ -29,6 +30,7 @@ export function MembersPanel({
   canManage: boolean;
   onClose: () => void;
 }) {
+  const confirm = useConfirm();
   const [members, setMembers] = useState<ProcessMemberRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState('');
@@ -65,7 +67,13 @@ export function MembersPanel({
   }
 
   async function kick(row: ProcessMemberRow) {
-    if (!window.confirm(`Remove ${row.displayName} from this process?`)) return;
+    const ok = await confirm({
+      title: `Remove ${row.displayName}?`,
+      description: 'They will lose access to this process immediately.',
+      confirmLabel: 'Remove',
+      tone: 'destructive',
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await removeMember(processIdOrCode, row.displayCode);

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { onRealtimeEvent } from '../realtime/socket';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCoalescedInvalidator } from '../hooks/useCoalescedInvalidator';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Megaphone, RefreshCw } from 'lucide-react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
@@ -54,7 +55,9 @@ export function EscalationCenter() {
 
   const [panelRow, setPanelRow] = useState<ProcessEscalationManagerRow | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // L4: track selection by managerKey, not row index — realtime reorders
+  // were previously jumping the keyboard cursor to a different manager.
+  const [selectedManagerKey, setSelectedManagerKey] = useState<string | null>(null);
   const [resolveOpen, setResolveOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [bulkComposerOpen, setBulkComposerOpen] = useState(false);
@@ -107,6 +110,10 @@ export function EscalationCenter() {
   // on this process. Previously the EscalationCenter only refetched on
   // user interaction; now it refetches quietly in the background so the
   // page always reflects the current system state.
+  // L10/E2: realtime bursts (bulk actions, SLA cron cascades) can emit
+  // many events per second. Coalesce per-key invalidations to 250ms so
+  // we do one refetch per key per burst instead of N.
+  const invalidate = useCoalescedInvalidator(queryClient, 250);
   useEffect(() => {
     if (!processId) return;
     const off = onRealtimeEvent((envelope) => {
@@ -116,23 +123,23 @@ export function EscalationCenter() {
         envelope.event === 'notification.sent' ||
         envelope.event === 'audit.completed'
       ) {
-        void queryClient.invalidateQueries({ queryKey: ['escalations', processId] });
+        invalidate(['escalations', processId]);
         // Invalidate any open tracking-events queries too so the timeline
         // auto-advances when the SLA cron transitions a stage.
-        void queryClient.invalidateQueries({ queryKey: ['tracking-events'] });
+        invalidate(['tracking-events']);
         // Issue #77: attachments list rides on the same tracking.updated
         // channel so a sibling auditor's upload shows up live.
-        void queryClient.invalidateQueries({ queryKey: ['tracking-attachments'] });
+        invalidate(['tracking-attachments']);
       } else if (envelope.event === 'directory.updated') {
         // Issue #74: a Manager Directory mutation (inline-add, alias,
         // merge, archive, delete) invalidates the "unmapped manager"
         // banner and may free a previously-blocked escalation for send.
-        void queryClient.invalidateQueries({ queryKey: ['escalations', processId] });
-        void queryClient.invalidateQueries({ queryKey: ['directory-suggestions'] });
+        invalidate(['escalations', processId]);
+        invalidate(['directory-suggestions']);
       }
     });
     return off;
-  }, [process?.displayCode, processId, queryClient]);
+  }, [invalidate, process?.displayCode, processId]);
 
   const stages = useMemo(() => {
     const rows = q.data?.rows ?? [];
@@ -419,8 +426,8 @@ export function EscalationCenter() {
                     return next;
                   });
                 }}
-                selectedIndex={selectedIndex}
-                onSelectIndex={setSelectedIndex}
+                selectedManagerKey={selectedManagerKey}
+                onSelectManagerKey={setSelectedManagerKey}
                 onOpenPanel={(row) => {
                   setPanelRow(row);
                   setPanelOpen(true);

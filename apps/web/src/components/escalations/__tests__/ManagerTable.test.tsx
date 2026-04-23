@@ -36,8 +36,8 @@ describe('ManagerTable', () => {
         selectedTrackingIds={new Set()}
         onToggleTracking={vi.fn()}
         onToggleAllVisible={vi.fn()}
-        selectedIndex={0}
-        onSelectIndex={vi.fn()}
+        selectedManagerKey={null}
+        onSelectManagerKey={vi.fn()}
         onOpenPanel={vi.fn()}
         sortKey="issues"
         onSortKey={onSortKey}
@@ -50,8 +50,8 @@ describe('ManagerTable', () => {
     expect(onSortKey).toHaveBeenCalledWith('stage');
   });
 
-  it('requests selection changes with j and k', () => {
-    const onSelectIndex = vi.fn();
+  it('requests selection changes with j and k (by manager key)', () => {
+    const onSelectManagerKey = vi.fn();
     const rows = [
       row({ managerKey: 'a', managerName: 'Ann', totalIssues: 2 }),
       row({ managerKey: 'b', managerName: 'Ben', totalIssues: 1 }),
@@ -64,8 +64,8 @@ describe('ManagerTable', () => {
         selectedTrackingIds={new Set()}
         onToggleTracking={vi.fn()}
         onToggleAllVisible={vi.fn()}
-        selectedIndex={0}
-        onSelectIndex={onSelectIndex}
+        selectedManagerKey="a"
+        onSelectManagerKey={onSelectManagerKey}
         onOpenPanel={vi.fn()}
         sortKey="issues"
         onSortKey={vi.fn()}
@@ -74,14 +74,15 @@ describe('ManagerTable', () => {
       />,
     );
 
+    // Sorted by issues desc: [Ann (2), Ben (1)]. Starting at key "a", j → "b", then k → "a".
     fireEvent.keyDown(window, { key: 'j' });
-    expect(onSelectIndex).toHaveBeenCalledWith(1);
-
+    expect(onSelectManagerKey).toHaveBeenCalledWith('b');
+    onSelectManagerKey.mockClear();
     fireEvent.keyDown(window, { key: 'k' });
-    expect(onSelectIndex).toHaveBeenCalledWith(0);
+    expect(onSelectManagerKey).toHaveBeenCalledWith('a');
   });
 
-  it('opens the panel for the row at selectedIndex on Enter', () => {
+  it('opens the panel for the selected manager key on Enter', () => {
     const onOpenPanel = vi.fn();
     const rows = [
       row({ managerKey: 'a', managerName: 'Ann', totalIssues: 2 }),
@@ -95,8 +96,8 @@ describe('ManagerTable', () => {
         selectedTrackingIds={new Set()}
         onToggleTracking={vi.fn()}
         onToggleAllVisible={vi.fn()}
-        selectedIndex={1}
-        onSelectIndex={vi.fn()}
+        selectedManagerKey="b"
+        onSelectManagerKey={vi.fn()}
         onOpenPanel={onOpenPanel}
         sortKey="issues"
         onSortKey={vi.fn()}

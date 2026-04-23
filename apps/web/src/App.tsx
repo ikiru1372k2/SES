@@ -1,9 +1,17 @@
 import { Toaster } from 'react-hot-toast';
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import {
+  Navigate,
+  Route,
+  RouterProvider,
+  createBrowserRouter,
+  createRoutesFromElements,
+  useParams,
+} from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DEFAULT_FUNCTION_ID } from '@ses/domain';
 import type { ReactNode } from 'react';
 import { AuthGate } from './components/auth/AuthGate';
+import { ConfirmProvider } from './components/shared/ConfirmProvider';
 import { CompareProcesses } from './components/dashboard/CompareProcesses';
 import { Dashboard } from './pages/Dashboard';
 import { Debug } from './pages/Debug';
@@ -109,64 +117,76 @@ const legacyWorkspaceRoutes: ProtectedRouteDefinition[] = [
   { path: '/processes/:processId/:functionId/compare', element: <ProcessesCompareRedirect /> },
 ];
 
-export default function App() {
+function buildRouter() {
   const tilesDashboard = isTilesDashboardEnabled();
   const workspaceRoutes = tilesDashboard ? tilesDashboardRoutes : legacyWorkspaceRoutes;
+  return createBrowserRouter(
+    createRoutesFromElements(
+      <>
+        <Route path="/login" element={<Login />} />
+        <Route path="/respond/:token" element={<ManagerResponse />} />
+        <Route
+          path="/admin/templates"
+          element={
+            <ProtectedRoute>
+              <EscalationTemplateAdmin />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        {renderProtectedRoutes(workspaceRoutes)}
+        <Route
+          path="/compare"
+          element={
+            <ProtectedRoute>
+              <CompareProcesses />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/debug"
+          element={
+            <ProtectedRoute>
+              <Debug />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/directory"
+          element={
+            <ProtectedRoute>
+              <AdminDirectory />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </>,
+    ),
+  );
+}
 
+// Build once at module load so the router (and its history stack) isn't
+// thrown away on every App re-render. Data routers are stateful — creating
+// a fresh one per render would drop blocker state and loader data.
+const router = buildRouter();
+
+export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/respond/:token" element={<ManagerResponse />} />
-          <Route
-            path="/admin/templates"
-            element={
-              <ProtectedRoute>
-                <EscalationTemplateAdmin />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-
-          {renderProtectedRoutes(workspaceRoutes)}
-
-          <Route
-            path="/compare"
-            element={
-              <ProtectedRoute>
-                <CompareProcesses />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/debug"
-            element={
-              <ProtectedRoute>
-                <Debug />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/directory"
-            element={
-              <ProtectedRoute>
-                <AdminDirectory />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-        <Toaster position="top-right" />
-      </BrowserRouter>
+      <ConfirmProvider>
+        <RouterProvider router={router} />
+        {/* Bottom-right avoids overlap with the TopBar's Save / Run actions,
+            which live top-right. Top-center was the pre-B6 default and the
+            toasts routinely covered the very buttons that triggered them. */}
+        <Toaster position="bottom-right" />
+      </ConfirmProvider>
     </QueryClientProvider>
   );
 }

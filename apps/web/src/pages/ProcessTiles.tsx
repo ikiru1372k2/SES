@@ -8,6 +8,7 @@ import { ProcessDashboardBanner } from '../components/escalations/ProcessDashboa
 import { TileEscalationChip } from '../components/escalations/TileEscalationChip';
 import { FunctionTile } from '../components/tiles/FunctionTile';
 import { RequestFunctionAuditTile } from '../components/tiles/RequestFunctionAuditTile';
+import { Skeleton } from '../components/shared/Skeleton';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
 import { fetchProcessTiles, type ApiTiles } from '../lib/api/tilesApi';
 import { workspacePath } from '../lib/processRoutes';
@@ -55,6 +56,9 @@ export function ProcessTiles() {
   if (!processId) return <Navigate to="/" replace />;
 
   const tiles = tilesQuery.data ?? EMPTY_TILES;
+  // Show a skeleton on first load only — once we have data (even stale), keep
+  // rendering the real tiles so a background refetch doesn't flash the grid.
+  const showSkeleton = tilesQuery.isLoading && !tilesQuery.data;
 
   return (
     <AppShell process={process ?? undefined}>
@@ -89,27 +93,31 @@ export function ProcessTiles() {
           <ProcessDashboardBanner processId={process.displayCode ?? process.id} summary={escalationsQuery.data?.summary} />
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {FUNCTION_REGISTRY.map((fn) => (
-            <FunctionTile
-              key={fn.id}
-              functionId={fn.id as FunctionId}
-              label={fn.label}
-              stats={tiles[fn.id as FunctionId]}
-              onOpen={() => navigate(workspacePath(processId, fn.id))}
-              footer={
-                process ? (
-                  <TileEscalationChip
-                    processId={process.displayCode ?? process.id}
-                    functionId={fn.id as FunctionId}
-                    managerCount={escalationsQuery.data?.summary?.perEngineManagerCounts?.[fn.id] ?? 0}
-                  />
-                ) : null
-              }
-            />
-          ))}
-          <RequestFunctionAuditTile onClick={() => setModalOpen(true)} />
-        </div>
+        {showSkeleton ? (
+          <TilesSkeleton count={FUNCTION_REGISTRY.length} />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {FUNCTION_REGISTRY.map((fn) => (
+              <FunctionTile
+                key={fn.id}
+                functionId={fn.id as FunctionId}
+                label={fn.label}
+                stats={tiles[fn.id as FunctionId]}
+                onOpen={() => navigate(workspacePath(processId, fn.id))}
+                footer={
+                  process ? (
+                    <TileEscalationChip
+                      processId={process.displayCode ?? process.id}
+                      functionId={fn.id as FunctionId}
+                      managerCount={escalationsQuery.data?.summary?.perEngineManagerCounts?.[fn.id] ?? 0}
+                    />
+                  ) : null
+                }
+              />
+            ))}
+            <RequestFunctionAuditTile onClick={() => setModalOpen(true)} />
+          </div>
+        )}
 
         <p className="mt-8 flex items-center gap-2 text-xs text-gray-500">
           <HelpCircle size={14} />
@@ -125,5 +133,31 @@ export function ProcessTiles() {
         </Suspense>
       ) : null}
     </AppShell>
+  );
+}
+
+function TilesSkeleton({ count }: { count: number }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-live="polite">
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={index}
+          className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-5 w-12" />
+          </div>
+          <Skeleton className="mt-3 h-4 w-full" />
+          <Skeleton className="mt-2 h-4 w-5/6" />
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
+            <Skeleton className="h-8" />
+          </div>
+          <Skeleton className="mt-5 h-8 w-24" />
+        </div>
+      ))}
+    </div>
   );
 }

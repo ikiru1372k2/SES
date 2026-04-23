@@ -284,10 +284,32 @@ export interface ProjectTrackingStatus {
   updatedAt: string;
 }
 
+export type IssueFieldDiff<T = unknown> = { from: T; to: T };
+// Subset of AuditIssue fields that the UI renders per-row diffs for. Kept
+// narrow on purpose — rotating internal IDs / row indexes into diffs would
+// produce noise.
+export type DiffableIssueField =
+  | 'severity'
+  | 'projectManager'
+  | 'projectState'
+  | 'effort'
+  | 'auditStatus'
+  | 'email'
+  | 'reason'
+  | 'recommendedAction'
+  | 'category';
+export type IssueDiffMap = Partial<Record<DiffableIssueField, IssueFieldDiff>>;
+export interface ChangedIssue extends AuditIssue {
+  diffs: IssueDiffMap;
+}
+
 export interface ComparisonResult {
   newIssues: AuditIssue[];
   resolvedIssues: AuditIssue[];
-  changedIssues: AuditIssue[];
+  // `changedIssues` now carries per-field from/to pairs so the UI can render
+  // "Severity: Medium → High" style diffs. The enclosing AuditIssue fields
+  // reflect the "to" state (i.e. the latest), matching the previous shape.
+  changedIssues: ChangedIssue[];
   unchangedIssues: AuditIssue[];
   managerChanges: AuditIssue[];
   effortChanges: AuditIssue[];
