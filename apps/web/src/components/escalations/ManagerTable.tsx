@@ -161,11 +161,11 @@ export function ManagerTable({
             </th>
             <th scope="col" className="px-3 py-2">Manager</th>
             <th scope="col" className="px-3 py-2">{sortBtn('issues', 'Issues')}</th>
-            <th scope="col" className="px-3 py-2">Engines</th>
-            <th scope="col" className="px-3 py-2">{sortBtn('stage', 'Stage')}</th>
-            <th scope="col" className="px-3 py-2">{sortBtn('lastContact', 'Last contact')}</th>
+            <th scope="col" className="hidden px-3 py-2 lg:table-cell">Engines</th>
+            <th scope="col" className="hidden px-3 py-2 sm:table-cell">{sortBtn('stage', 'Stage')}</th>
+            <th scope="col" className="hidden px-3 py-2 md:table-cell">{sortBtn('lastContact', 'Last contact')}</th>
             <th scope="col" className="px-3 py-2">{sortBtn('sla', 'SLA')}</th>
-            <th scope="col" className="px-3 py-2">Next action</th>
+            <th scope="col" className="hidden px-3 py-2 sm:table-cell">Next action</th>
             <th scope="col" className="w-10 px-2 py-2" aria-label="Actions" />
           </tr>
         </thead>
@@ -212,7 +212,7 @@ export function ManagerTable({
                   )}
                 </td>
                 <td className="px-3 py-2 tabular-nums">{row.totalIssues}</td>
-                <td className="px-3 py-2">
+                <td className="hidden px-3 py-2 lg:table-cell">
                   <div className="flex flex-wrap gap-1">
                     {FUNCTION_IDS.map((fid) => (
                       <EnginePill
@@ -225,7 +225,7 @@ export function ManagerTable({
                     ))}
                   </div>
                 </td>
-                <td className="px-3 py-2">
+                <td className="hidden px-3 py-2 sm:table-cell">
                   <div className="flex flex-wrap items-center gap-1">
                     <span className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">{row.stage ?? '—'}</span>
                     {row.stage === 'RESOLVED' && !row.verifiedAt ? (
@@ -238,7 +238,7 @@ export function ManagerTable({
                     ) : null}
                   </div>
                 </td>
-                <td className="px-3 py-2 text-xs text-gray-600">
+                <td className="hidden px-3 py-2 text-xs text-gray-600 md:table-cell">
                   {row.lastContactAt ? new Date(row.lastContactAt).toLocaleDateString() : '—'}
                 </td>
                 <td className="px-3 py-2">
@@ -247,7 +247,7 @@ export function ManagerTable({
                     <span className="text-xs text-gray-600 dark:text-gray-300">{slaCountdownLabel(row, now)}</span>
                   </div>
                 </td>
-                <td className="px-3 py-2">
+                <td className="hidden px-3 py-2 sm:table-cell">
                   <NextActionChip row={row} now={now} />
                 </td>
                 <td className="relative px-2 py-2">

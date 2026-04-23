@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowDownToLine, ArrowLeft, LayoutGrid, Loader2, LogOut, Play, Save } from 'lucide-react';
+import { AlertTriangle, ArrowDownToLine, ArrowLeft, LayoutGrid, Loader2, LogOut, Menu, Play, Save, X } from 'lucide-react';
 import { FormEvent, useEffect, useState, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
@@ -37,6 +37,7 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
   const saveOverCurrentVersion = useAppStore((state) => state.saveOverCurrentVersion);
   const saveAsNewRequestCount = useAppStore((state) => state.saveAsNewRequestCount);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // The UnsavedAuditDialog lives in Workspace, but the Save-as-new modal
   // lives here. Bumping saveAsNewRequestCount from the store is how the
@@ -125,8 +126,17 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
   if (!process) {
     const isAdmin = sessionUser?.role === 'admin';
     return (
-      <header className="flex h-[52px] items-center justify-between gap-4 border-b border-gray-200 bg-white px-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-        <div className="flex min-w-0 items-center gap-5">
+      <header className="relative flex min-h-[52px] flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-2 shadow-sm sm:px-5 dark:border-gray-800 dark:bg-gray-950">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-5">
+          <button
+            type="button"
+            className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 md:hidden dark:text-gray-300 dark:hover:bg-gray-800"
+            aria-label={mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen((v) => !v)}
+          >
+            {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
           <Link to="/" className="min-w-0">
             <BrandMark />
           </Link>
@@ -144,12 +154,24 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
             type="button"
             onClick={() => void signOutAndRedirect(navigate)}
             title="Sign out"
-            className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600"
+            className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-2 text-sm text-gray-700 hover:border-gray-300 sm:px-3 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600"
           >
             <LogOut size={14} />
             <span className="hidden sm:inline">Sign out</span>
           </button>
         </div>
+        {mobileMenuOpen ? (
+          <nav
+            className="flex w-full basis-full flex-col gap-1 border-t border-gray-100 pt-2 md:hidden dark:border-gray-800"
+            aria-label="Primary mobile"
+            onClick={() => setMobileMenuOpen(false)}
+          >
+            <GlobalNavLink to="/" end label="Dashboard" />
+            <GlobalNavLink to="/compare" label="Compare" />
+            {isAdmin ? <GlobalNavLink to="/admin/directory" label="Directory" /> : null}
+            {isAdmin ? <GlobalNavLink to="/admin/templates" label="Templates" /> : null}
+          </nav>
+        ) : null}
       </header>
     );
   }
@@ -191,8 +213,17 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
   }
 
   return (
-    <header className="flex h-[52px] items-center justify-between gap-4 border-b border-gray-200 bg-white px-5 shadow-sm dark:border-gray-800 dark:bg-gray-950">
-      <div className="flex min-w-0 items-center gap-4">
+    <header className="relative flex min-h-[52px] flex-wrap items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 py-2 shadow-sm sm:px-5 dark:border-gray-800 dark:bg-gray-950">
+      <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+        <button
+          type="button"
+          className="rounded-md p-1.5 text-gray-600 hover:bg-gray-100 lg:hidden dark:text-gray-300 dark:hover:bg-gray-800"
+          aria-label={mobileMenuOpen ? 'Close sections menu' : 'Open sections menu'}
+          aria-expanded={mobileMenuOpen}
+          onClick={() => setMobileMenuOpen((v) => !v)}
+        >
+          {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
         <Link
           to="/"
           onClick={confirmLeave}
@@ -213,7 +244,7 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
           <BrandMark compact />
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <RealtimeStatusPill />
         <NotificationBell />
         {sessionUser?.role === 'admin' ? (
@@ -235,7 +266,7 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
           >
             {activeFile?.isAudited ? 'Re-run Audit' : 'Run Audit'}
           </Button>
-          {activeFile?.lastAuditedAt ? <div className="mt-0.5 text-[11px] text-gray-500">Last run: {new Date(activeFile.lastAuditedAt).toLocaleString()}</div> : null}
+          {activeFile?.lastAuditedAt ? <div className="mt-0.5 hidden text-xs text-gray-500 md:block">Last run: {new Date(activeFile.lastAuditedAt).toLocaleString()}</div> : null}
         </div>
         <SplitButton
           variant="secondary"
@@ -304,6 +335,30 @@ export function TopBar({ process, accessory }: { process?: AuditProcess | undefi
           <LogOut size={14} />
         </button>
       </div>
+      {mobileMenuOpen ? (
+        <nav
+          className="flex w-full basis-full flex-col gap-1 border-t border-gray-100 pt-2 lg:hidden dark:border-gray-800"
+          aria-label="Process sections mobile"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <ProcessNavLink to={tilesPath} active={onTiles} onClick={confirmLeave} icon={<LayoutGrid size={13} />} label="Tiles" />
+          <ProcessNavLink to={escalationsPath} active={onEscalations} onClick={confirmLeave} icon={<AlertTriangle size={13} />} label="Escalations" />
+          {sessionUser?.role === 'admin' ? (
+            <Link
+              to="/admin/directory"
+              onClick={confirmLeave}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              Directory
+            </Link>
+          ) : null}
+          {activeFile?.lastAuditedAt ? (
+            <div className="px-2.5 text-[11px] text-gray-500">
+              Last run: {new Date(activeFile.lastAuditedAt).toLocaleString()}
+            </div>
+          ) : null}
+        </nav>
+      ) : null}
       {versionModalOpen && process && latestResult ? <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} /> : null}
     </header>
   );

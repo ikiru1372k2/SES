@@ -41,7 +41,7 @@ export function AppShell({
       <div className="flex min-h-0 flex-1">
         {sidebar ? (
           collapsed ? (
-            <aside className="flex h-full w-12 shrink-0 flex-col items-center gap-3 border-r border-gray-200 bg-white py-3 dark:border-gray-800 dark:bg-gray-950">
+            <aside className="hidden h-full w-12 shrink-0 flex-col items-center gap-3 border-r border-gray-200 bg-white py-3 md:flex dark:border-gray-800 dark:bg-gray-950">
               <button
                 type="button"
                 onClick={toggle}
@@ -57,7 +57,7 @@ export function AppShell({
               </div>
             </aside>
           ) : (
-            <aside className="flex h-full w-[260px] shrink-0 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+            <aside className="hidden h-full w-[260px] shrink-0 flex-col border-r border-gray-200 bg-white md:flex dark:border-gray-800 dark:bg-gray-950">
               <div className="flex items-center justify-end border-b border-gray-100 px-2 py-1 dark:border-gray-800">
                 <button
                   type="button"
