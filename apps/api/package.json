@@ -47,7 +47,7 @@
     "@types/node": "^24.6.0",
     "@types/supertest": "^6.0.3",
     "exceljs": "4.4.0",
-    "prisma": "^6.8.2",
+    "prisma": "^7.8.0",
     "supertest": "^7.1.0",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
