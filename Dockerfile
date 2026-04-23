@@ -50,7 +50,7 @@ EXPOSE 3211
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.PORT || 3211}/api/v1/health`).then((res) => { if (!res.ok) process.exit(1); }).catch(() => process.exit(1));"]
 CMD ["node", "apps/api/dist/src/main.js"]
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine AS web-runtime
+FROM nginxinc/nginx-unprivileged:1.29-alpine AS web-runtime
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=workspace-build /app/apps/web/dist /usr/share/nginx/html
