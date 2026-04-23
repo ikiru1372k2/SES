@@ -52,6 +52,23 @@ export async function verifyTracking(trackingIdOrCode: string) {
   return (await res.json()) as { ok: boolean; stage: string; verifiedAt: string };
 }
 
+export async function transitionTracking(
+  trackingIdOrCode: string,
+  body: { to: string; reason: string; sourceAction: string },
+) {
+  const res = await fetch(
+    `/api/v1/tracking/${encodeURIComponent(trackingIdOrCode)}/transition`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) throw await parseApiError(res, 'Stage update failed');
+  return (await res.json()) as { stage: string; resolved: boolean };
+}
+
 export async function revertVerification(trackingIdOrCode: string) {
   const res = await fetch(
     `/api/v1/tracking/${encodeURIComponent(trackingIdOrCode)}/verify`,

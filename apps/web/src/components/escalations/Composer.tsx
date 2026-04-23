@@ -18,6 +18,7 @@ import { useAutosaveOnLeave } from '../../hooks/useAutosaveOnLeave';
 import { Button } from '../shared/Button';
 import { useConfirm } from '../shared/ConfirmProvider';
 import { PreviewPane } from './PreviewPane';
+import { effectiveManagerEmail } from './nextAction';
 
 type SendChannel = 'email' | 'teams';
 
@@ -59,6 +60,7 @@ export function Composer({
   const qc = useQueryClient();
   const confirm = useConfirm();
   const trackingRef = row.trackingId ?? row.trackingDisplayCode;
+  const managerEmail = effectiveManagerEmail(row);
 
   // Issue #75 — Composer defaults to Preview so the auditor reviews before
   // sending. Edit is a toggle-back; send actions live in the preview footer.
@@ -368,7 +370,7 @@ export function Composer({
       <div>
         <div className="text-xs font-medium text-gray-500">To</div>
         <div className="mt-1 rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
-          {row.managerName} &lt;{row.resolvedEmail ?? '—'}&gt;
+          {row.managerName} &lt;{managerEmail ?? '—'}&gt;
         </div>
       </div>
 

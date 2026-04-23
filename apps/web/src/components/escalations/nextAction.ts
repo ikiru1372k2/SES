@@ -10,6 +10,10 @@ export type NextAction =
 
 const FOUR_HOURS_MS = 4 * 3_600_000;
 
+export function effectiveManagerEmail(row: ProcessEscalationManagerRow): string | null {
+  return row.resolvedEmail ?? row.directoryEmail ?? null;
+}
+
 /**
  * Given a tracking row, decide what a human auditor would most likely
  * do next. Deterministic, no AI — just the rules the escalation ladder
@@ -20,7 +24,7 @@ export function suggestNextAction(row: ProcessEscalationManagerRow, now = Date.n
   if (row.resolved) {
     return { kind: 'wait', label: 'Resolved', tone: 'gray' };
   }
-  if (!row.resolvedEmail) {
+  if (!effectiveManagerEmail(row)) {
     return { kind: 'add_to_directory', label: 'Add to directory', tone: 'amber' };
   }
 
@@ -77,6 +81,6 @@ export function computePriority(row: ProcessEscalationManagerRow, now = Date.now
     if (diff < 0) score += 50; // Breached — jump to top.
     else if (diff < 48 * 3_600_000) score += 15;
   }
-  if (!row.resolvedEmail) score *= 0.4; // Can't act → de-weight.
+  if (!effectiveManagerEmail(row)) score *= 0.4; // Can't act → de-weight.
   return Math.round(score * 10) / 10;
 }

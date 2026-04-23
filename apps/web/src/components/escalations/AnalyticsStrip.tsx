@@ -65,14 +65,25 @@ export function AnalyticsStrip({ rows, now }: Props) {
 
   if (analytics.total === 0) return null;
 
+  const openManagers = analytics.total - analytics.resolvedManagers;
+  const resolvedPercent =
+    analytics.total > 0 ? Math.round((analytics.resolvedManagers / analytics.total) * 100) : 0;
+
   return (
-    <div className="mb-4 grid gap-2 md:grid-cols-2 lg:grid-cols-5">
+    <div className="mb-4 grid gap-2 md:grid-cols-2 lg:grid-cols-6">
       <Tile
         label="Managers"
         value={analytics.total}
-        hint={`${analytics.resolvedManagers} resolved`}
+        hint={`${openManagers} open`}
         tone="gray"
         Icon={Users}
+      />
+      <Tile
+        label="Resolved"
+        value={analytics.resolvedManagers}
+        hint={analytics.resolvedManagers > 0 ? `${resolvedPercent}% complete` : 'None resolved yet'}
+        tone="emerald"
+        Icon={CheckCircle2}
       />
       <Tile
         label="Open findings"
