@@ -70,7 +70,7 @@ export function AnalyticsStrip({ rows, now }: Props) {
     analytics.total > 0 ? Math.round((analytics.resolvedManagers / analytics.total) * 100) : 0;
 
   return (
-    <div className="mb-4 grid gap-2 md:grid-cols-2 lg:grid-cols-6">
+    <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       <Tile
         label="Managers"
         value={analytics.total}

@@ -25,7 +25,7 @@ export function EscalationFilters({
   onAssignedToMe: (v: boolean) => void;
 }) {
   return (
-    <aside className="w-56 shrink-0 space-y-4 border-r border-gray-200 pr-4 dark:border-gray-800">
+    <aside className="w-full shrink-0 space-y-4 rounded-xl border border-gray-200 bg-white p-3 md:w-56 md:rounded-none md:border-0 md:border-r md:bg-transparent md:p-0 md:pr-4 dark:border-gray-800 dark:bg-gray-900 md:dark:bg-transparent">
       <div>
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Stage</div>
         <div className="space-y-1">

@@ -239,16 +239,16 @@ export function EscalationCenter() {
 
   return (
     <AppShell process={process}>
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 lg:flex-row lg:px-6">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-6 sm:py-8 lg:flex-row lg:px-6">
         <div className="min-w-0 flex-1">
-          <div className="mb-4 flex flex-wrap items-center gap-3">
+          <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
             <Link
               to={processDashboardPath(process.id)}
               className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300"
             >
               <ArrowLeft size={14} /> Dashboard
             </Link>
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Escalation Center</h1>
+            <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Escalation Center</h1>
             <span className="flex-1" />
             <button
               type="button"
@@ -383,7 +383,7 @@ export function EscalationCenter() {
               list at ~560px so users can see several rows and scroll
               the rest within the panel rather than losing the summary
               cards when paging through 15+ managers. */}
-          <div className="flex h-[560px] gap-4">
+          <div className="flex flex-col gap-4 md:h-[560px] md:flex-row">
             <EscalationFilters
               stages={stages}
               selectedStages={selectedStages}
@@ -395,7 +395,7 @@ export function EscalationCenter() {
               assignedToMe={assignedToMe}
               onAssignedToMe={(v) => setParam({ mine: v ? '1' : null })}
             />
-            <div className="w-52 shrink-0">
+            <div className="hidden w-52 shrink-0 lg:block">
               <SavedViewsRail
                 current={Object.fromEntries(search.entries())}
                 onApply={(filters) => {
@@ -405,7 +405,7 @@ export function EscalationCenter() {
                 }}
               />
             </div>
-            <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex min-h-[420px] min-w-0 flex-1 flex-col md:min-h-0">
               <ManagerTable
                 rows={filteredRows}
                 now={currentTime}
