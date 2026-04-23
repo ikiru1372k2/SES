@@ -1,6 +1,7 @@
 import type { AuditPolicy, AuditResult, WorkbookFile } from '../types';
 import { FUNCTION_IDS, type FunctionId } from '../functions';
 import { masterDataAuditEngine } from './master-data';
+import { missingPlanAuditEngine } from './missing-plan';
 import { createLegacyEngine } from './legacy-engine';
 import type { FunctionAuditEngine, FunctionAuditOptions } from './types';
 
@@ -9,7 +10,7 @@ import type { FunctionAuditEngine, FunctionAuditOptions } from './types';
 export const FUNCTION_AUDIT_ENGINES: Record<FunctionId, FunctionAuditEngine> = {
   'master-data': masterDataAuditEngine,
   'over-planning': createLegacyEngine('over-planning'),
-  'missing-plan': createLegacyEngine('missing-plan'),
+  'missing-plan': missingPlanAuditEngine,
   'function-rate': createLegacyEngine('function-rate'),
   'internal-cost-rate': createLegacyEngine('internal-cost-rate'),
 };
@@ -46,6 +47,12 @@ export {
   missingFieldRuleCode,
 } from './master-data';
 export { isBadValue, isOthersToken, isNotAssignedToken, BAD_VALUE_TOKENS } from './bad-values';
+export {
+  MISSING_PLAN_RULE_CATALOG,
+  MISSING_PLAN_RULES_BY_CODE,
+  MP_EFFORT_ZERO_RULE_CODE,
+  MP_EFFORT_ALIASES,
+} from './missing-plan';
 export {
   normalizeProcessPolicies,
   createDefaultProcessPolicies,

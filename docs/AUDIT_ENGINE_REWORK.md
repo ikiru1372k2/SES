@@ -34,7 +34,7 @@ This document prioritises the fixes and defines what we throw away.
 | ------------------- | ---------------------------------------------------- | ---------------- |
 | master-data         | Dedicated engine, 10 required-field rules + Others   | Real             |
 | over-planning       | Wraps legacy `runAudit()` (effort rules)             | Legacy           |
-| missing-plan        | Wraps legacy `runAudit()`                            | Placeholder      |
+| missing-plan        | Dedicated engine, `RUL-MP-EFFORT-ZERO` rule          | Real             |
 | function-rate       | Wraps legacy `runAudit()`                            | Placeholder      |
 | internal-cost-rate  | Wraps legacy `runAudit()`                            | Placeholder      |
 
@@ -359,3 +359,72 @@ flowchart LR
   in the DB; an editor is a future PR.
 - **Cross-process broadcast.** Broadcast is scoped to one process. Cross-
   process campaigns are a v2.
+
+---
+
+## 7. Missing Plan engine (shipped 2026-04-23)
+
+The `missing-plan` function now has a dedicated audit engine replacing the
+legacy effort-based placeholder.
+
+### Engine behaviour
+
+The engine iterates every valid, selected sheet in the uploaded workbook and
+checks each data row for an explicit zero in the Effort (H) column. A zero
+effort value indicates that planning hours have not been entered for an
+otherwise active project — a different concern from a blank cell (which
+means the column was not filled in at all and is not flagged here).
+
+| Condition | Flagged? | Reason |
+|-----------|----------|--------|
+| `Effort (H)` = 0 (number) | Yes | Zero effort |
+| `Effort (H)` = `"0"` (string) | Yes | Zero effort (coerced) |
+| `Effort (H)` = `0.0` | Yes | Zero effort |
+| `Effort (H)` = 40 | No | Non-zero — no finding |
+| `Effort (H)` = blank / absent | No | Missing column, not a planning gap |
+
+### Supported column name aliases
+
+The engine resolves the effort column by trying each alias in order:
+
+```
+Effort (H), Effort(H), effort(h), effort (h),
+Effort H, effort h, Effort h, EFFORT (H), EFFORT(H), EFFORT H,
+Effort, effort, EFFORT,
+Hours, hours, HOURS,
+Planned Effort, planned effort, PLANNED EFFORT,
+Measures Effort, measures effort
+```
+
+Matching is alias-based (exact string match after the workbook parser has
+normalised headers). Case variations and parenthesis/space differences are
+all covered by the alias list.
+
+### Rule codes
+
+| Rule code | Severity | Category | Description |
+|-----------|----------|----------|-------------|
+| `RUL-MP-EFFORT-ZERO` | Medium | Missing Planning | Effort (H) is 0 on a project row |
+
+All `RUL-MP-*` codes are owned exclusively by the `missing-plan` function.
+They will never appear in the master-data or over-planning catalogs.
+
+### Escalation reuse
+
+Issues produced by this engine flow through the **existing** audit pipeline
+unchanged:
+
+```
+missingPlanAuditEngine.run()
+  → AuditIssue[] (ruleCode = RUL-MP-EFFORT-ZERO)
+  → resolveIssueEmailsFromDirectory()   // API: audits.service.ts
+  → AuditIssue rows persisted
+  → statusReconciler.reconcileAfterAudit()
+      → upsert TrackingEntry per manager
+      → patch projectStatuses.byEngine['missing-plan']
+  → Escalation Center aggregation (unchanged)
+```
+
+No new escalation mechanism was added. The `EmptyPolicy` slice for
+`missing-plan` in `policies.ts` remains correct — this engine has no
+configurable thresholds.
