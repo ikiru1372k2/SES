@@ -25,6 +25,7 @@ export function NotificationPreview({
               {['Project No', 'Project', 'Severity', 'Reason', 'Effort', 'Status'].map((label) => (
                 <th
                   key={label}
+                  scope="col"
                   className="border-b border-gray-200 bg-gray-100 p-2 text-left font-semibold dark:border-gray-700 dark:bg-gray-700"
                 >
                   {label}

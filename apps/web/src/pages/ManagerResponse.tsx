@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { usePrompt } from '../components/shared/ConfirmProvider';
 
 /**
  * Public response page loaded from a signed email link.
@@ -164,10 +165,24 @@ function ResponseCard({
   submitting: boolean;
   onSubmit: (action: ResponseAction, body?: Record<string, unknown>) => Promise<void>;
 }) {
+  const prompt = usePrompt();
   const [mode, setMode] = useState<'choose' | 'correct'>('choose');
   const canAck = data.allowedActions.includes('acknowledge');
   const canCorrect = data.allowedActions.includes('correct');
   const canDispute = data.allowedActions.includes('dispute');
+
+  async function dispute() {
+    const note = await prompt({
+      title: 'Why are you disputing?',
+      description: 'Optional — helps the auditor understand your reasoning.',
+      placeholder: 'Reason this flag does not apply…',
+      multiline: true,
+      confirmLabel: 'Submit dispute',
+    });
+    if (note === null) return;
+    const body = note.trim() ? { note: note.trim() } : {};
+    await onSubmit('dispute', body);
+  }
 
   return (
     <div>
@@ -207,7 +222,7 @@ function ResponseCard({
             <ActionButton
               label="Dispute"
               description="The flag doesn't apply here. An auditor will review."
-              onClick={() => onSubmit('dispute', promptForNote())}
+              onClick={() => void dispute()}
               disabled={submitting}
               tone="neutral"
             />
@@ -227,11 +242,6 @@ function ResponseCard({
       </p>
     </div>
   );
-}
-
-function promptForNote(): Record<string, unknown> {
-  const note = window.prompt('Optional: tell the auditor why you are disputing this flag.')?.trim();
-  return note ? { note } : {};
 }
 
 function IssueSummary({ issue }: { issue: NonNullable<ViewData['issue']> }) {

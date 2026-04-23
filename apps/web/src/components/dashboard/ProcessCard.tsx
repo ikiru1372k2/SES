@@ -1,5 +1,5 @@
 import { Edit2, MoreHorizontal, Trash2, X } from 'lucide-react';
-import { FormEvent, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { daysUntilDue, scheduleBucket } from '../../lib/scheduleHelpers';
@@ -22,6 +22,7 @@ function severityCounts(process: AuditProcess) {
 
 export function ProcessCard({ process }: { process: AuditProcess }) {
   const deleteProcess = useAppStore((state) => state.deleteProcess);
+  const updateProcess = useAppStore((state) => state.updateProcess);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const latest = selectLatestAuditResult(process);
@@ -33,12 +34,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   const fileCount = process.files.length || (process.serverFilesCount ?? 0);
   const versionCount = process.versions.length || (process.serverVersionsCount ?? 0);
 
-  async function confirmDelete() {
-    const scope = process.serverBacked ? 'the server (for everyone with access)' : 'this browser';
-    const ok = window.confirm(
-      `Delete "${displayName(process.name)}"? This removes its files, versions, and tracking data from ${scope}.`,
-    );
-    if (!ok) return;
+  async function runDelete() {
     try {
       await deleteProcess(process.id);
       toast.success('Process deleted');
@@ -47,16 +43,74 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
     }
   }
 
+  function confirmDelete() {
+    setMenuOpen(false);
+    const scope = process.serverBacked ? 'the server (for everyone with access)' : 'this browser';
+    toast(
+      (t) => (
+        <div className="flex flex-col gap-2">
+          <div className="text-sm">
+            Delete <strong>{displayName(process.name)}</strong>? Removes files, versions, and tracking
+            from {scope}.
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => toast.dismiss(t.id)}
+              className="rounded-md border border-gray-300 px-2 py-1 text-xs font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                toast.dismiss(t.id);
+                void runDelete();
+              }}
+              className="rounded-md bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      ),
+      { duration: 8000 },
+    );
+  }
+
   return (
     <article className="relative rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-brand/40 hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="font-semibold text-gray-950 dark:text-white">{displayName(process.name)}</h2>
+        <div className="min-w-0 flex-1">
+          <InlineEditName
+            value={process.name}
+            onSave={async (next) => {
+              const trimmed = next.trim();
+              if (!trimmed || trimmed === process.name) return;
+              try {
+                await updateProcess(process.id, { name: trimmed });
+                toast.success('Renamed');
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Could not rename process');
+                throw err;
+              }
+            }}
+          />
           <p className="mt-1 line-clamp-2 text-sm text-gray-500 dark:text-gray-400">{process.description || 'Workbook audit process'}</p>
           {process.nextAuditDue ? <p className={overdue ? 'mt-2 text-xs font-semibold text-red-700' : 'mt-2 text-xs text-gray-500'}>{dueLabel}</p> : null}
         </div>
         <div className="relative">
-          <button title="Process actions" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"><MoreHorizontal size={18} /></button>
+          <button
+            type="button"
+            title="Process actions"
+            aria-label="Process actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+            className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <MoreHorizontal size={18} />
+          </button>
           {menuOpen ? (
             <div className="absolute right-0 top-8 z-10 w-44 rounded-lg border border-gray-200 bg-white p-1 text-sm shadow-lg dark:border-gray-700 dark:bg-gray-900">
               <button onClick={() => { setEditOpen(true); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800">
@@ -119,8 +173,8 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
   }
 
   function close() {
-    const changed = name !== process.name || description !== process.description || nextAuditDue !== (process.nextAuditDue ?? '');
-    if (changed && !window.confirm('Discard unsaved changes?')) return;
+    // Silent close — re-entering the modal is cheap and the confirm dialog
+    // was surprising on ESC. Users with real changes should click Save Changes.
     onClose();
   }
 
@@ -129,7 +183,7 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
       <form onSubmit={submit} className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Edit Process</h2>
-          <button type="button" onClick={close} className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"><X size={18} /></button>
+          <button type="button" onClick={close} aria-label="Close edit process dialog" className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"><X size={18} /></button>
         </div>
         <label className="mt-5 block text-sm font-medium">Process Name</label>
         <input value={name} onChange={(event) => setName(event.target.value)} required className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
@@ -143,6 +197,93 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
         </div>
       </form>
     </div>
+  );
+}
+
+function InlineEditName({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (next: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  async function commit() {
+    const next = draft.trim();
+    if (!next || next === value) {
+      setEditing(false);
+      setDraft(value);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(next);
+      setEditing(false);
+    } catch {
+      // The parent already showed an error toast; keep editing so the user
+      // can adjust, but fall back to the original value to avoid a divergent
+      // UI/store state.
+      setDraft(value);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void commit();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setDraft(value);
+      setEditing(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={() => void commit()}
+        disabled={saving}
+        aria-label="Process name"
+        className="w-full rounded-md border border-brand/40 bg-white px-2 py-0.5 font-semibold text-gray-950 outline-none focus:border-brand focus:ring-1 focus:ring-brand dark:bg-gray-900 dark:text-white"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      title="Click to rename"
+      className="group -mx-1 -my-0.5 inline-flex max-w-full items-center gap-1 truncate rounded-md px-1 py-0.5 text-left font-semibold text-gray-950 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-800"
+    >
+      <span className="truncate">{displayName(value)}</span>
+      <Edit2
+        size={12}
+        className="shrink-0 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100"
+        aria-hidden="true"
+      />
+    </button>
   );
 }
 

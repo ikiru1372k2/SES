@@ -103,6 +103,17 @@ type AppStore = {
   // in-session result was wiped by a navigation.
   hydrateLatestAuditResult: (processId: string, fileId: string) => Promise<void>;
   saveVersion: (processId: string, details: { versionName: string; notes: string }) => AuditProcess | undefined;
+  // Overwrite the head version's result with the current audit run, preserving
+  // the version name / notes / createdAt. Creates V1 if no version exists.
+  // Returns the updated process so callers can read the new versionName for
+  // the success toast. Local-state only — mirrors saveVersion's scope.
+  saveOverCurrentVersion: (processId: string) => AuditProcess | undefined;
+  // Cross-component signal for "open the Save-as-new modal". The Workspace's
+  // UnsavedAuditDialog has a "Save as new version…" button but the modal
+  // itself lives inside the TopBar. Rather than thread refs up, we bump an
+  // integer here and TopBar opens its modal whenever it changes.
+  saveAsNewRequestCount: number;
+  requestSaveAsNewVersion: () => void;
   loadVersion: (processId: string, versionId: string) => void;
   recordTrackingEvent: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, channel: TrackingChannel, note: string) => void;
   setTrackingStage: (processId: string, managerName: string, managerEmail: string, flaggedProjectCount: number, stage: EscalationStage) => void;
@@ -190,19 +201,9 @@ function patchFile(process: AuditProcess, fileId: string, updater: (file: Workbo
  * The backend uses `ruleCode` / `displayCode`; the UI uses `ruleId` / `id`.
  * We map both directions so saved versions keep working.
  */
-/**
- * Local fallback for AuditResult.findingsHash when the run came from the
- * in-browser engine (no server hash). Same shape as the server hash so
- * compare-by-equality works; uniqueness inside a session is enough for
- * the auto-save dedup, no collision-resistance guarantee needed.
- */
-function localFindingsSignature(issues: AuditResult['issues']): string {
-  const normalized = issues
-    .map((i) => `${i.issueKey ?? i.id}|${i.ruleCode ?? ''}|${i.severity ?? ''}`)
-    .sort()
-    .join('\n');
-  return `local:${issues.length}:${normalized.length}`;
-}
+// localFindingsSignature lives in ./selectors.ts so both the autosave dedup
+// and the hasUnsavedAudit selector use the identical function — keeps those
+// two pieces of logic from drifting apart when one is edited.
 
 function mapApiAuditToResult(
   fileId: string,
@@ -293,6 +294,10 @@ export const useAppStore = create<AppStore>()(
       auditRunKey: null,
       uploads: {},
       fileDrafts: {},
+      saveAsNewRequestCount: 0,
+      requestSaveAsNewVersion: () => {
+        set((state) => ({ saveAsNewRequestCount: state.saveAsNewRequestCount + 1 }));
+      },
 
       hydrateProcesses: () => {
         return (async () => {
@@ -614,24 +619,33 @@ export const useAppStore = create<AppStore>()(
         const fileDisplayCode = (file as { displayCode?: string }).displayCode;
         const useServer = Boolean(process.serverBacked && process.displayCode && fileDisplayCode);
 
-        // Issue #74: auto-save a SavedVersion after a successful run unless
-        // the new findings are identical to the most recent version for the
-        // same file (dedup by findingsHash — server-computed for server
-        // runs, falls back to issueKey-based signature for local runs).
-        const autoSaveAfterRun = (result: AuditResult) => {
+        // Autosave creates V1 once — the silent first save so users always
+        // have an anchor to compare against. After V1 exists, we do NOT
+        // autosave: subsequent runs flip hasUnsavedAudit on until the user
+        // explicitly clicks Save (updates V1) or "Save as new version"
+        // (creates V2).
+        //
+        // L7: autosave only if the result we're about to anchor is still the
+        // one this run produced. A user-cancelled or superseded run lost its
+        // runKey before set(), but could still make it here in theory — the
+        // anchorFileId comparison catches the case where another run
+        // committed first and we'd otherwise save the wrong findings.
+        const autoSaveAfterRun = (anchorResult: AuditResult) => {
           const current = get().processes.find((p) => p.id === processId);
           if (!current) return;
-          const sameFileVersion = current.versions.find((v) => v.result.fileId === result.fileId);
-          const prevHash = sameFileVersion?.result.findingsHash ?? '';
-          const nextHash =
-            result.findingsHash ??
-            localFindingsSignature(result.issues);
-          if (prevHash && nextHash && prevHash === nextHash) {
-            // Same findings — keep the existing version anchor; nothing to save.
+          const latest = current.latestAuditResult;
+          if (!latest || latest.runAt !== anchorResult.runAt || latest.fileId !== anchorResult.fileId) {
+            // A newer run already committed; this stale completion shouldn't
+            // overwrite the version anchor.
+            return;
+          }
+          if (current.versions.length > 0) {
+            // Anchor already exists. Leave it — the Save split button surfaces
+            // the diff and lets the user pick Update / Save-as-new / Leave.
             return;
           }
           get().saveVersion(processId, {
-            versionName: `${current.name} - V${current.versions.length + 1}`,
+            versionName: `${current.name} - V1`,
             notes: '',
           });
         };
@@ -774,6 +788,44 @@ export const useAppStore = create<AppStore>()(
                 },
                 ...process.versions,
               ],
+            };
+            return updated;
+          }),
+        }));
+        return updated;
+      },
+
+      saveOverCurrentVersion: (processId) => {
+        const current = get().processes.find((p) => p.id === processId);
+        const result = get().currentAuditResult ?? current?.latestAuditResult;
+        if (!result) return undefined;
+        if (!current || current.versions.length === 0) {
+          // No head version yet — delegate to saveVersion with a default
+          // name. This is the "first save" path when autosave hasn't
+          // created V1 yet (e.g. legacy process state or edge case).
+          return get().saveVersion(processId, {
+            versionName: `${current?.name ?? 'Audit'} - V1`,
+            notes: '',
+          });
+        }
+        let updated: AuditProcess | undefined;
+        set((state) => ({
+          processes: patchProcess(state.processes, processId, (process) => {
+            const [head, ...rest] = process.versions;
+            if (!head) return process;
+            const refreshed = {
+              ...head,
+              // Keep the version's identity fields (name, notes, createdAt,
+              // versionNumber, versionId). Only swap the result payload and
+              // the policy snapshot so the anchor reflects the current run.
+              result,
+              auditPolicy: result.policySnapshot ?? head.auditPolicy ?? process.auditPolicy,
+            };
+            updated = {
+              ...process,
+              updatedAt: new Date().toISOString(),
+              latestAuditResult: result,
+              versions: [refreshed, ...rest],
             };
             return updated;
           }),

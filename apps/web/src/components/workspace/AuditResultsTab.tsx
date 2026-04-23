@@ -1,5 +1,6 @@
 import { CheckCircle2, ChevronRight, Circle, Settings, X } from 'lucide-react';
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -280,8 +281,11 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
     }));
   }, [result]);
 
+  // E1: debounce the expensive filter pipeline off a trailing 200ms window
+  // so typing doesn't thrash the whole issue list on every keystroke.
+  const debouncedSearch = useDebouncedValue(search, 200);
   const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = debouncedSearch.trim().toLowerCase();
     const masterData = isFunctionId(file?.functionId) && file!.functionId === 'master-data';
     return searchIndex
       .filter(({ issue }) => !severity || issue.severity === severity)
@@ -307,7 +311,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
       .filter(({ blob }) => !query || blob.includes(query))
       .map(({ issue }) => issue)
       .sort((a, b) => String(a[sort] ?? '').localeCompare(String(b[sort] ?? '')));
-  }, [searchIndex, severity, sheet, status, category, search, sort, file]);
+  }, [searchIndex, severity, sheet, status, category, debouncedSearch, sort, file]);
 
   const sheets = result ? [...new Set(result.issues.map((issue) => issue.sheetName))] : [];
   const hasSelected = Boolean(file?.sheets.some((item) => item.status === 'valid' && item.isSelected));
@@ -436,7 +440,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
 
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-700"><tr><th className="p-3">Sheet</th><th>Status</th><th>Rows</th><th>Flagged</th></tr></thead>
+              <thead className="bg-gray-50 dark:bg-gray-700"><tr><th scope="col" className="p-3">Sheet</th><th scope="col">Status</th><th scope="col">Rows</th><th scope="col">Flagged</th></tr></thead>
               <tbody>
                 {file?.sheets.map((item) => {
                   const audited = result.sheets.find((sheetResult) => sheetResult.sheetName === item.name);
@@ -466,7 +470,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
           <div className="overflow-auto rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-gray-50 dark:bg-gray-700">
-                <tr>{issueHeaders.map(({ key, label }) => <th key={key} onClick={() => setSort(key)} className="cursor-pointer whitespace-nowrap p-3 font-semibold">{label}</th>)}</tr>
+                <tr>{issueHeaders.map(({ key, label }) => <th key={key} scope="col" onClick={() => setSort(key)} className="cursor-pointer whitespace-nowrap p-3 font-semibold">{label}</th>)}</tr>
               </thead>
               <tbody>
                 {filtered.map((issue) => (
@@ -679,7 +683,7 @@ function QgcSettingsDrawer({ process, file, onClose }: { process: AuditProcess; 
             <h3 className="text-lg font-semibold">QGC Settings</h3>
             <p className="mt-1 text-sm text-gray-500">Configure thresholds for this process. Re-run audit after saving.</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"><X size={18} /></button>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"><X size={18} /></button>
         </div>
 
         <SettingsSection title="Overplanning">

@@ -58,7 +58,7 @@ export function AnalyticsTab({ process }: { process: AuditProcess }) {
         </p>
         <table className="mt-4 min-w-full text-left text-sm">
           <thead className="bg-gray-50 dark:bg-gray-700">
-            <tr><th className="p-3">Manager</th><th>Response rate</th><th>Avg resolution</th><th>Last contact</th><th></th></tr>
+            <tr><th scope="col" className="p-3">Manager</th><th scope="col">Response rate</th><th scope="col">Avg resolution</th><th scope="col">Last contact</th><th scope="col" aria-label="Actions" /></tr>
           </thead>
           <tbody>
             {stats.map((item) => (

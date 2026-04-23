@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { BadgeCheck } from 'lucide-react';
+import { BadgeCheck, Maximize2, Minimize2 } from 'lucide-react';
 import type { ProcessEscalationManagerRow } from '@ses/domain';
 import { verifyTracking } from '../../lib/api/trackingStageApi';
 import { ActivityFeed } from './ActivityFeed';
@@ -10,6 +10,33 @@ import { Composer } from './Composer';
 import { FindingsTab } from './FindingsTab';
 
 type TabId = 'findings' | 'compose' | 'activity' | 'attachments';
+
+const WIDTH_STORAGE_KEY = 'ses.escalationPanel.width';
+const DEFAULT_WIDTH = 512;
+const MIN_WIDTH = 360;
+const KEYBOARD_STEP = 24;
+
+const getMaxWidth = () => (typeof window === 'undefined' ? 1024 : Math.round(window.innerWidth * 0.95));
+const getMaximizedWidth = () => (typeof window === 'undefined' ? 1024 : Math.round(window.innerWidth * 0.9));
+
+const clampWidth = (value: number) => {
+  const max = getMaxWidth();
+  if (Number.isNaN(value)) return DEFAULT_WIDTH;
+  return Math.max(MIN_WIDTH, Math.min(max, value));
+};
+
+const loadStoredWidth = () => {
+  if (typeof window === 'undefined') return DEFAULT_WIDTH;
+  try {
+    const raw = window.localStorage.getItem(WIDTH_STORAGE_KEY);
+    if (!raw) return DEFAULT_WIDTH;
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) return DEFAULT_WIDTH;
+    return clampWidth(parsed);
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+};
 
 export function EscalationPanel({
   processId,
@@ -25,11 +52,18 @@ export function EscalationPanel({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<TabId>('findings');
+  const [savedWidth, setSavedWidth] = useState<number>(() => loadStoredWidth());
+  const [width, setWidth] = useState<number>(() => loadStoredWidth());
+  const [isMaximized, setIsMaximized] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   const trackingRef = row?.trackingId ?? row?.trackingDisplayCode ?? null;
   const awaitingVerification = Boolean(row && row.stage === 'RESOLVED' && !row.verifiedAt);
-  const canVerify = Boolean(row && !row.verifiedAt);
+  // B14: only surface the Verify action when it's actually meaningful — the
+  // row is RESOLVED but an auditor hasn't closed the loop yet. Previously
+  // the button showed on every row that simply lacked a verifiedAt, which
+  // invited verification of work that never went through escalation.
+  const canVerify = awaitingVerification;
 
   const verifyMut = useMutation({
     mutationFn: () => {
@@ -43,6 +77,90 @@ export function EscalationPanel({
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const persistWidth = useCallback((next: number) => {
+    try {
+      window.localStorage.setItem(WIDTH_STORAGE_KEY, String(Math.round(next)));
+    } catch {
+      // storage may be unavailable (private mode, quota); width still applies in-session
+    }
+  }, []);
+
+  const handleResizePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const target = event.currentTarget;
+      target.setPointerCapture(event.pointerId);
+      const previousCursor = document.body.style.cursor;
+      const previousUserSelect = document.body.style.userSelect;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+
+      let latestWidth = width;
+      const onMove = (e: PointerEvent) => {
+        const next = clampWidth(window.innerWidth - e.clientX);
+        latestWidth = next;
+        setWidth(next);
+      };
+      const onUp = () => {
+        target.releasePointerCapture(event.pointerId);
+        document.body.style.cursor = previousCursor;
+        document.body.style.userSelect = previousUserSelect;
+        target.removeEventListener('pointermove', onMove);
+        target.removeEventListener('pointerup', onUp);
+        target.removeEventListener('pointercancel', onUp);
+        setIsMaximized(false);
+        setSavedWidth(latestWidth);
+        persistWidth(latestWidth);
+      };
+
+      target.addEventListener('pointermove', onMove);
+      target.addEventListener('pointerup', onUp);
+      target.addEventListener('pointercancel', onUp);
+    },
+    [persistWidth, width],
+  );
+
+  const handleResizeKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home' && event.key !== 'End') return;
+      event.preventDefault();
+      let next = width;
+      if (event.key === 'ArrowLeft') next = clampWidth(width + KEYBOARD_STEP);
+      else if (event.key === 'ArrowRight') next = clampWidth(width - KEYBOARD_STEP);
+      else if (event.key === 'Home') next = clampWidth(getMaxWidth());
+      else if (event.key === 'End') next = MIN_WIDTH;
+      setWidth(next);
+      setSavedWidth(next);
+      setIsMaximized(false);
+      persistWidth(next);
+    },
+    [persistWidth, width],
+  );
+
+  const toggleMaximize = useCallback(() => {
+    if (isMaximized) {
+      setWidth(clampWidth(savedWidth));
+      setIsMaximized(false);
+    } else {
+      setWidth(clampWidth(getMaximizedWidth()));
+      setIsMaximized(true);
+    }
+  }, [isMaximized, savedWidth]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onResize = () => {
+      setWidth((prev) => {
+        if (isMaximized) return clampWidth(getMaximizedWidth());
+        return clampWidth(prev);
+      });
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [open, isMaximized]);
 
   useEffect(() => {
     if (!open) return;
@@ -77,9 +195,24 @@ export function EscalationPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="escalation-panel-title"
-        className="flex h-full w-full max-w-lg flex-col bg-white shadow-2xl dark:bg-gray-950"
+        className="relative flex h-full w-full flex-col bg-white shadow-modal dark:bg-gray-950"
+        style={{ width: `${width}px`, maxWidth: '100%' }}
         onMouseDown={(e) => e.stopPropagation()}
       >
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel"
+          aria-valuemin={MIN_WIDTH}
+          aria-valuemax={getMaxWidth()}
+          aria-valuenow={Math.round(width)}
+          tabIndex={0}
+          onPointerDown={handleResizePointerDown}
+          onKeyDown={handleResizeKeyDown}
+          onDoubleClick={toggleMaximize}
+          className="absolute left-0 top-0 z-10 flex h-full w-1.5 -translate-x-1/2 cursor-col-resize items-center justify-center bg-transparent outline-none transition-colors hover:bg-brand/60 focus-visible:bg-brand"
+          title="Drag to resize · Double-click to maximize"
+        />
         <div className="flex items-start justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
           <div>
             <h2 id="escalation-panel-title" className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -101,14 +234,26 @@ export function EscalationPanel({
               ) : null}
             </div>
           </div>
-          <button
-            type="button"
-            className="rounded p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-            onClick={onClose}
-            aria-label="Close panel"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className="rounded p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+              onClick={toggleMaximize}
+              aria-label={isMaximized ? 'Restore panel width' : 'Maximize panel'}
+              aria-pressed={isMaximized}
+              title={isMaximized ? 'Restore' : 'Maximize'}
+            >
+              {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            <button
+              type="button"
+              className="rounded p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+              onClick={onClose}
+              aria-label="Close panel"
+            >
+              ✕
+            </button>
+          </div>
         </div>
         <div className="flex border-b border-gray-200 text-sm dark:border-gray-800">
           {(

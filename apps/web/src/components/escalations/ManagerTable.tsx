@@ -44,8 +44,8 @@ export function ManagerTable({
   selectedTrackingIds,
   onToggleTracking,
   onToggleAllVisible,
-  selectedIndex,
-  onSelectIndex,
+  selectedManagerKey,
+  onSelectManagerKey,
   onOpenPanel,
   sortKey,
   onSortKey,
@@ -58,8 +58,10 @@ export function ManagerTable({
   selectedTrackingIds: Set<string>;
   onToggleTracking: (trackingId: string) => void;
   onToggleAllVisible: (trackingIds: string[]) => void;
-  selectedIndex: number;
-  onSelectIndex: (i: number) => void;
+  // L4: key-based selection — realtime re-sorts no longer jump the keyboard
+  // cursor to the row that happens to be at the old index.
+  selectedManagerKey: string | null;
+  onSelectManagerKey: (key: string | null) => void;
   onOpenPanel: (row: ProcessEscalationManagerRow) => void;
   sortKey: SortKey;
   onSortKey: (k: SortKey) => void;
@@ -90,6 +92,13 @@ export function ManagerTable({
     return copy;
   }, [now, rows, sortKey]);
 
+  // Resolve the keyboard cursor back to the current sorted position so
+  // j/k navigate from wherever the selected manager currently lives.
+  const selectedIndex = useMemo(() => {
+    if (!selectedManagerKey) return -1;
+    return sorted.findIndex((row) => row.managerKey === selectedManagerKey);
+  }, [selectedManagerKey, sorted]);
+
   const handleKey = useCallback(
     (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
@@ -97,17 +106,21 @@ export function ManagerTable({
       }
       if (e.key === 'j') {
         e.preventDefault();
-        onSelectIndex(Math.min(selectedIndex + 1, Math.max(sorted.length - 1, 0)));
+        const nextIdx = selectedIndex < 0 ? 0 : Math.min(selectedIndex + 1, sorted.length - 1);
+        const next = sorted[nextIdx];
+        if (next) onSelectManagerKey(next.managerKey);
       } else if (e.key === 'k') {
         e.preventDefault();
-        onSelectIndex(Math.max(selectedIndex - 1, 0));
+        const nextIdx = selectedIndex < 0 ? 0 : Math.max(selectedIndex - 1, 0);
+        const next = sorted[nextIdx];
+        if (next) onSelectManagerKey(next.managerKey);
       } else if (e.key === 'Enter') {
         e.preventDefault();
-        const row = sorted[selectedIndex];
+        const row = sorted[Math.max(0, selectedIndex)];
         if (row) onOpenPanel(row);
       }
     },
-    [onOpenPanel, onSelectIndex, selectedIndex, sorted],
+    [onOpenPanel, onSelectManagerKey, selectedIndex, sorted],
   );
 
   useEffect(() => {
@@ -115,9 +128,10 @@ export function ManagerTable({
     return () => window.removeEventListener('keydown', handleKey);
   }, [handleKey]);
 
+  // Drop the selection when the row is no longer in the filtered set.
   useEffect(() => {
-    if (selectedIndex >= sorted.length) onSelectIndex(Math.max(0, sorted.length - 1));
-  }, [onSelectIndex, selectedIndex, sorted.length]);
+    if (selectedManagerKey && selectedIndex < 0) onSelectManagerKey(null);
+  }, [onSelectManagerKey, selectedManagerKey, selectedIndex]);
 
   const sortBtn = (key: SortKey, label: string) => (
     <button
@@ -134,7 +148,7 @@ export function ManagerTable({
       <table className="min-w-full text-left text-sm">
         <thead className="sticky top-0 z-10 bg-gray-50 text-xs uppercase text-gray-500 dark:bg-gray-800">
           <tr>
-            <th className="px-2 py-2">
+            <th scope="col" className="px-2 py-2">
               <input
                 type="checkbox"
                 aria-label="Select all rows"
@@ -145,14 +159,14 @@ export function ManagerTable({
                 }
               />
             </th>
-            <th className="px-3 py-2">Manager</th>
-            <th className="px-3 py-2">{sortBtn('issues', 'Issues')}</th>
-            <th className="px-3 py-2">Engines</th>
-            <th className="px-3 py-2">{sortBtn('stage', 'Stage')}</th>
-            <th className="px-3 py-2">{sortBtn('lastContact', 'Last contact')}</th>
-            <th className="px-3 py-2">{sortBtn('sla', 'SLA')}</th>
-            <th className="px-3 py-2">Next action</th>
-            <th className="w-10 px-2 py-2" aria-label="Actions" />
+            <th scope="col" className="px-3 py-2">Manager</th>
+            <th scope="col" className="px-3 py-2">{sortBtn('issues', 'Issues')}</th>
+            <th scope="col" className="px-3 py-2">Engines</th>
+            <th scope="col" className="px-3 py-2">{sortBtn('stage', 'Stage')}</th>
+            <th scope="col" className="px-3 py-2">{sortBtn('lastContact', 'Last contact')}</th>
+            <th scope="col" className="px-3 py-2">{sortBtn('sla', 'SLA')}</th>
+            <th scope="col" className="px-3 py-2">Next action</th>
+            <th scope="col" className="w-10 px-2 py-2" aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
@@ -168,7 +182,7 @@ export function ManagerTable({
                   selected ? 'bg-brand/5 ring-1 ring-inset ring-brand/30' : ''
                 }`}
                 onClick={() => {
-                  onSelectIndex(idx);
+                  onSelectManagerKey(row.managerKey);
                   onOpenPanel(row);
                 }}
               >

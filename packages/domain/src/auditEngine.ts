@@ -1,6 +1,6 @@
 import { normalizeAuditPolicy } from './auditPolicy';
 import { AUDIT_RULES_BY_CODE, type RuleCatalogEntry } from './auditRules';
-import type { AuditIssue, AuditPolicy, AuditResult, ComparisonResult, IssueCategory, Severity, WorkbookFile } from './types';
+import type { AuditIssue, AuditPolicy, AuditResult, ChangedIssue, ComparisonResult, DiffableIssueField, IssueCategory, IssueDiffMap, Severity, WorkbookFile } from './types';
 
 type RowObject = Record<string, unknown>;
 type AuditRule = RuleCatalogEntry & {
@@ -290,24 +290,70 @@ export const auditIssueKey = (issue: Pick<AuditIssue, 'projectNo' | 'sheetName' 
 
 const keyFor = (issue: AuditIssue) => issue.issueKey ?? auditIssueKey(issue);
 
+// Fields the diff walker compares when deciding whether a shared issue
+// changed. Kept in one place so adding a new field ("thresholdLabel",
+// "ruleVersion", …) requires a single edit. Order determines the display
+// order in per-row diff badges.
+const DIFFABLE_FIELDS: readonly DiffableIssueField[] = [
+  'severity',
+  'projectManager',
+  'projectState',
+  'effort',
+  'auditStatus',
+  'email',
+  'reason',
+  'recommendedAction',
+  'category',
+] as const;
+
+function normalizeForDiff(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  return String(value);
+}
+
+function diffIssue(prev: AuditIssue, next: AuditIssue): IssueDiffMap {
+  const diffs: IssueDiffMap = {};
+  for (const field of DIFFABLE_FIELDS) {
+    const a = normalizeForDiff(prev[field]);
+    const b = normalizeForDiff(next[field]);
+    if (a !== b) {
+      (diffs as Record<DiffableIssueField, { from: unknown; to: unknown }>)[field] = {
+        from: prev[field],
+        to: next[field],
+      };
+    }
+  }
+  return diffs;
+}
+
 export function compareResults(from: AuditResult, to: AuditResult): ComparisonResult {
   const fromMap = new Map(from.issues.map((issue) => [keyFor(issue), issue]));
   const toMap = new Map(to.issues.map((issue) => [keyFor(issue), issue]));
   const newIssues = to.issues.filter((issue) => !fromMap.has(keyFor(issue)));
   const resolvedIssues = from.issues.filter((issue) => !toMap.has(keyFor(issue)));
   const shared = to.issues.filter((issue) => fromMap.has(keyFor(issue)));
-  const changedIssues = shared.filter((issue) => {
+
+  const changedIssues: ChangedIssue[] = [];
+  const unchangedIssues: AuditIssue[] = [];
+  for (const issue of shared) {
     const prev = fromMap.get(keyFor(issue))!;
-    return prev.severity !== issue.severity || prev.projectManager !== issue.projectManager || prev.effort !== issue.effort || prev.projectState !== issue.projectState || prev.auditStatus !== issue.auditStatus;
-  });
+    const diffs = diffIssue(prev, issue);
+    if (Object.keys(diffs).length > 0) {
+      changedIssues.push({ ...issue, diffs });
+    } else {
+      unchangedIssues.push(issue);
+    }
+  }
+
   return {
     newIssues,
     resolvedIssues,
     changedIssues,
-    unchangedIssues: shared.filter((issue) => !changedIssues.includes(issue)),
-    managerChanges: shared.filter((issue) => fromMap.get(keyFor(issue))!.projectManager !== issue.projectManager),
-    effortChanges: shared.filter((issue) => fromMap.get(keyFor(issue))!.effort !== issue.effort),
-    stateChanges: shared.filter((issue) => fromMap.get(keyFor(issue))!.projectState !== issue.projectState),
+    unchangedIssues,
+    managerChanges: changedIssues.filter((i) => i.diffs.projectManager),
+    effortChanges: changedIssues.filter((i) => i.diffs.effort),
+    stateChanges: changedIssues.filter((i) => i.diffs.projectState),
   };
 }
 

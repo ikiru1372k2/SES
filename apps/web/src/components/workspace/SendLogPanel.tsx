@@ -49,11 +49,11 @@ export function SendLogPanel({ processCode }: SendLogPanelProps) {
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-gray-200 text-gray-500 dark:border-gray-700">
-                <th className="pb-1 pr-3 font-medium">Time</th>
-                <th className="pb-1 pr-3 font-medium">Recipient</th>
-                <th className="pb-1 pr-3 font-medium">Channel</th>
-                <th className="pb-1 pr-3 font-medium">Subject</th>
-                <th className="pb-1 font-medium">Issues</th>
+                <th scope="col" className="pb-1 pr-3 font-medium">Time</th>
+                <th scope="col" className="pb-1 pr-3 font-medium">Recipient</th>
+                <th scope="col" className="pb-1 pr-3 font-medium">Channel</th>
+                <th scope="col" className="pb-1 pr-3 font-medium">Subject</th>
+                <th scope="col" className="pb-1 font-medium">Issues</th>
               </tr>
             </thead>
             <tbody>

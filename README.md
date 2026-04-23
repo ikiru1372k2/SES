@@ -103,8 +103,8 @@ flowchart LR
     W[React SPA<br/>Vite]
   end
   subgraph NodeRuntime[Node runtime]
-    API[NestJS API<br/>@ses/api]
-    DOM[@ses/domain<br/>engines + rules]
+    API["NestJS API<br/>@ses/api"]
+    DOM["@ses/domain<br/>engines + rules"]
     API --- DOM
   end
   subgraph Infra
@@ -169,7 +169,7 @@ flowchart TB
   E -->|function-rate| X2[empty — no rules yet]
   E -->|internal-cost-rate| X3[empty — no rules yet]
 
-  M --> F[AuditIssue[] with ruleCode + projectManager]
+  M --> F["AuditIssue[] with ruleCode + projectManager"]
   O --> F
   F --> G[resolveIssueEmailsFromDirectory<br/>tenant-scoped name match]
   G --> H[Persist AuditRun + AuditIssue + summary]

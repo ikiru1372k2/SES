@@ -67,7 +67,7 @@ export function PreviewTab({ process, file, result }: { process: AuditProcess; f
       <div className="overflow-auto rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
         <table className="min-w-full border-collapse text-left text-sm">
           <thead className="sticky top-0 bg-gray-100 dark:bg-gray-700">
-            <tr>{headers.map((header, index) => <th key={index} className="whitespace-nowrap border-b border-gray-200 px-3 py-2 font-semibold dark:border-gray-600">{String(header)}</th>)}</tr>
+            <tr>{headers.map((header, index) => <th key={index} scope="col" className="whitespace-nowrap border-b border-gray-200 px-3 py-2 font-semibold dark:border-gray-600">{String(header)}</th>)}</tr>
           </thead>
           <tbody>
             {sampleRows.map(({ row, rowIndex }) => {

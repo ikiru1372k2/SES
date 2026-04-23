@@ -6,6 +6,7 @@ import { downloadFileToDisk } from '../../lib/api/filesApi';
 import { validateWorkbookFile } from '../../lib/excelParser';
 import type { AuditProcess, WorkbookFile } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
+import { useConfirm } from '../shared/ConfirmProvider';
 import { ProgressBar } from '../shared/ProgressBar';
 import { SheetList } from './SheetList';
 
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function FilesSidebar({ process, functionId }: Props) {
+  const confirm = useConfirm();
   const uploadFile = useAppStore((state) => state.uploadFile);
   const saveFileDraft = useAppStore((state) => state.saveFileDraft);
   const setActiveFile = useAppStore((state) => state.setActiveFile);
@@ -58,8 +60,13 @@ export function FilesSidebar({ process, functionId }: Props) {
     }
   }
 
-  function confirmDelete(file: WorkbookFile) {
-    const ok = window.confirm(`Delete "${file.name}"? This removes the document and its audit data from this browser.`);
+  async function confirmDelete(file: WorkbookFile) {
+    const ok = await confirm({
+      title: `Delete ${file.name}?`,
+      description: 'This removes the document and its audit data from this browser.',
+      confirmLabel: 'Delete',
+      tone: 'destructive',
+    });
     if (!ok) return;
     deleteFile(process.id, file.id);
     toast.success(`${file.name} deleted`);
@@ -97,7 +104,7 @@ export function FilesSidebar({ process, functionId }: Props) {
               onSelect={() => setActiveFile(process.id, file.id)}
               onView={() => onView(file)}
               onDownload={() => void onDownload(file)}
-              onDelete={() => confirmDelete(file)}
+              onDelete={() => void confirmDelete(file)}
             />
           ))}
         </div>

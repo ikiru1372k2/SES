@@ -12,6 +12,7 @@ import {
 } from '../../lib/api/trackingAttachmentsApi';
 import { useCurrentUser } from '../auth/authContext';
 import { Button } from '../shared/Button';
+import { useConfirm } from '../shared/ConfirmProvider';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_COUNT = 20;
@@ -172,6 +173,7 @@ function AttachmentCard({
   canDelete: boolean;
 }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [editing, setEditing] = useState(false);
   const [comment, setComment] = useState(att.comment);
 
@@ -262,8 +264,14 @@ function AttachmentCard({
               type="button"
               className="inline-flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:hover:bg-red-950"
               disabled={delMut.isPending}
-              onClick={() => {
-                if (!window.confirm('Remove this attachment?')) return;
+              onClick={async () => {
+                const ok = await confirm({
+                  title: 'Remove attachment?',
+                  description: att.fileName,
+                  confirmLabel: 'Remove',
+                  tone: 'destructive',
+                });
+                if (!ok) return;
                 delMut.mutate();
               }}
             >

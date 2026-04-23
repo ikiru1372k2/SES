@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { AddManagerForm } from './AddManagerForm';
 import { DeleteManagerButton } from './DeleteManagerButton';
+import { useConfirm } from '../shared/ConfirmProvider';
 import {
   directoryArchiveBulk,
   directoryList,
@@ -11,6 +12,7 @@ import {
 } from '../../lib/api/directoryApi';
 
 export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
+  const confirm = useConfirm();
   const [items, setItems] = useState<DirectoryEntry[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'active' | 'archived' | 'all'>('active');
@@ -112,7 +114,12 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
     if (!sourceId || !targetId) return;
     try {
       const impact = await directoryMergeImpact(sourceId, targetId);
-      if (!window.confirm(`Repoint ${impact.trackingRowsToRepoint} tracking rows and merge?`)) return;
+      const proceed = await confirm({
+        title: 'Merge managers',
+        description: `This repoints ${impact.trackingRowsToRepoint} tracking row${impact.trackingRowsToRepoint === 1 ? '' : 's'} from the source manager onto the target. The source entry is archived afterward.`,
+        confirmLabel: 'Merge',
+      });
+      if (!proceed) return;
       await directoryMerge(sourceId, targetId);
       toast.success('Merged');
       setSelected(new Set());
@@ -155,12 +162,12 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900">
             <tr>
-              <th className="p-2 w-8" />
-              <th className="p-2">Code</th>
-              <th className="p-2">Name</th>
-              <th className="p-2">Email</th>
-              <th className="p-2">Active</th>
-              <th className="p-2 w-12">Actions</th>
+              <th scope="col" className="p-2 w-8" />
+              <th scope="col" className="p-2">Code</th>
+              <th scope="col" className="p-2">Name</th>
+              <th scope="col" className="p-2">Email</th>
+              <th scope="col" className="p-2">Active</th>
+              <th scope="col" className="p-2 w-12">Actions</th>
             </tr>
           </thead>
           <tbody>

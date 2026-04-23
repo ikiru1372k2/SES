@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { useSidebarCollapsed } from '../../hooks/useSidebarCollapsed';
 import type { AuditProcess } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
+import { GlobalShortcutOverlay } from '../shared/GlobalShortcutOverlay';
 import { ProgressBar } from '../shared/ProgressBar';
 import { TopBar } from './TopBar';
 
@@ -74,6 +75,7 @@ export function AppShell({
         ) : null}
         <main className={`flex min-w-0 flex-1 flex-col ${sidebar || !contentScrolls ? 'overflow-hidden' : 'overflow-y-auto'}`}>{children}</main>
       </div>
+      <GlobalShortcutOverlay />
     </div>
   );
 }

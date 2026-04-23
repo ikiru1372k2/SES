@@ -73,10 +73,10 @@ export function DirectoryUploadWizard({ onClose, onDone }: { onClose: () => void
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="border-b border-gray-200 text-left dark:border-gray-700">
-                    <th className="p-1">#</th>
-                    <th className="p-1">Name</th>
-                    <th className="p-1">Email</th>
-                    <th className="p-1">Status</th>
+                    <th scope="col" className="p-1">#</th>
+                    <th scope="col" className="p-1">Name</th>
+                    <th scope="col" className="p-1">Email</th>
+                    <th scope="col" className="p-1">Status</th>
                   </tr>
                 </thead>
                 <tbody>
