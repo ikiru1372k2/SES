@@ -180,6 +180,9 @@ export function aggregateEscalations(
   }
 
   const enginesWithIssues = FUNCTION_IDS.filter((id) => (perEngineIssueCounts[id] ?? 0) > 0);
+  // Provisional: pre-directory-enrichment. EscalationsService recomputes
+  // this after joining ManagerDirectory so a Directory import clears the
+  // banner without needing an audit rerun. See escalations.service.ts.
   const unmappedManagerCount = rows.filter((r) => r.isUnmapped && (r.totalIssues > 0 || !r.resolved)).length;
 
   const summary: ProcessEscalationsSummary = {

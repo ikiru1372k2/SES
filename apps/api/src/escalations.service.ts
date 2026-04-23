@@ -119,9 +119,16 @@ export class EscalationsService {
       const directoryEmail =
         directoryByKey.get(row.managerKey.trim().toLowerCase()) ?? directoryByKey.get(nk) ?? null;
       const extra = row.trackingId ? lockById.get(row.trackingId) : undefined;
+      // The aggregator runs before directory enrichment, so its isUnmapped
+      // is provisional. Recompute here using the effective email (tracking
+      // or issue email, else directory) so a Directory import clears the
+      // flag on the next refetch without waiting for a rerun.
+      const effectiveEmail = row.resolvedEmail ?? directoryEmail;
+      const isUnmapped = !effectiveEmail;
       return {
         ...row,
         directoryEmail,
+        isUnmapped,
         escalationLevel: extra?.escalationLevel ?? 0,
         draftLockExpiresAt: extra?.draftLockExpiresAt ?? null,
         draftLockUserDisplayName: extra?.draftLockUserDisplayName ?? null,
@@ -130,6 +137,14 @@ export class EscalationsService {
       };
     });
 
-    return { ...payload, rows };
+    const unmappedManagerCount = rows.filter(
+      (r) => r.isUnmapped && (r.totalIssues > 0 || !r.resolved),
+    ).length;
+
+    return {
+      ...payload,
+      summary: { ...payload.summary, unmappedManagerCount },
+      rows,
+    };
   }
 }

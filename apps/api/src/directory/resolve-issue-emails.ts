@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { normalizeObservedManagerLabel } from '@ses/domain';
 import { matchRawNameToDirectoryEntries } from './directory-matching';
 
 type TxOrClient = Prisma.TransactionClient | PrismaClient;
@@ -12,6 +13,11 @@ export interface ResolveIssueEmailsOutcome<T extends IssueEmailInput> {
   issues: T[];
   resolvedFromDirectory: number;
   unresolvedManagerNames: string[];
+}
+
+function parseAliasList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((x): x is string => typeof x === 'string');
 }
 
 /**
@@ -55,11 +61,40 @@ export async function resolveIssueEmailsFromDirectory<T extends IssueEmailInput>
     return { issues, resolvedFromDirectory: 0, unresolvedManagerNames: names };
   }
 
+  // Build an exact normalized-key index first so deterministic matches
+  // (including "Last, First" and whitespace/case variants) never fall
+  // through to the fuzzy matcher. If two active entries share a key, the
+  // exact lookup abstains and we hand off to the fuzzy path, which treats
+  // the tie as a collision.
+  const exactEmailByKey = new Map<string, string | null>();
+  for (const e of entries) {
+    if (!e.active) continue;
+    const register = (rawKey: string) => {
+      const key = rawKey.trim().toLowerCase();
+      if (!key) return;
+      if (!exactEmailByKey.has(key)) {
+        exactEmailByKey.set(key, e.email);
+      } else if (exactEmailByKey.get(key) !== e.email) {
+        exactEmailByKey.set(key, null); // ambiguous — let fuzzy handle
+      }
+    };
+    register(e.normalizedKey);
+    for (const alias of parseAliasList(e.aliases)) {
+      register(normalizeObservedManagerLabel(alias));
+    }
+  }
+
   // Match once per unique name — engines can produce hundreds of issues
   // for the same manager; matching is O(entries) per call so cache it.
   const resolvedEmailByName = new Map<string, string>();
   const unresolved: string[] = [];
   for (const name of names) {
+    const exactKey = normalizeObservedManagerLabel(name).toLowerCase();
+    const exactEmail = exactKey ? exactEmailByKey.get(exactKey) : undefined;
+    if (exactEmail) {
+      resolvedEmailByName.set(name, exactEmail);
+      continue;
+    }
     const match = matchRawNameToDirectoryEntries(name, entries);
     if (match.autoMatch && !match.collision) {
       resolvedEmailByName.set(name, match.autoMatch.email);
