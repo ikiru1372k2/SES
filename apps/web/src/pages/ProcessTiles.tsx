@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, HelpCircle } from 'lucide-react';
 import { FUNCTION_REGISTRY, type FunctionId } from '@ses/domain';
@@ -48,10 +48,9 @@ export function ProcessTiles() {
 
   // Fire a hydrate once if we don't recognize the process locally — avoids a
   // flash of "not found" on hard refresh in a new browser.
-  useState(() => {
+  useEffect(() => {
     if (!process && processId) void hydrateProcesses();
-    return 0;
-  });
+  }, [hydrateProcesses, process, processId]);
 
   if (!processId) return <Navigate to="/" replace />;
 

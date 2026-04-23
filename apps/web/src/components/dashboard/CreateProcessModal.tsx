@@ -1,4 +1,4 @@
-import { FormEvent, useState, useRef } from 'react';
+import { FormEvent, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -11,8 +11,10 @@ type FieldErrors = { name?: string };
 export function CreateProcessModal({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const createProcess = useAppStore((state) => state.createProcess);
-  const existingNames = useAppStore((state) =>
-    new Set(state.processes.map((process) => process.name.trim().toLowerCase())),
+  const processes = useAppStore((state) => state.processes);
+  const existingNames = useMemo(
+    () => new Set(processes.map((process) => process.name.trim().toLowerCase())),
+    [processes],
   );
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
