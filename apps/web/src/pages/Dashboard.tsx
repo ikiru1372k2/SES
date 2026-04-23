@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { GitCompare, Plus, Users } from 'lucide-react';
 import { useKeyboardShortcut } from '../hooks/useKeyboardShortcut';
 import { bucketedProcesses } from '../lib/scheduleHelpers';
 import { CreateProcessModal } from '../components/dashboard/CreateProcessModal';
 import { AuditSchedule } from '../components/dashboard/AuditSchedule';
 import { ProcessCard } from '../components/dashboard/ProcessCard';
 import { AppShell } from '../components/layout/AppShell';
-import { BrandMark } from '../components/shared/BrandMark';
+import { usePageHeader } from '../components/layout/usePageHeader';
 import { Button } from '../components/shared/Button';
 import { EmptyState } from '../components/shared/EmptyState';
 import { Skeleton } from '../components/shared/Skeleton';
@@ -59,6 +59,10 @@ export function Dashboard() {
   const [hydrating, setHydrating] = useState(true);
   const didHydrate = useRef(false);
   useKeyboardShortcut('n', () => setShowCreate(true), !showCreate);
+
+  const headerConfig = useMemo(() => ({ breadcrumbs: [] }), []);
+  usePageHeader(headerConfig);
+
   useEffect(() => {
     if (didHydrate.current) return;
     didHydrate.current = true;
@@ -81,26 +85,32 @@ export function Dashboard() {
   return (
     <AppShell>
       <div className="p-6">
-        <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-          <div className="border-l border-brand/20 p-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <BrandMark />
-                <h1 className="mt-5 text-2xl font-bold">Smart Escalation System</h1>
-                <p className="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">Audit effort planning, identify overplanning or no-planning risks, prepare manager notifications, and track escalation progress in one controlled workspace.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {user?.role === 'admin' ? (
-                  <Link
-                    to="/admin/directory"
-                    className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-900"
-                  >
-                    Manager directory
-                  </Link>
-                ) : null}
-                <Button onClick={() => setShowCreate(true)} leading={<Plus size={16} />}>Create New Process</Button>
-              </div>
-            </div>
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">Smart Escalation System</h1>
+            <p className="mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-300">
+              Plan audits, surface overplanning and no-planning risks, prepare manager notifications, and track
+              escalation progress in one workspace.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/compare"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100"
+            >
+              <GitCompare size={14} />
+              Compare processes
+            </Link>
+            {user?.role === 'admin' ? (
+              <Link
+                to="/admin/directory"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100"
+              >
+                <Users size={14} />
+                Manager directory
+              </Link>
+            ) : null}
+            <Button onClick={() => setShowCreate(true)} leading={<Plus size={16} />}>Create New Process</Button>
           </div>
         </div>
         <AuditSchedule processes={processes} />

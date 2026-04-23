@@ -1,7 +1,8 @@
 import { Link, Navigate, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Users } from 'lucide-react';
+import { ArrowDownToLine, History, Play, Save, Users } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, isValidEmail, type FunctionId } from '@ses/domain';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
 import { MembersPanel } from '../components/workspace/MembersPanel';
@@ -11,22 +12,22 @@ import { PreviewTab } from '../components/workspace/PreviewTab';
 import { AuditResultsTab } from '../components/workspace/AuditResultsTab';
 import { DraftRestoreBanner } from '../components/workspace/DraftRestoreBanner';
 import { UnsavedAuditDialog } from '../components/workspace/UnsavedAuditDialog';
+import { SaveVersionModal } from '../components/workspace/SaveVersionModal';
 import { AppShell } from '../components/layout/AppShell';
+import { usePageHeader } from '../components/layout/usePageHeader';
 import { PresenceBar } from '../components/shared/PresenceBar';
 import { useCurrentUser } from '../components/auth/authContext';
-import { selectHasUnsavedAudit } from '../store/selectors';
+import { downloadAuditedWorkbook } from '../lib/excelParser';
+import { selectCorrectionCount, selectHasUnsavedAudit, selectLatestAuditResult } from '../store/selectors';
 import { useAppStore } from '../store/useAppStore';
 import { isLegacyTileTrackingTabEnabled } from '../lib/featureFlags';
-import { processDashboardPath } from '../lib/processRoutes';
+import { anchorResultForFile, formatDiffChips, summarizeDiff } from '../lib/versionDiff';
+import { versionComparePath } from '../lib/processRoutes';
 import { useRealtime } from '../realtime/useRealtime';
 import { onRealtimeEvent } from '../realtime/socket';
 import { directorySuggestions } from '../lib/api/directoryApi';
 import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 
-// E5: cold tabs — Analytics, Version History, and the legacy Tracking tab
-// each pull sizable dependencies (recharts, per-tab logic). Most users hit
-// Preview + Audit Results only; the rest are worth lazy-loading so initial
-// workspace open doesn't pay their cost.
 const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
 const VersionHistoryTab = lazy(() =>
   import('../components/workspace/VersionHistoryTab').then((module) => ({ default: module.VersionHistoryTab })),
@@ -36,8 +37,6 @@ const TrackingTab = lazy(() =>
 );
 
 export function Workspace() {
-  // New surface: /processes/:processId/:functionId — back-compat with old
-  // /workspace/:id is handled by a redirect in App.tsx, so `id` is no longer read here.
   const params = useParams<{ processId: string; functionId: string }>();
   const processId = params.processId;
   const functionId: FunctionId = isFunctionId(params.functionId) ? params.functionId : DEFAULT_FUNCTION_ID;
@@ -53,6 +52,12 @@ export function Workspace() {
   const tab = useAppStore((state) => state.activeWorkspaceTab);
   const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
   const result = useAppStore((state) => state.currentAuditResult);
+  const isAuditRunning = useAppStore((state) => state.isAuditRunning);
+  const runAudit = useAppStore((state) => state.runAudit);
+  const saveOverCurrentVersion = useAppStore((state) => state.saveOverCurrentVersion);
+  const saveAsNewRequestCount = useAppStore((state) => state.saveAsNewRequestCount);
+  const requestSaveAsNewVersion = useAppStore((state) => state.requestSaveAsNewVersion);
+
   const process = processes.find((item) => item.id === processId || item.displayCode === processId);
   const processRecordId = process?.id;
   const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
@@ -61,12 +66,17 @@ export function Workspace() {
   const tabFromUrl = searchParams.get('tab');
   const [membersOpen, setMembersOpen] = useState(false);
   const [resolutionOpen, setResolutionOpen] = useState(false);
+  const [versionModalOpen, setVersionModalOpen] = useState(false);
   const hydrateAttemptedRef = useRef(false);
   const queryClient = useQueryClient();
   const [hydrateFinished, setHydrateFinished] = useState(false);
-  // hydrating is true only while we're waiting for hydrateProcesses() to complete.
-  // Derived rather than stored so we never need setState in an effect's sync path.
   const hydrating = !process && !hydrateFinished;
+
+  useEffect(() => {
+    if (saveAsNewRequestCount === 0 || !process) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- deliberate cross-component signal
+    setVersionModalOpen(true);
+  }, [saveAsNewRequestCount, process]);
 
   const rawManagerNames = useMemo(() => {
     if (!process) return [];
@@ -80,11 +90,6 @@ export function Workspace() {
     return [...names];
   }, [process, result]);
 
-  // Issue #74: unmapped-manager banner is a React Query rather than a
-  // manual effect so any `directory.updated` realtime event or explicit
-  // invalidation from elsewhere re-runs the suggestion fetch automatically.
-  // The query key embeds the sorted name list so the cache buckets per
-  // distinct input and avoids double-fetches across remounts.
   const directorySuggestionsKey = useMemo(
     () => ['directory-suggestions', [...rawManagerNames].sort()] as const,
     [rawManagerNames],
@@ -100,9 +105,6 @@ export function Workspace() {
       ? rawManagerNames.filter((name) => !suggestionsQ.data.results[name]?.autoMatch).length
       : null;
 
-  // Realtime invalidation: directory mutations (resolve, inline add, merge,
-  // archive, delete) must flush the amber banner immediately without a
-  // browser refresh.
   useEffect(() => {
     const off = onRealtimeEvent((envelope) => {
       if (envelope.event === 'directory.updated') {
@@ -112,11 +114,6 @@ export function Workspace() {
     return off;
   }, [queryClient]);
 
-  // If the user hard-refreshed /workspace/<id> in a tab that has no cached
-  // process (incognito, different logged-in user, cleared storage) the store
-  // will briefly be empty. Fetch once before deciding whether the process
-  // really doesn't exist — otherwise we redirect to Dashboard and the user
-  // loses their deep link.
   useEffect(() => {
     if (process || hydrateAttemptedRef.current) return;
     hydrateAttemptedRef.current = true;
@@ -137,11 +134,6 @@ export function Workspace() {
     }
   }, [searchParams, setSearchParams, setWorkspaceTab, tabFromUrl]);
 
-  // When the user lands on the Audit Results tab without an in-session
-  // result (deep link from the Escalation Center, bookmarked URL, hard
-  // refresh, …) fetch the latest completed run from the server. The
-  // store action no-ops if `currentAuditResult` is already populated for
-  // this file, so this is safe to fire on every render of the results tab.
   useEffect(() => {
     if (tab !== 'results') return;
     if (!processRecordId) return;
@@ -151,18 +143,11 @@ export function Workspace() {
     void hydrateLatestAuditResult(processRecordId, targetFileId);
   }, [tab, processRecordId, process?.activeFileId, process?.files, functionId, hydrateLatestAuditResult]);
 
-  // Subscribe to realtime updates for this process. The hook accepts either
-  // a PRC-* display code or a UUID; the server resolves either. When the
-  // process is legacy-local (no backend record yet), presence.join returns
-  // forbidden and we stay silent — no toast spam.
   const processRealtimeKey = process?.displayCode ?? process?.id ?? null;
   const { members } = useRealtime(processRealtimeKey, currentUser?.displayCode, {
     onEvicted: () => navigate('/'),
   });
 
-  // Last-resort safety net for tab-close / hard-refresh / browser-back,
-  // which useBlocker can't intercept. The custom UnsavedAuditDialog below
-  // handles all in-app navigation — that's where the rich diff UI lives.
   useEffect(() => {
     if (!hasUnsavedAudit) return;
     const handler = (event: BeforeUnloadEvent) => {
@@ -173,20 +158,209 @@ export function Workspace() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [hasUnsavedAudit]);
 
-  // Intercept in-app navigation (clicks on router Links / programmatic
-  // navigate()) and show the UnsavedAuditDialog with a rich diff summary.
   const shouldBlock = useCallback<(args: { currentLocation: { pathname: string }; nextLocation: { pathname: string } }) => boolean>(
     ({ currentLocation, nextLocation }) => {
       if (!hasUnsavedAudit) return false;
-      // Same-pathname transitions (tab changes via URL search params) don't
-      // count as leaving the workspace.
       if (currentLocation.pathname === nextLocation.pathname) return false;
       return true;
     },
     [hasUnsavedAudit],
   );
   const blocker = useBlocker(shouldBlock);
-  const requestSaveAsNewVersion = useAppStore((state) => state.requestSaveAsNewVersion);
+
+  // Derived workspace state. All header action handlers below read from
+  // store state refs captured at call time so they stay stable across
+  // renders (§9 of headerfix.md — the header must not re-render on every
+  // keystroke in the workspace).
+  const functionFiles = useMemo(
+    () => (process ? process.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId) : []),
+    [process, functionId],
+  );
+  const activeFile = functionFiles.find((file) => file.id === process?.activeFileId) ?? functionFiles[0];
+  const selectedSheets = activeFile?.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected).length ?? 0;
+  const hasSavedVersion = (process?.versions.length ?? 0) > 0;
+  const latestResult = result ?? (process ? selectLatestAuditResult(process) : null);
+  const correctionCount = process ? selectCorrectionCount(process) : 0;
+  const headVersion = process?.versions[0];
+  const headVersionName = headVersion?.versionName ?? '';
+  const nextVersionNumber = (process?.versions.length ?? 0) + 1;
+  const canRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning);
+  const canSave = Boolean(process && latestResult && !isAuditRunning);
+  const canDownload = Boolean(process && activeFile && latestResult && hasSavedVersion && !isAuditRunning);
+
+  const onRunAudit = useCallback(async () => {
+    if (!process || !activeFile) return;
+    const priorAnchor = anchorResultForFile(process.versions, activeFile.id);
+    await runAudit(process.id, activeFile.id);
+    const runResult = useAppStore.getState().currentAuditResult;
+    if (!runResult) return;
+    const diff = summarizeDiff(priorAnchor, runResult);
+    if (diff && !diff.identical) {
+      toast.success(`Audit complete - ${runResult.issues.length} findings (${formatDiffChips(diff)})`);
+    } else if (diff?.identical && priorAnchor) {
+      toast.success(`Audit complete - no change from last run (${runResult.issues.length} findings)`);
+    } else {
+      toast.success(`Audit complete - ${runResult.scannedRows} rows scanned, ${runResult.issues.length} issues found`);
+    }
+  }, [process, activeFile, runAudit]);
+
+  const onQuickSave = useCallback(() => {
+    if (!process || !latestResult) return;
+    if (!headVersion) {
+      const updated = saveOverCurrentVersion(process.id);
+      if (updated) toast.success(`Saved as ${updated.versions[0]?.versionName ?? 'V1'}`);
+      return;
+    }
+    const diff = summarizeDiff(headVersion.result, latestResult);
+    if (diff?.identical) {
+      toast(`No change since ${headVersionName}`, { icon: 'ℹ️' });
+      return;
+    }
+    const updated = saveOverCurrentVersion(process.id);
+    if (!updated) return;
+    const chips = diff ? formatDiffChips(diff) : '';
+    toast.success(chips ? `Saved to ${headVersionName} · ${chips}` : `Saved to ${headVersionName}`);
+  }, [process, latestResult, headVersion, headVersionName, saveOverCurrentVersion]);
+
+  const onSaveAsNew = useCallback(() => {
+    setVersionModalOpen(true);
+  }, []);
+
+  const onDownload = useCallback(() => {
+    if (!activeFile || !latestResult) return;
+    downloadAuditedWorkbook(activeFile, latestResult).catch(() => toast.error('Could not download audited workbook'));
+  }, [activeFile, latestResult]);
+
+  const onDownloadCorrected = useCallback(() => {
+    if (!activeFile || !latestResult || !process) return;
+    downloadAuditedWorkbook(activeFile, latestResult, process.corrections).catch(() =>
+      toast.error('Could not download corrected workbook'),
+    );
+  }, [activeFile, latestResult, process]);
+
+  const onOpenMembers = useCallback(() => setMembersOpen(true), []);
+  const onOpenVersionHistory = useCallback(() => {
+    if (!process) return;
+    void navigate(versionComparePath(process.displayCode ?? process.id, functionId));
+  }, [navigate, process, functionId]);
+
+  const leaveGuard = useCallback(() => !hasUnsavedAudit, [hasUnsavedAudit]);
+
+  const headerConfig = useMemo(() => {
+    if (!process) return { breadcrumbs: [] };
+    const saveLabel = headVersion ? `Save to ${headVersionName}` : 'Save';
+    const saveTooltip = !latestResult
+      ? 'Run an audit first to save a version.'
+      : headVersion
+      ? `Update ${headVersionName} in place with the latest findings. Use the caret to create a new named version.`
+      : 'Save the current audit findings as V1.';
+    const runTooltip = !activeFile
+      ? 'Upload a file first'
+      : selectedSheets === 0
+      ? 'Select at least one valid sheet'
+      : activeFile.isAudited
+      ? 'Re-run the audit with the current sheet selection'
+      : 'Run the audit with the current sheet selection';
+    const overflow = [];
+    if (correctionCount === 0) {
+      overflow.push({
+        id: 'download',
+        label: 'Download audited workbook',
+        icon: ArrowDownToLine,
+        onClick: onDownload,
+        disabled: !canDownload,
+        tooltip: !hasSavedVersion ? 'Save a version first to download audited workbook.' : undefined,
+      });
+    }
+    if (correctionCount > 0) {
+      overflow.push({
+        id: 'download-corrected',
+        label: 'Download corrected workbook',
+        icon: ArrowDownToLine,
+        onClick: onDownloadCorrected,
+        disabled: !canDownload,
+      });
+      overflow.push({
+        id: 'download-original',
+        label: 'Download audited (original)',
+        icon: ArrowDownToLine,
+        onClick: onDownload,
+        disabled: !canDownload,
+      });
+    }
+    if (process.serverBacked) {
+      overflow.push({ id: 'members', label: 'Members', icon: Users, onClick: onOpenMembers });
+    }
+    if (hasSavedVersion) {
+      overflow.push({ id: 'versions', label: 'Version history', icon: History, onClick: onOpenVersionHistory });
+    }
+    return {
+      breadcrumbs: [
+        { label: 'Dashboard', to: '/' },
+        { label: process.name, to: `/processes/${encodeURIComponent(process.displayCode ?? process.id)}` },
+        { label: getFunctionLabel(functionId) },
+      ],
+      primaryActions: [
+        {
+          id: 'run-audit',
+          label: activeFile?.isAudited ? 'Re-run Audit' : 'Run Audit',
+          icon: Play,
+          onClick: () => {
+            void onRunAudit();
+          },
+          shortcut: 'r',
+          disabled: !canRun,
+          loading: isAuditRunning,
+          tooltip: runTooltip,
+        },
+        {
+          id: 'save',
+          label: saveLabel,
+          icon: Save,
+          onClick: onQuickSave,
+          shortcut: 's',
+          disabled: !canSave,
+          variant: 'secondary' as const,
+          tooltip: saveTooltip,
+          splitMenu: [
+            {
+              label: 'Save as new version…',
+              description: headVersion
+                ? `Keeps ${headVersionName} as-is and creates V${nextVersionNumber} with a new name.`
+                : 'Name this save before writing V1.',
+              onClick: onSaveAsNew,
+            },
+          ],
+        },
+      ],
+      overflowActions: overflow,
+      leaveGuard,
+    };
+  }, [
+    process,
+    functionId,
+    activeFile,
+    selectedSheets,
+    headVersion,
+    headVersionName,
+    latestResult,
+    correctionCount,
+    canRun,
+    canSave,
+    canDownload,
+    hasSavedVersion,
+    isAuditRunning,
+    nextVersionNumber,
+    onRunAudit,
+    onQuickSave,
+    onSaveAsNew,
+    onDownload,
+    onDownloadCorrected,
+    onOpenMembers,
+    onOpenVersionHistory,
+    leaveGuard,
+  ]);
+  usePageHeader(headerConfig);
 
   if (hydrating) {
     return (
@@ -196,40 +370,12 @@ export function Workspace() {
     );
   }
   if (!process) return <Navigate to="/" replace />;
-  // Scope the file list to the selected function so each tile only sees its own files.
-  const functionFiles = process.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId);
   const scopedProcess = { ...process, files: functionFiles };
-  const activeFile = functionFiles.find((file) => file.id === process.activeFileId) ?? functionFiles[0] ?? undefined;
   const draft = fileDrafts[`${process.id}:${functionId}`];
-  const canManageMembers = currentUser?.role === 'admin'; // Owners are verified server-side too; admin is the quick client-side hint.
-
-  const accessory = (
-    <div className="flex items-center gap-2">
-      <Link
-        to={processDashboardPath(process.id)}
-        className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300"
-        title="Back to tiles"
-      >
-        <ArrowLeft size={14} />
-        <span className="hidden sm:inline">{getFunctionLabel(functionId)}</span>
-      </Link>
-      <PresenceBar members={members} selfCode={currentUser?.displayCode} />
-      {process.serverBacked ? (
-        <button
-          type="button"
-          onClick={() => setMembersOpen(true)}
-          className="flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300"
-          title="Members"
-        >
-          <Users size={14} />
-          <span className="hidden sm:inline">Members</span>
-        </button>
-      ) : null}
-    </div>
-  );
+  const canManageMembers = currentUser?.role === 'admin';
 
   return (
-    <AppShell process={process} sidebar={<FilesSidebar process={scopedProcess} functionId={functionId} />} topBarAccessory={accessory}>
+    <AppShell process={process} sidebar={<FilesSidebar process={scopedProcess} functionId={functionId} />}>
       <DraftRestoreBanner
         draft={draft}
         currentFile={activeFile}
@@ -238,6 +384,20 @@ export function Workspace() {
         onRestore={promoteFileDraft}
         onDiscard={discardFileDraft}
       />
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-white px-5 py-2 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400">
+        <div className="flex items-center gap-3">
+          <PresenceBar members={members} selfCode={currentUser?.displayCode} />
+          {activeFile?.lastAuditedAt ? (
+            <span>Last run: {new Date(activeFile.lastAuditedAt).toLocaleString()}</span>
+          ) : null}
+          {hasUnsavedAudit ? (
+            <span className="inline-flex items-center gap-1 font-medium text-amber-700" title="Latest audit run isn't reflected in any saved version">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+              Unsaved
+            </span>
+          ) : null}
+        </div>
+      </div>
       {managerDirectoryOn && unmappedCount !== null && unmappedCount > 0 ? (
         <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
           {unmappedCount} manager{unmappedCount === 1 ? '' : 's'} in these findings are not confidently matched in the directory. Notifications may be blocked until resolved.{' '}
@@ -303,20 +463,18 @@ export function Workspace() {
           }}
         />
       ) : null}
+      {versionModalOpen && process && latestResult ? (
+        <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} />
+      ) : null}
       <UnsavedAuditDialog
         open={blocker.state === 'blocked'}
         process={process}
         latestResult={result ?? process.latestAuditResult ?? null}
         activeFileId={activeFile?.id}
         onUpdate={() => {
-          // saveOverCurrentVersion has already run inside the dialog; we
-          // just need to resume navigation.
           blocker.proceed?.();
         }}
         onSaveAsNew={() => {
-          // Open the Save-as-new modal owned by TopBar, then cancel the
-          // block so the user can interact with it. They can retry
-          // navigation once they've saved.
           requestSaveAsNewVersion();
           blocker.reset?.();
         }}
@@ -327,9 +485,6 @@ export function Workspace() {
   );
 }
 
-// Someone landed here from a bookmark or a persisted tab. The old tile-local
-// notifications workflow has been retired; route them to the Escalation
-// Center instead, which is the single source of truth for notify + track.
 function NotificationsRedirect({ processId, onGoToResults }: { processId: string; onGoToResults: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
