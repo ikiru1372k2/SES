@@ -37,9 +37,6 @@ function setConnectionState(next: RealtimeConnectionState): void {
 
 function ensureSocket(): Socket {
   if (socket) return socket;
-  // #region agent log
-  fetch('http://localhost:7379/ingest/e7cd3935-38b5-4daf-a68c-293c83da2364',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a43ed5'},body:JSON.stringify({sessionId:'a43ed5',runId:'run1',hypothesisId:'H1',location:'apps/web/src/realtime/socket.ts:ensureSocket:init',message:'Creating socket client',data:{path:'/api/v1/realtime',transports:['websocket','polling'],withCredentials:true,timeoutMs:10000},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   socket = io({
     path: '/api/v1/realtime',
     transports: ['websocket', 'polling'],
@@ -70,26 +67,14 @@ function ensureSocket(): Socket {
 
   socket.on('connect', () => setConnectionState('connected'));
   socket.on('disconnect', (reason) => {
-    // #region agent log
-    fetch('http://localhost:7379/ingest/e7cd3935-38b5-4daf-a68c-293c83da2364',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a43ed5'},body:JSON.stringify({sessionId:'a43ed5',runId:'run1',hypothesisId:'H2',location:'apps/web/src/realtime/socket.ts:disconnect',message:'Socket disconnected',data:{reason},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+    void reason;
     setConnectionState('disconnected');
   });
-  socket.on('connect_error', (error) => {
-    // #region agent log
-    fetch('http://localhost:7379/ingest/e7cd3935-38b5-4daf-a68c-293c83da2364',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a43ed5'},body:JSON.stringify({sessionId:'a43ed5',runId:'run1',hypothesisId:'H3',location:'apps/web/src/realtime/socket.ts:connect_error',message:'Socket connect error',data:{message:error?.message,name:error?.name,description:(error as { description?: string } | undefined)?.description,context:(error as { context?: unknown } | undefined)?.context},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
-  });
-  socket.on('reconnect_attempt', (attempt) => {
-    // #region agent log
-    fetch('http://localhost:7379/ingest/e7cd3935-38b5-4daf-a68c-293c83da2364',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a43ed5'},body:JSON.stringify({sessionId:'a43ed5',runId:'run1',hypothesisId:'H4',location:'apps/web/src/realtime/socket.ts:reconnect_attempt',message:'Socket reconnect attempt',data:{attempt},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+  socket.on('connect_error', () => {});
+  socket.on('reconnect_attempt', () => {
     setConnectionState('connecting');
   });
-  socket.io.on('reconnect_attempt', (attempt) => {
-    // #region agent log
-    fetch('http://localhost:7379/ingest/e7cd3935-38b5-4daf-a68c-293c83da2364',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a43ed5'},body:JSON.stringify({sessionId:'a43ed5',runId:'run1',hypothesisId:'H4',location:'apps/web/src/realtime/socket.ts:io_reconnect_attempt',message:'Manager reconnect attempt',data:{attempt},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+  socket.io.on('reconnect_attempt', () => {
     setConnectionState('connecting');
   });
   socket.io.on('reconnect', () => setConnectionState('connected'));

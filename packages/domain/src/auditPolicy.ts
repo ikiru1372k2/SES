@@ -14,6 +14,7 @@ export function createDefaultAuditPolicy(now = new Date().toISOString()): AuditP
     inPlanningEffortEnabled: true,
     onHoldEffortEnabled: true,
     onHoldEffortThreshold: 200,
+    pdThreshold: 30,
     updatedAt: now,
   };
 }

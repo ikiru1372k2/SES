@@ -1,5 +1,5 @@
 import { createIssueKey } from '../../auditEngine';
-import type { AuditIssue, AuditResult, WorkbookFile } from '../../types';
+import type { AuditIssue, AuditPolicy, AuditResult, WorkbookFile } from '../../types';
 import type { FunctionAuditEngine, FunctionAuditOptions, RowObject } from '../types';
 import {
   MP_EFFORT_ALIASES,
@@ -11,7 +11,7 @@ import {
   readCell,
   readEffortValue,
 } from './columns';
-import { MISSING_PLAN_RULES_BY_CODE, MP_EFFORT_ZERO_RULE_CODE } from './rules';
+import { MISSING_PLAN_RULES_BY_CODE, MP_EFFORT_MISSING_RULE_CODE, MP_EFFORT_ZERO_RULE_CODE } from './rules';
 
 function isBlankRow(row: unknown[]): boolean {
   return row.every((cell) => String(cell ?? '').trim() === '');
@@ -60,12 +60,15 @@ function pushIssue(
     sheetName: string;
     rowIndex: number;
     row: RowObject;
-    effortValue: number;
+    effortValue: number | null;
+    ruleCode: string;
+    reason: string;
+    thresholdLabel: string;
     options: FunctionAuditOptions;
   },
 ): void {
-  const { file, sheetName, rowIndex, row, effortValue, options } = args;
-  const rule = MISSING_PLAN_RULES_BY_CODE.get(MP_EFFORT_ZERO_RULE_CODE);
+  const { file, sheetName, rowIndex, row, effortValue, ruleCode, reason, thresholdLabel, options } = args;
+  const rule = MISSING_PLAN_RULES_BY_CODE.get(ruleCode);
   if (!rule) return;
 
   const projectNo = textValue(row, MP_PROJECT_NO_ALIASES, `Row ${rowIndex + 1}`);
@@ -74,17 +77,15 @@ function pushIssue(
   const projectState = textValue(row, MP_STATE_ALIASES, 'Unknown');
   const email = textValue(row, MP_EMAIL_ALIASES, '');
 
-  const reason = `Effort (H) is 0 — no planned effort recorded for this project.`;
-
   issues.push({
-    id: `${file.id}-${sheetName}-${rowIndex}-${MP_EFFORT_ZERO_RULE_CODE}`,
+    id: `${file.id}-${sheetName}-${rowIndex}-${ruleCode}`,
     ...(options.issueScope
       ? {
           issueKey: createIssueKey(options.issueScope, {
             projectNo,
             sheetName,
             rowIndex,
-            ruleCode: MP_EFFORT_ZERO_RULE_CODE,
+            ruleCode,
           }),
         }
       : {}),
@@ -94,19 +95,19 @@ function pushIssue(
     severity: rule.defaultSeverity,
     projectManager,
     projectState,
-    effort: effortValue,
-    auditStatus: MP_EFFORT_ZERO_RULE_CODE,
+    effort: effortValue ?? 0,
+    auditStatus: ruleCode,
     notes: reason,
     rowIndex,
     email,
-    ruleId: MP_EFFORT_ZERO_RULE_CODE,
-    ruleCode: MP_EFFORT_ZERO_RULE_CODE,
+    ruleId: ruleCode,
+    ruleCode,
     ruleVersion: rule.version,
     ruleName: rule.name,
     auditRunCode: options.runCode,
     category: rule.category,
     reason,
-    thresholdLabel: '= 0',
+    thresholdLabel,
     recommendedAction:
       'Enter the planned effort hours for this project in the source system and re-run the audit.',
   });
@@ -119,17 +120,36 @@ function auditRow(args: {
   row: RowObject;
   options: FunctionAuditOptions;
   issues: AuditIssue[];
+  zeroEffortEnabled: boolean;
+  missingEffortEnabled: boolean;
 }): boolean {
-  const { file, sheetName, rowIndex, row, options, issues } = args;
+  const { file, sheetName, rowIndex, row, options, issues, zeroEffortEnabled, missingEffortEnabled } = args;
   const effortValue = readEffortValue(row, MP_EFFORT_ALIASES);
 
-  // Blank / non-numeric cells are not flagged — they indicate the effort
-  // column is simply absent or not yet entered, which is a different concern
-  // from a deliberate zero entry.
-  if (effortValue === null) return false;
+  if (effortValue === null) {
+    if (missingEffortEnabled) {
+      pushIssue(issues, {
+        file, sheetName, rowIndex, row,
+        effortValue: null,
+        ruleCode: MP_EFFORT_MISSING_RULE_CODE,
+        reason: 'Effort (H) is absent — no planned effort recorded for this project.',
+        thresholdLabel: 'missing',
+        options,
+      });
+      return true;
+    }
+    return false;
+  }
 
-  if (effortValue === 0) {
-    pushIssue(issues, { file, sheetName, rowIndex, row, effortValue, options });
+  if (effortValue === 0 && zeroEffortEnabled) {
+    pushIssue(issues, {
+      file, sheetName, rowIndex, row,
+      effortValue,
+      ruleCode: MP_EFFORT_ZERO_RULE_CODE,
+      reason: 'Effort (H) is 0 — no planned effort recorded for this project.',
+      thresholdLabel: '= 0',
+      options,
+    });
     return true;
   }
 
@@ -138,7 +158,12 @@ function auditRow(args: {
 
 export const missingPlanAuditEngine: FunctionAuditEngine = {
   functionId: 'missing-plan',
-  run(file, _policy, options) {
+  run(file, policy, options) {
+    // Cast the generic AuditPolicy to read the toggles that control this engine.
+    const p = policy as AuditPolicy | undefined;
+    const zeroEffortEnabled = p?.zeroEffortEnabled !== false;
+    const missingEffortEnabled = p?.missingEffortEnabled !== false;
+
     const issues: AuditIssue[] = [];
     const sheetResults = file.sheets
       .filter((sheet) => sheet.status === 'valid' && sheet.isSelected)
@@ -157,6 +182,8 @@ export const missingPlanAuditEngine: FunctionAuditEngine = {
             row,
             options,
             issues,
+            zeroEffortEnabled,
+            missingEffortEnabled,
           });
           if (flagged) flaggedCount += 1;
         });

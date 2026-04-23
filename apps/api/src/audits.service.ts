@@ -9,11 +9,13 @@ import {
   buildIssuesCsv,
   createId,
   createIssueKey,
+  normalizeObservedManagerLabel,
   normalizeProcessPolicies,
   resolveFunctionPolicy,
   runFunctionAudit,
 } from '@ses/domain';
 import type { FunctionId } from '@ses/domain';
+import type { MappingSourceDto } from './dto/audits.dto';
 import { PrismaService } from './common/prisma.service';
 import { IdentifierService } from './common/identifier.service';
 import { ActivityLogService } from './common/activity-log.service';
@@ -205,7 +207,7 @@ export class AuditsService {
     };
   }
 
-  async run(processIdOrCode: string, body: { fileIdOrCode: string }, user: SessionUser) {
+  async run(processIdOrCode: string, body: { fileIdOrCode: string; mappingSource?: MappingSourceDto }, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'editor');
     const file = await this.prisma.workbookFile.findFirst({
       where: {
@@ -272,6 +274,13 @@ export class AuditsService {
         runCode,
       });
 
+      // Pre-resolve emails from an explicit mapping source (over-planning only).
+      let resolvedFromMapping = 0;
+      if (file.functionId === 'over-planning' && body.mappingSource && body.mappingSource.type !== 'none') {
+        const preMap = await this.buildMappingSourceMap(tx, process, file, body.mappingSource);
+        resolvedFromMapping = this.applyPreResolvedEmails(result.issues, preMap);
+      }
+
       // Master Data exports have no email column at all — every owner must
       // be looked up from the tenant's Manager Directory. For over-planning
       // we also prefer the directory: it's canonical, the workbook isn't.
@@ -298,6 +307,16 @@ export class AuditsService {
           resolvedCount: directoryResolution.resolvedFromDirectory,
           unresolvedNames: directoryResolution.unresolvedManagerNames,
         },
+        ...(file.functionId === 'over-planning'
+          ? {
+              overplanning: {
+                pdThreshold: (functionPolicy as { pdThreshold?: number })?.pdThreshold ?? 30,
+                mappingSourceType: body.mappingSource?.type ?? 'none',
+                resolvedFromMapping,
+                allowUnresolvedFallback: body.mappingSource?.allowUnresolvedFallback ?? true,
+              },
+            }
+          : {}),
       };
 
       for (const issue of issuesWithCodes) {
@@ -482,6 +501,104 @@ export class AuditsService {
           contentType,
         } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
+    });
+  }
+
+  // Build a name → email map from either an uploaded mapping file or a completed master-data run.
+  private async buildMappingSourceMap(
+    tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
+    process: { id: string; displayCode: string },
+    auditFile: { id: string },
+    src: MappingSourceDto,
+  ): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+
+    if (src.type === 'uploaded_file') {
+      if (!src.uploadId) return map;
+      if (src.uploadId === auditFile.id) {
+        throw new BadRequestException('Mapping file must differ from the audit file');
+      }
+      const mf = await (tx as any).workbookFile.findFirst({
+        where: { id: src.uploadId, processId: process.id },
+      });
+      if (!mf) throw new BadRequestException(`Mapping file ${src.uploadId} not found in this process`);
+      const sheet = await (tx as any).workbookSheet.findFirst({ where: { fileId: mf.id } });
+      const rows: unknown[][] = (sheet?.rows as unknown[][]) ?? [];
+      if (rows.length < 2) return map;
+      const headerRow = (rows[0] ?? []).map((c) => String(c ?? '').toLowerCase());
+      const nameCol = headerRow.findIndex((h) => ['manager', 'name', 'project manager'].includes(h));
+      const emailCol = headerRow.findIndex((h) => h === 'email');
+      if (nameCol < 0 || emailCol < 0) return map;
+      for (const row of rows.slice(1)) {
+        const name = String((row as unknown[])[nameCol] ?? '').trim();
+        const email = String((row as unknown[])[emailCol] ?? '').trim();
+        if (name && email) map.set(normalizeObservedManagerLabel(name), email);
+      }
+      return map;
+    }
+
+    if (src.type === 'master_data_version') {
+      if (!src.masterDataVersionId) return map;
+      const run = await (tx as any).auditRun.findFirst({
+        where: {
+          id: src.masterDataVersionId,
+          processId: process.id,
+          status: 'completed',
+          file: { functionId: 'master-data' },
+        },
+      });
+      if (!run) {
+        throw new BadRequestException(
+          'Master Data version not found, or does not belong to this process, or is not completed',
+        );
+      }
+      const issues = await (tx as any).auditIssue.findMany({
+        where: { auditRunId: run.id },
+        select: { projectManager: true, email: true },
+      });
+      for (const issue of issues) {
+        const name = String(issue.projectManager ?? '').trim();
+        const email = String(issue.email ?? '').trim();
+        if (name && email) map.set(normalizeObservedManagerLabel(name), email);
+      }
+      return map;
+    }
+
+    return map;
+  }
+
+  private applyPreResolvedEmails(issues: AuditIssue[], map: Map<string, string>): number {
+    let count = 0;
+    for (const issue of issues) {
+      if (issue.email) continue;
+      const key = normalizeObservedManagerLabel(issue.projectManager ?? '');
+      const email = map.get(key);
+      if (email) {
+        issue.email = email;
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  async listForProcess(processIdOrCode: string, functionId: string | undefined, user: SessionUser) {
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'viewer');
+    return this.prisma.auditRun.findMany({
+      where: {
+        processId: process.id,
+        status: 'completed',
+        ...(functionId ? { file: { functionId } } : {}),
+      },
+      orderBy: { completedAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        displayCode: true,
+        completedAt: true,
+        scannedRows: true,
+        flaggedRows: true,
+        file: { select: { functionId: true, name: true, displayCode: true } },
+      },
     });
   }
 

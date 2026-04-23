@@ -72,7 +72,7 @@ function detectHeader(rows: unknown[][]): HeaderCandidate | null {
     const candidate = rowHeaderScore(row);
     if (!best || candidate.score > best.score) best = { ...candidate, headerRowIndex: index };
   }
-  if (!best || best.score < 5 || !CORE_COLUMNS.some((column) => best.matchedColumns.has(column))) return null;
+  if (!best || best.score < 4 || !CORE_COLUMNS.some((column) => best.matchedColumns.has(column))) return null;
   return best;
 }
 

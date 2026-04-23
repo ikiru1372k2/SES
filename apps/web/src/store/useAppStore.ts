@@ -11,13 +11,13 @@ import {
 import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../lib/auditPolicy';
 import { runAuditAsync } from '../lib/auditRunner';
 import { deleteWorkbookRawData, getWorkbookRawData, putWorkbookRawData, renameWorkbookRawDataKey } from '../lib/blobStore';
-import { parseWorkbook } from '../lib/excelParser';
+import { detectWorkbookSheets, parseWorkbook } from '../lib/excelParser';
 import { createId } from '../lib/id';
 import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
 import { uploadFileToApi, deleteFileOnApi, listFilesOnApi, type ApiFileSummary } from '../lib/api/filesApi';
 import { listFileVersionsOnApi } from '../lib/api/fileVersionsApi';
 import { deleteFileDraftOnApi, getFileDraftOnApi, promoteFileDraftOnApi, saveFileDraftOnApi } from '../lib/api/fileDraftsApi';
-import { fetchAuditIssues, fetchLatestAuditRunForFile, runAuditOnApi, type ApiAuditRunIssue, type ApiAuditRunSummary } from '../lib/api/auditsApi';
+import { fetchAuditIssues, fetchLatestAuditRunForFile, runAuditOnApi, type ApiAuditRunIssue, type ApiAuditRunSummary, type MappingSourceInput } from '../lib/api/auditsApi';
 import { upsertTrackingOnApi, addTrackingEventOnApi } from '../lib/api/trackingApi';
 import {
   addIssueCommentOnApi,
@@ -94,7 +94,7 @@ type AppStore = {
   currentAuditResultForFile: (processId: string, fileId: string) => AuditResult | null;
   updateAuditPolicy: (processId: string, patch: Partial<AuditPolicy>) => void;
   resetAuditPolicy: (processId: string) => void;
-  runAudit: (processId: string, fileId: string) => Promise<void>;
+  runAudit: (processId: string, fileId: string, runOptions?: { mappingSource?: MappingSourceInput }) => Promise<void>;
   cancelAudit: () => void;
   // Pull the latest completed audit run for (processId, fileId) from the
   // server and hydrate `currentAuditResult` from it. Used when the user
@@ -251,6 +251,29 @@ function mapApiAuditToResult(
 
 async function mapApiFileToWorkbookFile(file: ApiFileSummary): Promise<WorkbookFile> {
   const rawData = (await getWorkbookRawData(file.id)) ?? {};
+  // Re-derive sheet statuses from local rawData when available so that parser
+  // improvements (e.g. threshold fixes) take effect without a re-upload.
+  // Preserve the user's per-sheet isSelected choice from the API.
+  const hasRawData = Object.keys(rawData).length > 0;
+  const freshSheets = hasRawData ? detectWorkbookSheets(rawData) : null;
+  const apiSheetMap = new Map(file.sheets.map((s) => [s.name, s]));
+  const sheets = (freshSheets ?? file.sheets.map((sheet) => ({
+    name: sheet.name,
+    status: sheet.status,
+    rowCount: sheet.rowCount,
+    isSelected: sheet.isSelected,
+    ...(sheet.headerRowIndex !== null ? { headerRowIndex: sheet.headerRowIndex } : {}),
+    ...(sheet.originalHeaders !== undefined ? { originalHeaders: sheet.originalHeaders } : {}),
+    ...(sheet.normalizedHeaders !== undefined ? { normalizedHeaders: sheet.normalizedHeaders } : {}),
+  }))).map((sheet) => {
+    if (!freshSheets) return sheet;
+    const api = apiSheetMap.get(sheet.name);
+    return {
+      ...sheet,
+      // For newly-valid sheets preserve prior selection; invalid sheets deselect.
+      isSelected: sheet.status === 'valid' ? (api?.isSelected ?? true) : false,
+    };
+  });
   return {
     id: file.id,
     displayCode: file.displayCode,
@@ -265,15 +288,7 @@ async function mapApiFileToWorkbookFile(file: ApiFileSummary): Promise<WorkbookF
     serverBacked: true,
     sizeBytes: file.sizeBytes,
     mimeType: file.mimeType,
-    sheets: file.sheets.map((sheet) => ({
-      name: sheet.name,
-      status: sheet.status,
-      rowCount: sheet.rowCount,
-      isSelected: sheet.isSelected,
-      ...(sheet.headerRowIndex !== null ? { headerRowIndex: sheet.headerRowIndex } : {}),
-      ...(sheet.originalHeaders !== undefined ? { originalHeaders: sheet.originalHeaders } : {}),
-      ...(sheet.normalizedHeaders !== undefined ? { normalizedHeaders: sheet.normalizedHeaders } : {}),
-    })),
+    sheets,
     rawData,
   };
 }
@@ -319,6 +334,9 @@ export const useAppStore = create<AppStore>()(
       hydrateFunctionWorkspace: async (processId, functionId) => {
         const process = get().processes.find((item) => item.id === processId || item.displayCode === processId);
         if (!process) return;
+        // Clear any stale result from a previous function so the results tab
+        // never shows another function's audit while the new workspace loads.
+        set({ currentAuditResult: null });
         const processRef = process.displayCode ?? process.id;
         const [apiFiles, draft] = await Promise.all([
           listFilesOnApi(processRef, functionId),
@@ -550,7 +568,16 @@ export const useAppStore = create<AppStore>()(
           currentAuditResult: state.currentAuditResult?.fileId === fileId ? null : state.currentAuditResult,
           processes: patchProcess(state.processes, processId, (process) => {
             const files = process.files.filter((file) => file.id !== fileId);
-            return { ...process, files, activeFileId: process.activeFileId === fileId ? files[0]?.id ?? null : process.activeFileId, updatedAt: new Date().toISOString() };
+            const updated: AuditProcess = {
+              ...process,
+              files,
+              activeFileId: process.activeFileId === fileId ? files[0]?.id ?? null : process.activeFileId,
+              updatedAt: new Date().toISOString(),
+            };
+            if (process.latestAuditResult?.fileId === fileId) {
+              delete updated.latestAuditResult;
+            }
+            return updated;
           }),
         }));
       },
@@ -594,12 +621,14 @@ export const useAppStore = create<AppStore>()(
         return [...(process?.versions ?? [])].reverse().find((version) => version.result.fileId === fileId)?.result ?? null;
       },
 
-      runAudit: async (processId, fileId) => {
+      runAudit: async (processId, fileId, runOptions) => {
         const process = get().processes.find((item) => item.id === processId);
         const file = process?.files.find((item) => item.id === fileId);
         if (!process || !file) return;
         const selected = file.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected);
-        if (!selected.length) return;
+        if (!selected.length) {
+          return;
+        }
 
         // Claim this run with a fresh key. Any earlier in-flight run with
         // a different key will refuse to commit its result at the end.
@@ -652,7 +681,7 @@ export const useAppStore = create<AppStore>()(
 
         try {
           if (useServer) {
-            const apiResult = await runAuditOnApi(process.displayCode!, fileDisplayCode!);
+            const apiResult = await runAuditOnApi(process.displayCode!, fileDisplayCode!, runOptions);
             const apiIssues = await fetchAuditIssues(apiResult.displayCode);
             if (!stillActive()) return;
             const mapped = mapApiAuditToResult(file.id, apiResult, apiIssues);

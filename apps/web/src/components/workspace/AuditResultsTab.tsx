@@ -1,5 +1,7 @@
 import { CheckCircle2, ChevronRight, Circle, Settings, X } from 'lucide-react';
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import type { MappingSourceInput } from '../../lib/api/auditsApi';
+import { MappingSourcePanel } from './MappingSourcePanel';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
@@ -114,7 +116,24 @@ function issueRuleKey(issue: AuditIssue): string {
   return issue.ruleCode ?? issue.ruleId ?? issue.auditStatus ?? '';
 }
 
-export function AuditResultsTab({ process, file }: { process: AuditProcess; file?: WorkbookFile | undefined }) {
+function isMappingSourceValid(src: MappingSourceInput | undefined): boolean {
+  if (!src || src.type === 'none') return true;
+  if (src.type === 'master_data_version') return Boolean(src.masterDataVersionId);
+  if (src.type === 'uploaded_file') return Boolean(src.uploadId);
+  return true;
+}
+
+export function AuditResultsTab({
+  process,
+  file,
+  mappingSource,
+  onMappingSourceChange,
+}: {
+  process: AuditProcess;
+  file?: WorkbookFile | undefined;
+  mappingSource?: MappingSourceInput | undefined;
+  onMappingSourceChange?: (src: MappingSourceInput | undefined) => void;
+}) {
   // The Zustand `currentAuditResult` is only populated by an interactive
   // run from this same browser session — it gets cleared whenever the user
   // navigates between processes or functions (see useAppStore lines 321,
@@ -127,13 +146,14 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   // pattern (Workspace.tsx:198,213).
   const liveResult = useAppStore((state) => state.currentAuditResult);
   const result = useMemo(() => {
-    if (liveResult && (!file || liveResult.fileId === file.id)) return liveResult;
-    if (process.latestAuditResult && (!file || process.latestAuditResult.fileId === file.id)) {
+    if (!file) return null;
+    if (liveResult && liveResult.fileId === file.id) return liveResult;
+    if (process.latestAuditResult && process.latestAuditResult.fileId === file.id) {
       return process.latestAuditResult;
     }
     // process.versions is sorted newest-first elsewhere; index 0 is latest.
     const latestVersion = process.versions?.[0]?.result;
-    if (latestVersion && (!file || latestVersion.fileId === file.id)) return latestVersion;
+    if (latestVersion && latestVersion.fileId === file.id) return latestVersion;
     return null;
   }, [liveResult, file, process.latestAuditResult, process.versions]);
   const runAudit = useAppStore((state) => state.runAudit);
@@ -150,6 +170,11 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
   const [sort, setSort] = useState<SortKey>('severity');
   const [expanded, setExpanded] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const overPlanningFiles = useMemo(
+    () => process.files.filter((f) => f.functionId === 'over-planning'),
+    [process.files],
+  );
+  const mappingSourceOk = file?.functionId !== 'over-planning' || isMappingSourceValid(mappingSource);
   const searchRef = useRef<HTMLInputElement>(null);
   useKeyboardShortcut('/', () => searchRef.current?.focus(), Boolean(result));
   const policyChanged = Boolean(result && isPolicyChanged(process.auditPolicy, result.policySnapshot));
@@ -388,7 +413,31 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
             <Step done={false}>{isMasterData ? 'Run Master Data audit' : 'Run audit with the QGC policy'}</Step>
             <Step done={false}>Save a version for traceability</Step>
           </div>
-          {file ? <button onClick={() => runAudit(process.id, file.id)} disabled={!hasSelected} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Run Audit</button> : null}
+          {file ? (
+            <>
+              {file.functionId === 'over-planning' && process.displayCode && (
+                <div className="mb-3 w-full max-w-sm text-left">
+                  <MappingSourcePanel
+                    processId={process.id}
+                    processDisplayCode={process.displayCode}
+                    auditFileId={file.id}
+                    overPlanningFiles={overPlanningFiles}
+                    value={mappingSource}
+                    onChange={onMappingSourceChange ?? (() => {})}
+                  />
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  void runAudit(process.id, file.id, mappingSource ? { mappingSource } : undefined);
+                }}
+                disabled={!hasSelected || !mappingSourceOk}
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              >
+                Run Audit
+              </button>
+            </>
+          ) : null}
         </EmptyState>
       ) : (
         <>
@@ -422,8 +471,10 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
               {file ? (
                 <button
                   type="button"
-                  onClick={() => runAudit(process.id, file.id)}
-                  disabled={!hasSelected}
+                  onClick={() => {
+                    void runAudit(process.id, file.id, mappingSource ? { mappingSource } : undefined);
+                  }}
+                  disabled={!hasSelected || !mappingSourceOk}
                   className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
                 >
                   Re-run audit
@@ -556,7 +607,7 @@ export function AuditResultsTab({ process, file }: { process: AuditProcess; file
         </>
       )}
 
-      {settingsOpen ? <QgcSettingsDrawer process={process} file={file} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? <QgcSettingsDrawer process={process} file={file} mappingSource={mappingSource} onClose={() => setSettingsOpen(false)} /> : null}
     </div>
   );
 }
@@ -643,11 +694,23 @@ function Detail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function QgcSettingsDrawer({ process, file, onClose }: { process: AuditProcess; file?: WorkbookFile | undefined; onClose: () => void }) {
+function QgcSettingsDrawer({
+  process,
+  file,
+  mappingSource,
+  onClose,
+}: {
+  process: AuditProcess;
+  file?: WorkbookFile | undefined;
+  mappingSource?: MappingSourceInput | undefined;
+  onClose: () => void;
+}) {
   const updateAuditPolicy = useAppStore((state) => state.updateAuditPolicy);
   const resetAuditPolicy = useAppStore((state) => state.resetAuditPolicy);
   const runAudit = useAppStore((state) => state.runAudit);
   const [draft, setDraft] = useState<AuditPolicy>(process.auditPolicy);
+  const isOverPlanning = file?.functionId === 'over-planning';
+  const isMissingPlan = file?.functionId === 'missing-plan';
 
   function setNumber(key: keyof AuditPolicy, value: string) {
     setDraft((state) => ({ ...state, [key]: Number(value) || 0 }));
@@ -661,7 +724,8 @@ function QgcSettingsDrawer({ process, file, onClose }: { process: AuditProcess; 
     event.preventDefault();
     updateAuditPolicy(process.id, { ...draft, mediumEffortMin: 0, mediumEffortMax: 0, lowEffortEnabled: false });
     if (file) {
-      void runAudit(process.id, file.id).then(() => toast.success('Settings saved and audit re-run'));
+      const runOptions = isOverPlanning && mappingSource ? { mappingSource } : undefined;
+      void runAudit(process.id, file.id, runOptions).then(() => toast.success('Settings saved and audit re-run'));
     } else {
       toast.success('Settings saved');
     }
@@ -686,24 +750,23 @@ function QgcSettingsDrawer({ process, file, onClose }: { process: AuditProcess; 
           <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"><X size={18} /></button>
         </div>
 
-        <SettingsSection title="Overplanning">
-          <NumberField label="Overplanned when effort is greater than" value={draft.highEffortThreshold} suffix="hours" onChange={(value) => setNumber('highEffortThreshold', value)} />
-        </SettingsSection>
-
-        <SettingsSection title="Missing Planning">
-          <Toggle label="Flag missing effort" checked={draft.missingEffortEnabled} onChange={(checked) => setFlag('missingEffortEnabled', checked)} />
-          <Toggle label="Flag zero effort" checked={draft.zeroEffortEnabled} onChange={(checked) => setFlag('zeroEffortEnabled', checked)} />
-        </SettingsSection>
-
-        <details className="mt-5 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-          <summary className="cursor-pointer font-semibold">Advanced rules</summary>
-          <div className="mt-3 space-y-3">
-            <Toggle label="Flag missing manager" checked={draft.missingManagerEnabled} onChange={(checked) => setFlag('missingManagerEnabled', checked)} />
-            <Toggle label="Flag In Planning with effort" checked={draft.inPlanningEffortEnabled} onChange={(checked) => setFlag('inPlanningEffortEnabled', checked)} />
-            <Toggle label="Flag On Hold with effort" checked={draft.onHoldEffortEnabled} onChange={(checked) => setFlag('onHoldEffortEnabled', checked)} />
-            <NumberField label="Flag On Hold when effort is greater than" value={draft.onHoldEffortThreshold} suffix="hours" onChange={(value) => setNumber('onHoldEffortThreshold', value)} />
-          </div>
-        </details>
+        {isOverPlanning ? (
+          <SettingsSection title="Overplanning threshold">
+            <NumberField
+              label="Flag when monthly Effort PD exceeds"
+              value={draft.pdThreshold ?? 30}
+              suffix="PD per month"
+              onChange={(value) => setNumber('pdThreshold', value)}
+            />
+          </SettingsSection>
+        ) : isMissingPlan ? (
+          <SettingsSection title="Missing Planning rules">
+            <Toggle label="Flag missing effort (absent / blank)" checked={draft.missingEffortEnabled} onChange={(checked) => setFlag('missingEffortEnabled', checked)} />
+            <Toggle label="Flag zero effort" checked={draft.zeroEffortEnabled} onChange={(checked) => setFlag('zeroEffortEnabled', checked)} />
+          </SettingsSection>
+        ) : (
+          <p className="mt-4 text-sm text-gray-500">No configurable thresholds for this function.</p>
+        )}
 
         <div className="sticky bottom-0 mt-6 flex gap-2 border-t border-gray-200 bg-white pt-4 dark:border-gray-700 dark:bg-gray-900">
           <button type="submit" className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">{file ? 'Save & Re-run Audit' : 'Save Settings'}</button>

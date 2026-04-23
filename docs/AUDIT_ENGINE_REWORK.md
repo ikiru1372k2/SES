@@ -33,7 +33,7 @@ This document prioritises the fixes and defines what we throw away.
 | Function            | Today                                                | Truth            |
 | ------------------- | ---------------------------------------------------- | ---------------- |
 | master-data         | Dedicated engine, 10 required-field rules + Others   | Real             |
-| over-planning       | Wraps legacy `runAudit()` (effort rules)             | Legacy           |
+| over-planning       | Dedicated engine, `RUL-OP-MONTH-PD-HIGH` rule        | Real             |
 | missing-plan        | Dedicated engine, `RUL-MP-EFFORT-ZERO` rule          | Real             |
 | function-rate       | Wraps legacy `runAudit()`                            | Placeholder      |
 | internal-cost-rate  | Wraps legacy `runAudit()`                            | Placeholder      |
@@ -428,3 +428,70 @@ missingPlanAuditEngine.run()
 No new escalation mechanism was added. The `EmptyPolicy` slice for
 `missing-plan` in `policies.ts` remains correct — this engine has no
 configurable thresholds.
+
+---
+
+## Section 8 — Over-Planning Engine (shipped 2026-04-23)
+
+### Behaviour
+
+The dedicated `overPlanningAuditEngine` detects dynamic monthly **Effort PD**
+columns and flags projects where any month's PD value **strictly exceeds**
+`pdThreshold` (default **30**).
+
+### Column detection
+
+`detectPdColumns(rawRows)` uses two strategies and returns whichever finds
+more PD columns:
+
+- **Strategy A (single-row):** scans each header row (up to first 3) for
+  cells that satisfy `isPdColumn`. A column is a PD column if it contains
+  `\bpd\b` AND a month name (short or long), a numeric month (`01`–`12`),
+  or a 4-digit year.
+- **Strategy B (two-row merge):** for consecutive row pairs `(i, i+1)`,
+  concatenates cells column-by-column and checks if the merged label is a
+  PD column (handles `"Effort PD"` + `"Mar 2025"` split-header layouts).
+
+### Rule
+
+`RUL-OP-MONTH-PD-HIGH` — **High** / **Overplanning**
+
+`reason` string: `"<column>: <value> PD exceeds threshold of <N> PD."`
+
+The 7 legacy `RUL-EFFORT-*`, `RUL-MGR-*`, `RUL-STATE-*` rules are retained
+in `OVER_PLANNING_ENGINE_RULE_CATALOG` for DB FK integrity; the new engine
+never emits them.
+
+### Policy
+
+`pdThreshold?: number` added to `AuditPolicy` (default **30** in
+`createDefaultAuditPolicy`). Passed to the engine via the standard
+`resolveFunctionPolicy` path.
+
+### Mapping source (optional, over-planning only)
+
+`RunAuditDto.mappingSource` (`MappingSourceDto`) accepts:
+
+| `type`                | Behaviour                                                    |
+| --------------------- | ------------------------------------------------------------ |
+| `none`                | Skip; fall through to Manager Directory (default)            |
+| `master_data_version` | Read completed master-data run's issues for manager→email    |
+| `uploaded_file`       | Read another uploaded over-planning file for manager→email   |
+
+Guard: `uploadId === auditFileId` → `BadRequestException`. Emails resolved
+from the mapping source are stamped on issues **before**
+`resolveIssueEmailsFromDirectory` runs, so the directory acts as a fallback.
+
+`allowUnresolvedFallback` (default `true`): when `false`, unresolved names
+are surfaced in `summary.overplanning.unresolvedManagerNames` but issues are
+still created (non-blocking).
+
+### Escalation reuse
+
+Same `resolveIssueEmailsFromDirectory → reconcileAfterAudit` pipeline as
+every other engine. No new mechanism was added.
+
+### Non-regression guarantee
+
+The master-data engine, all `RUL-MD-*` rules, and the missing-plan engine
+are **unchanged** by this change.
