@@ -45,7 +45,7 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/multer": "^2.0.0",
     "@types/node": "^24.6.0",
-    "@types/supertest": "^6.0.3",
+    "@types/supertest": "^7.2.0",
     "exceljs": "4.4.0",
     "prisma": "^6.8.2",
     "supertest": "^7.1.0",
