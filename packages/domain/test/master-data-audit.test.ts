@@ -337,7 +337,9 @@ test('master-data catalog contains a missing rule for every required column plus
 });
 
 test('unbuilt functions have empty catalogs, not inherited rules', () => {
-  for (const fn of ['missing-plan', 'function-rate', 'internal-cost-rate'] as const) {
+  // missing-plan now has its own dedicated engine and catalog (RUL-MP-EFFORT-ZERO).
+  // function-rate and internal-cost-rate remain unbuilt placeholders.
+  for (const fn of ['function-rate', 'internal-cost-rate'] as const) {
     assert.equal(getRuleCatalogForFunction(fn).length, 0, `${fn} should not inherit any rules`);
   }
 });

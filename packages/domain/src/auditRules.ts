@@ -1,6 +1,7 @@
 import type { IssueCategory, Severity } from './types';
 import type { FunctionId } from './functions';
 import { MASTER_DATA_RULE_CATALOG } from './functions-audit/master-data/rules';
+import { MISSING_PLAN_RULE_CATALOG } from './functions-audit/missing-plan/rules';
 
 export interface RuleCatalogEntry {
   ruleCode: string;
@@ -109,7 +110,7 @@ export const OVER_PLANNING_RULE_CATALOG: RuleCatalogEntry[] = [
 export const RULE_CATALOG_BY_FUNCTION: Record<FunctionId, RuleCatalogEntry[]> = {
   'master-data': MASTER_DATA_RULE_CATALOG,
   'over-planning': OVER_PLANNING_RULE_CATALOG,
-  'missing-plan': [],
+  'missing-plan': MISSING_PLAN_RULE_CATALOG,
   'function-rate': [],
   'internal-cost-rate': [],
 };
