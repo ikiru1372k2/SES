@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_IDS } from '@ses/domain';
 import { EnginePill } from './EnginePill';
-import { computePriority, suggestNextAction } from './nextAction';
+import { computePriority, effectiveManagerEmail, suggestNextAction } from './nextAction';
 
 export type SortKey = 'priority' | 'issues' | 'stage' | 'lastContact' | 'sla';
 
@@ -173,14 +173,19 @@ export function ManagerTable({
           {sorted.map((row, idx) => {
             const selected = idx === selectedIndex;
             const tone = slaTone(row, now);
+            const managerEmail = effectiveManagerEmail(row);
             return (
               <tr
                 key={row.managerKey}
                 tabIndex={0}
                 aria-selected={selected}
-                className={`cursor-pointer border-t border-gray-100 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/80 ${
-                  selected ? 'bg-brand/5 ring-1 ring-inset ring-brand/30' : ''
-                }`}
+                className={`cursor-pointer border-t border-gray-100 dark:border-gray-800 ${
+                  row.resolved
+                    ? 'bg-green-50 hover:bg-green-100 dark:bg-green-950/30 dark:hover:bg-green-900/40'
+                    : selected
+                      ? 'bg-brand/5 hover:bg-brand/10 dark:hover:bg-gray-800/80'
+                      : 'hover:bg-gray-50 dark:hover:bg-gray-800/80'
+                } ${selected ? 'ring-1 ring-inset ring-brand/30' : ''}`}
                 onClick={() => {
                   onSelectManagerKey(row.managerKey);
                   onOpenPanel(row);
@@ -198,8 +203,8 @@ export function ManagerTable({
                 </td>
                 <td className="px-3 py-2">
                   <div className="font-medium text-gray-900 dark:text-white">{row.managerName}</div>
-                  {row.resolvedEmail ? (
-                    <div className="text-xs text-gray-500">{row.resolvedEmail}</div>
+                  {managerEmail ? (
+                    <div className="text-xs text-gray-500">{managerEmail}</div>
                   ) : (
                     <div className="mt-0.5 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
                       Missing email — add to directory
@@ -264,7 +269,7 @@ export function ManagerTable({
                         className="block w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
                         onClick={(e) => {
                           e.stopPropagation();
-                          const em = row.resolvedEmail;
+                          const em = effectiveManagerEmail(row);
                           if (em) void navigator.clipboard.writeText(em).then(() => toast.success('Email copied')).catch(() => toast.error('Copy failed'));
                           else toast.error('No email');
                           setMenuRow(null);

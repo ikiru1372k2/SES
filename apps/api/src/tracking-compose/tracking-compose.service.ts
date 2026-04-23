@@ -225,7 +225,7 @@ export class TrackingComposeService {
       throw new BadRequestException(`Send is not allowed from stage ${entry.stage}.`);
     }
 
-    const { subject, text, channel } = await this.resolveContent(entry, user, body);
+    const { subject, text, channel, managerEmail } = await this.resolveContent(entry, user, body);
     const sendChannel: EscalationSendChannel = channel ?? 'email';
     // Channel gate (Issue #75): the 2-Outlooks-then-1-Teams cycle is
     // enforced here so race conditions between multiple auditors can't
@@ -238,7 +238,7 @@ export class TrackingComposeService {
       throw new BadRequestException('Channel "both" is no longer supported — pick Outlook or Teams.');
     }
 
-    const to = (entry.managerEmail ?? '').trim();
+    const to = (managerEmail ?? '').trim();
     if (!to) {
       throw new BadRequestException('Manager email is required before send.');
     }
@@ -424,7 +424,7 @@ export class TrackingComposeService {
     },
     user: SessionUser,
     overrides: Partial<ComposeDraftPayload>,
-  ): Promise<{ subject: string; text: string; channel: EscalationSendChannel }> {
+  ): Promise<{ subject: string; text: string; channel: EscalationSendChannel; managerEmail: string | null }> {
     const tenantId = this.tenantId(user);
     const stageKey = stageKeyForLevel(entry.escalationLevel);
     const tpl = await this.pickTemplate(tenantId, stageKey, overrides.templateId);
@@ -438,6 +438,7 @@ export class TrackingComposeService {
 
     const esc = await this.escalations.getForProcess(entry.process.displayCode, user);
     const row = esc.rows.find((r) => r.trackingId === entry.id);
+    const managerEmail = row?.resolvedEmail ?? row?.directoryEmail ?? entry.managerEmail ?? null;
     const lines: EngineFindingLine[] = [];
     const removed = new Set((overrides.removedEngineIds ?? draft.removedEngineIds ?? []).map(String));
     if (row) {
@@ -473,6 +474,6 @@ export class TrackingComposeService {
     };
     const subject = substitute(baseSubject, slots);
     const text = substitute(baseBody, slots);
-    return { subject, text, channel };
+    return { subject, text, channel, managerEmail };
   }
 }

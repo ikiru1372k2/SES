@@ -109,4 +109,63 @@ describe('ManagerTable', () => {
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(onOpenPanel).toHaveBeenCalledWith(rows[1]);
   });
+
+  it('uses directory email fallback for mapped rows without issue email', () => {
+    render(
+      <ManagerTable
+        now={0}
+        rows={[
+          row({
+            managerKey: 'missing-email:de-vries-lisa',
+            managerName: 'De Vries, Lisa',
+            directoryEmail: 'devries@email.com',
+            totalIssues: 4,
+            stage: 'NEW',
+          }),
+        ]}
+        selectedTrackingIds={new Set()}
+        onToggleTracking={vi.fn()}
+        onToggleAllVisible={vi.fn()}
+        selectedManagerKey={null}
+        onSelectManagerKey={vi.fn()}
+        onOpenPanel={vi.fn()}
+        sortKey="priority"
+        onSortKey={vi.fn()}
+        engineFilter=""
+        onEngineFromPill={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('devries@email.com')).toBeInTheDocument();
+    expect(screen.queryByText(/missing email/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Send reminder')).toBeInTheDocument();
+  });
+
+  it('highlights resolved rows in green', () => {
+    const { container } = render(
+      <ManagerTable
+        now={0}
+        rows={[
+          row({ managerKey: 'done', managerName: 'Done', resolved: true, stage: 'RESOLVED' }),
+          row({ managerKey: 'open', managerName: 'Open' }),
+        ]}
+        selectedTrackingIds={new Set()}
+        onToggleTracking={vi.fn()}
+        onToggleAllVisible={vi.fn()}
+        selectedManagerKey={null}
+        onSelectManagerKey={vi.fn()}
+        onOpenPanel={vi.fn()}
+        sortKey="priority"
+        onSortKey={vi.fn()}
+        engineFilter=""
+        onEngineFromPill={vi.fn()}
+      />,
+    );
+
+    const rowsEls = container.querySelectorAll('tbody tr');
+    const resolvedRow = Array.from(rowsEls).find((tr) => tr.textContent?.includes('Done'));
+    const openRow = Array.from(rowsEls).find((tr) => tr.textContent?.includes('Open'));
+    expect(resolvedRow?.className).toContain('bg-green-50');
+    expect(openRow?.className).not.toContain('bg-green-50');
+  });
 });

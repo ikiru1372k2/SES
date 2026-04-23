@@ -16,6 +16,7 @@ import { ShortcutOverlay } from '../components/escalations/ShortcutOverlay';
 import { AnalyticsStrip } from '../components/escalations/AnalyticsStrip';
 import { BulkComposer } from '../components/escalations/BulkComposer';
 import { BroadcastDialog } from '../components/escalations/BroadcastDialog';
+import { effectiveManagerEmail } from '../components/escalations/nextAction';
 import {
   AcknowledgeDialog,
   ReescalateDialog,
@@ -160,7 +161,7 @@ export function EscalationCenter() {
     return rows.filter((row) => {
       if (engine && (row.countsByEngine[engine] ?? 0) === 0) return false;
       if (assignedToMe && currentUser?.email) {
-        const em = (row.resolvedEmail ?? '').toLowerCase();
+        const em = (effectiveManagerEmail(row) ?? '').toLowerCase();
         if (em !== currentUser.email.toLowerCase()) return false;
       }
       if (selectedStages.size > 0 && row.stage && !selectedStages.has(String(row.stage))) return false;
@@ -504,7 +505,7 @@ export function EscalationCenter() {
         onDone={() => void q.refetch()}
         processIdOrCode={process.displayCode ?? process.id}
         estimatedAudience={
-          (q.data?.rows ?? []).filter((r) => !r.resolved && Boolean(r.resolvedEmail)).length
+          (q.data?.rows ?? []).filter((r) => !r.resolved && Boolean(effectiveManagerEmail(r))).length
         }
         functionOptions={FUNCTION_REGISTRY.map((f) => ({ id: f.id, label: f.label }))}
       />

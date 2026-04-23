@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { BadgeCheck, Maximize2, Minimize2 } from 'lucide-react';
-import type { ProcessEscalationManagerRow } from '@ses/domain';
-import { verifyTracking } from '../../lib/api/trackingStageApi';
+import { BadgeCheck, CheckCircle2, Maximize2, MessageCircleReply, Minimize2 } from 'lucide-react';
+import { canTransition, isEscalationStage, type ProcessEscalationManagerRow } from '@ses/domain';
+import { transitionTracking, verifyTracking } from '../../lib/api/trackingStageApi';
 import { ActivityFeed } from './ActivityFeed';
 import { AttachmentsTab } from './AttachmentsTab';
 import { Composer } from './Composer';
 import { FindingsTab } from './FindingsTab';
+import { effectiveManagerEmail } from './nextAction';
 
 type TabId = 'findings' | 'compose' | 'activity' | 'attachments';
 
@@ -58,7 +59,23 @@ export function EscalationPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   const trackingRef = row?.trackingId ?? row?.trackingDisplayCode ?? null;
+  const stage = row && isEscalationStage(row.stage) ? row.stage : null;
   const awaitingVerification = Boolean(row && row.stage === 'RESOLVED' && !row.verifiedAt);
+  const managerEmail = row ? effectiveManagerEmail(row) : null;
+  const canMarkResponded = Boolean(
+    trackingRef &&
+      row &&
+      !row.resolved &&
+      stage &&
+      canTransition(stage, 'RESPONDED'),
+  );
+  const canMarkResolved = Boolean(
+    trackingRef &&
+      row &&
+      !row.resolved &&
+      stage &&
+      canTransition(stage, 'RESOLVED'),
+  );
   // B14: only surface the Verify action when it's actually meaningful — the
   // row is RESOLVED but an auditor hasn't closed the loop yet. Previously
   // the button showed on every row that simply lacked a verifiedAt, which
@@ -72,6 +89,19 @@ export function EscalationPanel({
     },
     onSuccess: () => {
       toast.success('Verified — moved to Resolved.');
+      void qc.invalidateQueries({ queryKey: ['escalations'] });
+      void qc.invalidateQueries({ queryKey: ['tracking-events', trackingRef] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const transitionMut = useMutation({
+    mutationFn: (payload: { to: 'RESPONDED' | 'RESOLVED'; reason: string; sourceAction: string }) => {
+      if (!trackingRef) return Promise.reject(new Error('No tracking row'));
+      return transitionTracking(trackingRef, payload);
+    },
+    onSuccess: (result) => {
+      toast.success(result.stage === 'RESOLVED' ? 'Marked resolved.' : 'Marked as manager responded.');
       void qc.invalidateQueries({ queryKey: ['escalations'] });
       void qc.invalidateQueries({ queryKey: ['tracking-events', trackingRef] });
     },
@@ -218,7 +248,7 @@ export function EscalationPanel({
             <h2 id="escalation-panel-title" className="text-lg font-semibold text-gray-900 dark:text-white">
               {row.managerName}
             </h2>
-            <div className="text-sm text-gray-500">{row.resolvedEmail ?? '—'}</div>
+            <div className="text-sm text-gray-500">{managerEmail ?? '—'}</div>
             <div className="mt-1 flex flex-wrap gap-2 text-xs">
               <span className="rounded bg-gray-100 px-2 py-0.5 dark:bg-gray-800">{row.stage ?? '—'}</span>
               <span className="text-gray-500">SLA: {slaText}</span>
@@ -286,21 +316,61 @@ export function EscalationPanel({
             <AttachmentsTab trackingIdOrCode={row.trackingId ?? row.trackingDisplayCode} />
           ) : null}
         </div>
-        {canVerify && trackingRef ? (
+        {trackingRef && (canMarkResponded || canMarkResolved || canVerify) ? (
           <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 dark:border-gray-800">
             <span className="text-xs text-gray-500">
-              {awaitingVerification
+              {canMarkResolved
+                ? 'Use Resolve when the manager has responded and the finding can be closed. Auditor verification is the final close-out step.'
+                : canMarkResponded
+                ? 'Use Manager responded when the manager has replied but the finding is not ready to close yet.'
+                : awaitingVerification
                 ? 'Manager marked resolved — review the evidence and verify to close the loop.'
                 : 'Verifying closes the row to Resolved with your name stamped on it.'}
             </span>
-            <button
-              type="button"
-              onClick={() => verifyMut.mutate()}
-              disabled={verifyMut.isPending}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
-            >
-              <BadgeCheck size={14} /> Verified — Resolve
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {canMarkResponded ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    transitionMut.mutate({
+                      to: 'RESPONDED',
+                      reason: 'manager_responded',
+                      sourceAction: 'panel.mark_responded',
+                    })
+                  }
+                  disabled={transitionMut.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+                >
+                  <MessageCircleReply size={14} /> Manager responded
+                </button>
+              ) : null}
+              {canMarkResolved ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    transitionMut.mutate({
+                      to: 'RESOLVED',
+                      reason: 'manager_resolution_confirmed',
+                      sourceAction: 'panel.mark_resolved',
+                    })
+                  }
+                  disabled={transitionMut.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  <CheckCircle2 size={14} /> Mark resolved
+                </button>
+              ) : null}
+              {canVerify ? (
+                <button
+                  type="button"
+                  onClick={() => verifyMut.mutate()}
+                  disabled={verifyMut.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+                >
+                  <BadgeCheck size={14} /> Verified — Resolve
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : null}
       </div>
