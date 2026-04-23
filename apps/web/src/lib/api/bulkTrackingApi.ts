@@ -103,8 +103,34 @@ export type BroadcastInput = {
   filter?: { functionId?: string; includeResolved?: boolean };
 };
 
+/**
+ * One entry per manager the broadcast fanned out to. Successful sends carry
+ * the resolved subject / body / cc / channel so the client can hand them off
+ * to the user's own Outlook / Teams app (Issue #75 handoff model). Skipped
+ * and failed rows carry a reason for the post-send summary instead.
+ */
+export type BroadcastRecipient =
+  | {
+      trackingId: string;
+      managerName: string;
+      managerEmail: string;
+      state: 'sent';
+      channel: 'email' | 'teams' | 'both';
+      subject: string;
+      body: string;
+      cc: string[];
+    }
+  | {
+      trackingId: string;
+      managerName: string;
+      managerEmail: string | null;
+      state: 'skipped' | 'failed';
+      reason: string;
+    };
+
 export type BroadcastOutcome = {
   progress: Array<Record<string, unknown>>;
+  recipients: BroadcastRecipient[];
   success: number;
   failed: number;
   skipped: number;

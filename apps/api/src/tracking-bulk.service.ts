@@ -78,6 +78,11 @@ export class TrackingBulkService {
     let failed = 0;
     let skipped = 0;
     const progress: Array<Record<string, unknown>> = [];
+    // Per-recipient resolved content so the client can hand each send off to
+    // the user's own Outlook / Teams app (Issue #75 handoff model). Mirrors
+    // the single-manager SendComposeResult so BroadcastDialog and any future
+    // bulk-send UI can reuse the same openMailto / openTeamsChat helpers.
+    const recipients: Array<Record<string, unknown>> = [];
     for (const [index, entry] of entries.entries()) {
       // Fail-soft for the most common "soft" reason a row can't be sent:
       // the manager is not in the directory yet and no email is attached.
@@ -100,10 +105,17 @@ export class TrackingBulkService {
           skipped,
           total: entries.length,
         });
+        recipients.push({
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          managerEmail: null,
+          state: 'skipped',
+          reason: 'missing_email',
+        });
         continue;
       }
       try {
-        await this.compose.send(entry.id, user, input.payload);
+        const sent = await this.compose.send(entry.id, user, input.payload);
         success += 1;
         progress.push({
           index,
@@ -115,22 +127,40 @@ export class TrackingBulkService {
           skipped,
           total: entries.length,
         });
+        recipients.push({
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          managerEmail: sent.to,
+          state: 'sent',
+          channel: sent.channel,
+          subject: sent.subject,
+          body: sent.body,
+          cc: sent.cc,
+        });
       } catch (error) {
         failed += 1;
+        const message = (error as Error).message;
         progress.push({
           index,
           trackingId: entry.id,
           managerName: entry.managerName,
           state: 'failed',
-          error: (error as Error).message,
+          error: message,
           success,
           failed,
           skipped,
           total: entries.length,
         });
+        recipients.push({
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          managerEmail,
+          state: 'failed',
+          reason: message,
+        });
       }
     }
-    return { progress, success, failed, skipped, total: entries.length };
+    return { progress, recipients, success, failed, skipped, total: entries.length };
   }
 
   async markResolved(trackingIds: string[], user: SessionUser) {
@@ -297,7 +327,15 @@ export class TrackingBulkService {
       : entries;
 
     if (filtered.length === 0) {
-      return { progress: [], success: 0, failed: 0, skipped: 0, total: 0, audience: 0 };
+      return {
+        progress: [],
+        recipients: [],
+        success: 0,
+        failed: 0,
+        skipped: 0,
+        total: 0,
+        audience: 0,
+      };
     }
 
     const result = await this.sendBulk(
