@@ -5,7 +5,6 @@ import type { AuditProcess } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { GlobalShortcutOverlay } from '../shared/GlobalShortcutOverlay';
 import { ProgressBar } from '../shared/ProgressBar';
-import { PageHeaderProvider } from './PageHeaderContext';
 import { TopBar } from './TopBar';
 
 export function AppShell({
@@ -19,33 +18,6 @@ export function AppShell({
   sidebar?: ReactNode;
   topBarAccessory?: ReactNode;
   contentScrolls?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <PageHeaderProvider>
-      <AppShellInner
-        process={process}
-        sidebar={sidebar}
-        topBarAccessory={topBarAccessory}
-        contentScrolls={contentScrolls}
-      >
-        {children}
-      </AppShellInner>
-    </PageHeaderProvider>
-  );
-}
-
-function AppShellInner({
-  process,
-  sidebar,
-  topBarAccessory,
-  contentScrolls,
-  children,
-}: {
-  process?: AuditProcess | undefined;
-  sidebar?: ReactNode;
-  topBarAccessory?: ReactNode;
-  contentScrolls: boolean;
   children: ReactNode;
 }) {
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);

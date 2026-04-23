@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { AuthGate } from './components/auth/AuthGate';
 import { ConfirmProvider } from './components/shared/ConfirmProvider';
 import { CompareProcesses } from './components/dashboard/CompareProcesses';
+import { PageHeaderProvider } from './components/layout/PageHeaderContext';
 import { Dashboard } from './pages/Dashboard';
 import { Debug } from './pages/Debug';
 import { Login } from './pages/Login';
@@ -40,7 +41,11 @@ type ProtectedRouteDefinition = {
 };
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  return <AuthGate>{children}</AuthGate>;
+  return (
+    <AuthGate>
+      <PageHeaderProvider>{children}</PageHeaderProvider>
+    </AuthGate>
+  );
 }
 
 function renderProtectedRoutes(routes: ProtectedRouteDefinition[]) {

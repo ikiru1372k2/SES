@@ -250,7 +250,7 @@ export function Workspace() {
     if (!process) return { breadcrumbs: [] };
     const saveLabel = headVersion ? `Save to ${headVersionName}` : 'Save';
     const saveTooltip = !latestResult
-      ? 'Run an audit first to save a version.'
+      ? 'Run audit first to save.'
       : headVersion
       ? `Update ${headVersionName} in place with the latest findings. Use the caret to create a new named version.`
       : 'Save the current audit findings as V1.';
