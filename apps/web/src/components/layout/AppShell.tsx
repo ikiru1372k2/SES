@@ -5,6 +5,7 @@ import type { AuditProcess } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { GlobalShortcutOverlay } from '../shared/GlobalShortcutOverlay';
 import { ProgressBar } from '../shared/ProgressBar';
+import { PageHeaderProvider } from './PageHeaderContext';
 import { TopBar } from './TopBar';
 
 export function AppShell({
@@ -17,12 +18,34 @@ export function AppShell({
   process?: AuditProcess | undefined;
   sidebar?: ReactNode;
   topBarAccessory?: ReactNode;
-  // Set to false when the page renders its own internal scroll region
-  // (e.g. EscalationCenter's manager list has sticky header + scrolling
-  // rows). With this off, <main> is overflow-hidden and the page itself
-  // doesn't scroll as a whole — the inner region handles it. Default true
-  // preserves existing behaviour for every other page.
   contentScrolls?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <PageHeaderProvider>
+      <AppShellInner
+        process={process}
+        sidebar={sidebar}
+        topBarAccessory={topBarAccessory}
+        contentScrolls={contentScrolls}
+      >
+        {children}
+      </AppShellInner>
+    </PageHeaderProvider>
+  );
+}
+
+function AppShellInner({
+  process,
+  sidebar,
+  topBarAccessory,
+  contentScrolls,
+  children,
+}: {
+  process?: AuditProcess | undefined;
+  sidebar?: ReactNode;
+  topBarAccessory?: ReactNode;
+  contentScrolls: boolean;
   children: ReactNode;
 }) {
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);

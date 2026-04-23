@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import {
   createEscalationTemplate,
   fetchEscalationTemplates,
@@ -8,6 +8,8 @@ import {
   type ApiEscalationTemplate,
 } from '../lib/api/escalationTemplatesApi';
 import { useCurrentUser } from '../components/auth/authContext';
+import { AppShell } from '../components/layout/AppShell';
+import { usePageHeader } from '../components/layout/usePageHeader';
 import { Button } from '../components/shared/Button';
 
 const SLOT_HELP = [
@@ -63,17 +65,24 @@ export function EscalationTemplateAdmin() {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['escalation-templates-admin'] }),
   });
 
+  const headerConfig = useMemo(
+    () => ({
+      breadcrumbs: [
+        { label: 'Dashboard', to: '/' },
+        { label: 'Escalation templates' },
+      ],
+    }),
+    [],
+  );
+  usePageHeader(headerConfig);
+
   if (!user) return null;
   if (user.role !== 'admin') return <Navigate to="/" replace />;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Escalation templates</h1>
-        <Link to="/" className="text-sm text-brand hover:underline">
-          Home
-        </Link>
-      </div>
+    <AppShell>
+      <div className="mx-auto max-w-6xl px-4 py-8">
+      <h1 className="mb-6 text-2xl font-semibold">Escalation templates</h1>
       <div className="flex gap-6">
         <div className="w-64 shrink-0 space-y-4">
           {[...byStage.entries()]
@@ -166,6 +175,7 @@ export function EscalationTemplateAdmin() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </AppShell>
   );
 }

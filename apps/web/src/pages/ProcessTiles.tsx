@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, HelpCircle } from 'lucide-react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { AlertTriangle, HelpCircle } from 'lucide-react';
 import { FUNCTION_REGISTRY, type FunctionId } from '@ses/domain';
 import { AppShell } from '../components/layout/AppShell';
+import { usePageHeader } from '../components/layout/usePageHeader';
 import { ProcessDashboardBanner } from '../components/escalations/ProcessDashboardBanner';
 import { TileEscalationChip } from '../components/escalations/TileEscalationChip';
 import { FunctionTile } from '../components/tiles/FunctionTile';
@@ -11,7 +12,7 @@ import { RequestFunctionAuditTile } from '../components/tiles/RequestFunctionAud
 import { Skeleton } from '../components/shared/Skeleton';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
 import { fetchProcessTiles, type ApiTiles } from '../lib/api/tilesApi';
-import { workspacePath } from '../lib/processRoutes';
+import { escalationCenterPath, workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 
 const RequestFunctionAuditModal = lazy(() =>
@@ -46,29 +47,41 @@ export function ProcessTiles() {
     staleTime: 15_000,
   });
 
-  // Fire a hydrate once if we don't recognize the process locally — avoids a
-  // flash of "not found" on hard refresh in a new browser.
   useEffect(() => {
     if (!process && processId) void hydrateProcesses();
   }, [hydrateProcesses, process, processId]);
 
+  const processKey = process?.displayCode ?? process?.id;
+  const headerConfig = useMemo(
+    () => ({
+      breadcrumbs: [
+        { label: 'Dashboard', to: '/' },
+        { label: process?.name ?? 'Process' },
+      ],
+      overflowActions: processKey
+        ? [
+            {
+              id: 'escalations',
+              label: 'Open escalations',
+              icon: AlertTriangle,
+              onClick: () => navigate(escalationCenterPath(processKey)),
+            },
+          ]
+        : [],
+    }),
+    [navigate, process?.name, processKey],
+  );
+  usePageHeader(headerConfig);
+
   if (!processId) return <Navigate to="/" replace />;
 
   const tiles = tilesQuery.data ?? EMPTY_TILES;
-  // Show a skeleton on first load only — once we have data (even stale), keep
-  // rendering the real tiles so a background refetch doesn't flash the grid.
   const showSkeleton = tilesQuery.isLoading && !tilesQuery.data;
 
   return (
     <AppShell process={process ?? undefined}>
-      <div className="mx-auto w-full max-w-6xl px-6 py-10">
-        <div className="mb-6 flex items-center gap-3">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300"
-          >
-            <ArrowLeft size={14} /> All processes
-          </Link>
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
+        <div className="mb-6 flex flex-wrap items-center gap-2">
           <h1 className="text-2xl font-semibold">{process?.name ?? 'Process'}</h1>
           {process?.displayCode ? (
             <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">

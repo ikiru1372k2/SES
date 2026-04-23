@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowLeftRight, Download, ExternalLink, Filter, Search } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, ArrowRightLeft, Download, ExternalLink, Filter, Search } from 'lucide-react';
 import {
   DEFAULT_FUNCTION_ID,
   getFunctionLabel,
@@ -17,6 +17,7 @@ import { buildIssuesCsv, compareResults, exportIssuesCsv } from '../lib/auditEng
 import { workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 import { AppShell } from '../components/layout/AppShell';
+import { usePageHeader } from '../components/layout/usePageHeader';
 import { MetricCard } from '../components/shared/MetricCard';
 import { EmptyState } from '../components/shared/EmptyState';
 import { Button } from '../components/shared/Button';
@@ -167,25 +168,15 @@ export function VersionCompare() {
     return { severityBumps, managerReassignments, topManager };
   }, [comparison, fromVersion]);
 
-  if (!resolvedProcessId || !process) return <Navigate to="/" replace />;
+  const swap = useCallback(() => {
+    setFromId((prevFrom) => {
+      const prevTo = toId;
+      setToId(prevFrom);
+      return prevTo;
+    });
+  }, [toId]);
 
-  const allRows = (comparison?.[bucket] ?? []) as (AuditIssue | ChangedIssue)[];
-  const filteredRows = query
-    ? allRows.filter((issue) => matchesQuery(issue, query))
-    : allRows;
-
-  const swap = () => {
-    setFromId(toId);
-    setToId(fromId);
-  };
-
-  const exportCsv = () => {
-    if (!comparison || !fromVersion || !toVersion) return;
-    const label = `${fromVersion.versionName}--${toVersion.versionName}`.replace(/[^\w-]+/g, '_');
-    exportIssuesCsv(`${label}--${bucket}.csv`, allRows);
-  };
-
-  const exportSummary = () => {
+  const exportSummaryCallback = useCallback(() => {
     if (!comparison || !fromVersion || !toVersion) return;
     const sections: string[] = [];
     for (const key of ['newIssues', 'changedIssues', 'resolvedIssues', 'unchangedIssues'] as const) {
@@ -201,6 +192,38 @@ export function VersionCompare() {
     link.download = `${fromVersion.versionName}--${toVersion.versionName}-full.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  }, [comparison, fromVersion, toVersion]);
+
+  const headerConfig = useMemo(
+    () => ({
+      breadcrumbs: process
+        ? [
+            { label: 'Dashboard', to: '/' },
+            { label: process.name, to: `/processes/${encodeURIComponent(process.displayCode ?? process.id)}` },
+            { label: getFunctionLabel(functionId), to: workspacePath(process.displayCode ?? process.id, functionId) },
+            { label: 'Compare' },
+          ]
+        : [],
+      overflowActions: [
+        { id: 'swap', label: 'Swap versions', icon: ArrowRightLeft, onClick: swap },
+        { id: 'download-diff', label: 'Download diff CSV', icon: Download, onClick: exportSummaryCallback },
+      ],
+    }),
+    [process, functionId, swap, exportSummaryCallback],
+  );
+  usePageHeader(headerConfig);
+
+  if (!resolvedProcessId || !process) return <Navigate to="/" replace />;
+
+  const allRows = (comparison?.[bucket] ?? []) as (AuditIssue | ChangedIssue)[];
+  const filteredRows = query
+    ? allRows.filter((issue) => matchesQuery(issue, query))
+    : allRows;
+
+  const exportCsv = () => {
+    if (!comparison || !fromVersion || !toVersion) return;
+    const label = `${fromVersion.versionName}--${toVersion.versionName}`.replace(/[^\w-]+/g, '_');
+    exportIssuesCsv(`${label}--${bucket}.csv`, allRows);
   };
 
   const openInWorkspace = (versionId: string | undefined) => {
@@ -264,22 +287,7 @@ export function VersionCompare() {
   return (
     <AppShell process={process}>
       <div className="mx-auto w-full max-w-6xl space-y-5 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <Link
-              to={workspacePath(process.id, functionId)}
-              className="inline-flex items-center gap-1 text-sm text-brand hover:underline"
-            >
-              <ArrowLeft size={14} /> Back to {getFunctionLabel(functionId)}
-            </Link>
-            <h1 className="mt-2 text-xl font-semibold">Version Compare</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" leading={<Download size={14} />} onClick={exportSummary}>
-              Full CSV
-            </Button>
-          </div>
-        </div>
+        <h1 className="text-xl font-semibold">Version Compare · {getFunctionLabel(functionId)}</h1>
 
         {fileGroups.length > 1 ? (
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">

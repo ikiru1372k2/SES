@@ -2,11 +2,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { onRealtimeEvent } from '../realtime/socket';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCoalescedInvalidator } from '../hooks/useCoalescedInvalidator';
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Megaphone, RefreshCw } from 'lucide-react';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { Megaphone, RefreshCw } from 'lucide-react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_REGISTRY } from '@ses/domain';
 import { AppShell } from '../components/layout/AppShell';
+import { usePageHeader } from '../components/layout/usePageHeader';
 import { EscalationFilters, type SlaFilter } from '../components/escalations/EscalationFilters';
 import { EscalationPanel } from '../components/escalations/EscalationPanel';
 import { EscalationSummaryBar } from '../components/escalations/EscalationSummaryBar';
@@ -27,7 +28,6 @@ import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 import { useCurrentUser } from '../components/auth/authContext';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
 import { bulkAcknowledge, bulkReescalate, bulkResolve, bulkSnooze } from '../lib/api/bulkTrackingApi';
-import { processDashboardPath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 
 function parseStagesParam(raw: string | null): Set<string> {
@@ -96,6 +96,18 @@ export function EscalationCenter() {
   useEffect(() => {
     if (!process && processId) void hydrateProcesses();
   }, [hydrateProcesses, process, processId]);
+
+  const headerConfig = useMemo(
+    () => ({
+      breadcrumbs: [
+        { label: 'Dashboard', to: '/' },
+        { label: process?.name ?? 'Process', to: process ? `/processes/${encodeURIComponent(process.displayCode ?? process.id)}` : undefined },
+        { label: 'Escalations' },
+      ],
+    }),
+    [process],
+  );
+  usePageHeader(headerConfig);
 
   const queryClient = useQueryClient();
 
@@ -242,12 +254,6 @@ export function EscalationCenter() {
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-6 sm:py-8 lg:flex-row lg:px-6">
         <div className="min-w-0 flex-1">
           <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
-            <Link
-              to={processDashboardPath(process.id)}
-              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300"
-            >
-              <ArrowLeft size={14} /> Dashboard
-            </Link>
             <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Escalation Center</h1>
             <span className="flex-1" />
             <button
