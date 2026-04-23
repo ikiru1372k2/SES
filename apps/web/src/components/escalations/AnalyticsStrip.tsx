@@ -41,7 +41,10 @@ export function AnalyticsStrip({ rows, now }: Props) {
         topOffender.name = row.managerName ?? 'Unknown';
         topOffender.count = open;
       }
-      if (!row.resolvedEmail) missingEmail += 1;
+      // Effective mapping: backend falls back to ManagerDirectory when the
+      // tracking/issue email is missing. Mirror that so the tile doesn't
+      // count managers already resolvable via Directory.
+      if (!row.resolvedEmail && !row.directoryEmail) missingEmail += 1;
       if (row.slaDueAt) {
         const t = new Date(row.slaDueAt).getTime();
         if (t < now) breached += 1;
