@@ -7,6 +7,8 @@ services:
       POSTGRES_USER: ses
       POSTGRES_PASSWORD: ses
       POSTGRES_DB: ses
+    ports:
+      - '5432:5432'
     volumes:
       - ses_pg_data_prod:/var/lib/postgresql/data
     healthcheck:
