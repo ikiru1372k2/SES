@@ -1,5 +1,6 @@
 import type { IssueCategory, Severity } from './types';
 import type { FunctionId } from './functions';
+import { FUNCTION_RATE_RULE_CATALOG } from './functions-audit/function-rate/rules';
 import { MASTER_DATA_RULE_CATALOG } from './functions-audit/master-data/rules';
 import { MISSING_PLAN_RULE_CATALOG } from './functions-audit/missing-plan/rules';
 import { OVER_PLANNING_ENGINE_RULE_CATALOG as OVER_PLANNING_RULE_CATALOG_IMPORT } from './functions-audit/over-planning/rules';
@@ -30,15 +31,14 @@ export const OVER_PLANNING_RULE_CATALOG: RuleCatalogEntry[] = OVER_PLANNING_RULE
 // their own catalog and register it here; adding rules never requires
 // touching another function's module.
 //
-// missing-plan / function-rate / internal-cost-rate are explicitly empty
-// until business owners define the rules. The UI renders a clear
-// "no rules configured" empty state rather than inheriting another
-// function's rules.
+// internal-cost-rate is explicitly empty until business owners define its
+// rules. The UI renders a clear "no rules configured" empty state rather
+// than inheriting another function's rules.
 export const RULE_CATALOG_BY_FUNCTION: Record<FunctionId, RuleCatalogEntry[]> = {
   'master-data': MASTER_DATA_RULE_CATALOG,
   'over-planning': OVER_PLANNING_RULE_CATALOG,
   'missing-plan': MISSING_PLAN_RULE_CATALOG,
-  'function-rate': [],
+  'function-rate': FUNCTION_RATE_RULE_CATALOG,
   'internal-cost-rate': [],
 };
 
