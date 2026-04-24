@@ -276,22 +276,27 @@ export class AuditsService {
 
       // Pre-resolve emails from an explicit mapping source. Enabled for
       // functions whose audit workbook is authored separately from the
-      // manager mapping file (over-planning and function-rate today).
+      // manager mapping file (over-planning, function-rate, internal-cost-rate).
       let resolvedFromMapping = 0;
       let resolvedProjectIdToManager = 0;
-      const mappingEnabledFunctions = new Set(['over-planning', 'function-rate']);
+      const mappingEnabledFunctions = new Set([
+        'over-planning',
+        'function-rate',
+        'internal-cost-rate',
+      ]);
       if (
         mappingEnabledFunctions.has(file.functionId ?? '') &&
         body.mappingSource &&
         body.mappingSource.type !== 'none'
       ) {
-        // Function-rate specific: Project ID → Project Manager name pre-pass.
-        // Function-rate input files have no PM column, so we join by Project
-        // ID against the selected mapping source (MD run or uploaded file).
-        // Runs BEFORE the name-based stages so applyPreResolvedEmails and the
-        // directory resolver see a real manager name instead of 'Unassigned'.
-        // Over-planning skips this block entirely — its files already carry PMs.
-        if (file.functionId === 'function-rate') {
+        // Project ID → Project Manager name pre-pass. Applies to functions
+        // whose input file has no PM column (function-rate and ICR). We join
+        // by Project ID against the selected mapping source (MD run or
+        // uploaded file). Runs BEFORE the name-based stages so
+        // applyPreResolvedEmails and the directory resolver see a real
+        // manager name instead of 'Unassigned'. Over-planning skips this
+        // block entirely — its files already carry PMs.
+        if (file.functionId === 'function-rate' || file.functionId === 'internal-cost-rate') {
           const idMap = await this.buildProjectIdToManagerMap(tx, process, file, body.mappingSource);
           resolvedProjectIdToManager = this.applyProjectIdToManager(result.issues, idMap);
         }
@@ -337,6 +342,15 @@ export class AuditsService {
           : file.functionId === 'function-rate'
           ? {
               functionRate: {
+                mappingSourceType: body.mappingSource?.type ?? 'none',
+                resolvedProjectIdToManager,
+                resolvedFromMapping,
+                allowUnresolvedFallback: body.mappingSource?.allowUnresolvedFallback ?? true,
+              },
+            }
+          : file.functionId === 'internal-cost-rate'
+          ? {
+              internalCostRate: {
                 mappingSourceType: body.mappingSource?.type ?? 'none',
                 resolvedProjectIdToManager,
                 resolvedFromMapping,

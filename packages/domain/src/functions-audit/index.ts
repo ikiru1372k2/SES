@@ -1,10 +1,10 @@
 import type { AuditPolicy, AuditResult, WorkbookFile } from '../types';
 import { FUNCTION_IDS, type FunctionId } from '../functions';
 import { functionRateAuditEngine } from './function-rate';
+import { internalCostRateAuditEngine } from './internal-cost-rate';
 import { masterDataAuditEngine } from './master-data';
 import { missingPlanAuditEngine } from './missing-plan';
 import { overPlanningAuditEngine } from './over-planning';
-import { createLegacyEngine } from './legacy-engine';
 import type { FunctionAuditEngine, FunctionAuditOptions } from './types';
 
 // Registry keyed by functionId. Each function has its own ruleset — do not
@@ -14,7 +14,7 @@ export const FUNCTION_AUDIT_ENGINES: Record<FunctionId, FunctionAuditEngine> = {
   'over-planning': overPlanningAuditEngine,
   'missing-plan': missingPlanAuditEngine,
   'function-rate': functionRateAuditEngine,
-  'internal-cost-rate': createLegacyEngine('internal-cost-rate'),
+  'internal-cost-rate': internalCostRateAuditEngine,
 };
 
 export function getFunctionAuditEngine(functionId: string | undefined): FunctionAuditEngine {
@@ -72,6 +72,14 @@ export {
   isRateColumn,
   classifyRateCell,
 } from './function-rate';
+export {
+  INTERNAL_COST_RATE_RULE_CATALOG,
+  INTERNAL_COST_RATE_RULES_BY_CODE,
+  ICR_COST_ZERO_RULE_CODE,
+  detectCostRateColumns,
+  isCostRateMonthColumn,
+  classifyCostRateCell,
+} from './internal-cost-rate';
 export {
   normalizeProcessPolicies,
   createDefaultProcessPolicies,

@@ -11,6 +11,7 @@ export type IssueCategory =
   | 'Overplanning'
   | 'Missing Planning'
   | 'Function Rate'
+  | 'Internal Cost Rate'
   | 'Other'
   | 'Effort Threshold'
   | 'Missing Data'

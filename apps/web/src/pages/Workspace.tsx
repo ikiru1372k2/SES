@@ -39,7 +39,11 @@ const TrackingTab = lazy(() =>
 
 // Module-scope so it is stable across renders and usable in useCallback deps
 // without churn. These functions require a manager-mapping source to run.
-const MAPPING_ENABLED_FUNCTIONS: ReadonlySet<string> = new Set(['over-planning', 'function-rate']);
+const MAPPING_ENABLED_FUNCTIONS: ReadonlySet<string> = new Set([
+  'over-planning',
+  'function-rate',
+  'internal-cost-rate',
+]);
 
 export function Workspace() {
   const params = useParams<{ processId: string; functionId: string }>();
