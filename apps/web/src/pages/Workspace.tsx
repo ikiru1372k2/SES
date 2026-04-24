@@ -69,6 +69,7 @@ export function Workspace() {
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
   const [mappingSource, setMappingSource] = useState<MappingSourceInput | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- reset mapping source on function navigation
   useEffect(() => { setMappingSource(undefined); }, [functionId]);
   const hydrateAttemptedRef = useRef(false);
   const queryClient = useQueryClient();
@@ -363,6 +364,7 @@ export function Workspace() {
     latestResult,
     correctionCount,
     canRun,
+    mappingSourceValid,
     canSave,
     canDownload,
     hasSavedVersion,

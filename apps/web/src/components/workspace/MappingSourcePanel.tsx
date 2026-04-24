@@ -19,6 +19,7 @@ export function MappingSourcePanel({ processId, processDisplayCode, auditFileId,
 
   useEffect(() => {
     if (type !== 'master_data_version') return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loading flag before async fetch
     setMdRunsLoading(true);
     fetchAuditRunsForProcess(processDisplayCode, 'master-data')
       .then(setMdRuns)
