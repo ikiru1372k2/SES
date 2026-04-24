@@ -7,7 +7,18 @@ import type { AuditProcess } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { formatDiffChips, summarizeDiff, suggestVersionName } from '../../lib/versionDiff';
 
-export function SaveVersionModal({ process, onClose }: { process: AuditProcess; onClose: () => void }) {
+export function SaveVersionModal({
+  process,
+  onClose,
+  onSaved,
+}: {
+  process: AuditProcess;
+  onClose: () => void;
+  // Fires only when the user actually saves a new version (not on cancel or
+  // overlay dismiss). Lets callers distinguish "save completed, proceed with
+  // the originally-intended navigation" from "user backed out of saving".
+  onSaved?: () => void;
+}) {
   const saveVersion = useAppStore((state) => state.saveVersion);
   const updateProcess = useAppStore((state) => state.updateProcess);
   const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
@@ -62,6 +73,11 @@ export function SaveVersionModal({ process, onClose }: { process: AuditProcess; 
       toast.success(`${savedName} saved`);
     }
     setWorkspaceTab('results');
+    // Signal success before onClose so the parent can distinguish save vs
+    // cancel. Order matters for the navigation-blocker flow in Workspace.tsx
+    // where onSaved calls blocker.proceed() and onClose falls back to
+    // blocker.reset() when a save did not occur.
+    onSaved?.();
     onClose();
   }
 

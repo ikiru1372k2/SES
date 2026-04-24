@@ -72,6 +72,12 @@ export function Workspace() {
   const [membersOpen, setMembersOpen] = useState(false);
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
+  // Blocker handed off when the user picks "Save as new version" from the
+  // unsaved-audit dialog. We defer the proceed/reset decision until the
+  // SaveVersionModal resolves so navigation only continues if a version was
+  // actually created; abandoning the modal rolls back to "stay on page".
+  const pendingBlockerRef = useRef<{ proceed?: (() => void) | undefined; reset?: (() => void) | undefined } | null>(null);
+  const modalSavedRef = useRef(false);
   const [mappingSource, setMappingSource] = useState<MappingSourceInput | undefined>(undefined);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- reset mapping source on function navigation
   useEffect(() => { setMappingSource(undefined); }, [functionId]);
@@ -212,7 +218,13 @@ export function Workspace() {
     const runOptions = MAPPING_ENABLED_FUNCTIONS.has(activeFile.functionId ?? '') && mappingSource
       ? { mappingSource }
       : undefined;
-    await runAudit(process.id, activeFile.id, runOptions);
+    try {
+      await runAudit(process.id, activeFile.id, runOptions);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Audit failed — please try again.';
+      toast.error(message);
+      return;
+    }
     const runResult = useAppStore.getState().currentAuditResult;
     if (!runResult) return;
     const diff = summarizeDiff(priorAnchor, runResult);
@@ -493,7 +505,28 @@ export function Workspace() {
         />
       ) : null}
       {versionModalOpen && process && latestResult ? (
-        <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} />
+        <SaveVersionModal
+          process={process}
+          onSaved={() => {
+            // Version was actually created — allow the originally-blocked
+            // navigation to continue. If the modal was opened outside the
+            // blocker flow, pendingBlockerRef is null and this no-ops.
+            modalSavedRef.current = true;
+          }}
+          onClose={() => {
+            setVersionModalOpen(false);
+            const pending = pendingBlockerRef.current;
+            pendingBlockerRef.current = null;
+            if (pending) {
+              if (modalSavedRef.current) {
+                pending.proceed?.();
+              } else {
+                pending.reset?.();
+              }
+            }
+            modalSavedRef.current = false;
+          }}
+        />
       ) : null}
       <UnsavedAuditDialog
         open={blocker.state === 'blocked'}
@@ -504,8 +537,15 @@ export function Workspace() {
           blocker.proceed?.();
         }}
         onSaveAsNew={() => {
+          // Hand the blocker to the SaveVersionModal lifecycle. We cannot
+          // proceed or reset yet — the user hasn't saved yet. The modal's
+          // onSaved/onClose handlers will resolve the blocker correctly.
+          modalSavedRef.current = false;
+          pendingBlockerRef.current = {
+            proceed: blocker.proceed,
+            reset: blocker.reset,
+          };
           requestSaveAsNewVersion();
-          blocker.reset?.();
         }}
         onLeave={() => blocker.proceed?.()}
         onCancel={() => blocker.reset?.()}
