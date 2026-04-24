@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\(\\\\.ts|\\\\.tsx\\)$\")",
+      "Bash(awk '/^model AuditIssue/,/^}/' /home/bkiran/SES/apps/api/prisma/schema.prisma)",
+      "Bash(echo \"---EXIT $?---\")",
+      "Bash(awk '/^model AuditIssue/,/^}/{ print NR\": \"$0 }' /home/bkiran/SES/apps/api/prisma/schema.prisma)",
+      "Bash(npx prisma *)",
+      "Bash(npx tsx *)",
+      "Bash(echo \"---API $?---\")",
+      "Bash(echo \"---WEB $?---\")",
+      "Bash(echo \"---DOMAIN $?---\")"
+    ]
+  }
+}

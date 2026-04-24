@@ -384,6 +384,8 @@ model AuditIssue {
   recommendedAction String?
   email             String?
   rowIndex          Int?
+  missingMonths     Json?
+  zeroMonthCount    Int?
   auditRun          AuditRun @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
   rule              AuditRule @relation(fields: [ruleCode], references: [ruleCode])
 

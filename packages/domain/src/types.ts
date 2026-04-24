@@ -10,6 +10,7 @@ export type WorkspaceTab = 'preview' | 'results' | 'notifications' | 'tracking' 
 export type IssueCategory =
   | 'Overplanning'
   | 'Missing Planning'
+  | 'Function Rate'
   | 'Other'
   | 'Effort Threshold'
   | 'Missing Data'
@@ -183,6 +184,10 @@ export interface AuditIssue {
   reason?: string | undefined;
   thresholdLabel?: string | undefined;
   recommendedAction?: string | undefined;
+  // Function-rate context: every zero-rate month label for the row, and the
+  // cardinality of that list. Populated only by the function-rate engine.
+  missingMonths?: readonly string[] | undefined;
+  zeroMonthCount?: number | undefined;
 }
 
 export interface IssueComment {

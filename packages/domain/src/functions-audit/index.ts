@@ -1,5 +1,6 @@
 import type { AuditPolicy, AuditResult, WorkbookFile } from '../types';
 import { FUNCTION_IDS, type FunctionId } from '../functions';
+import { functionRateAuditEngine } from './function-rate';
 import { masterDataAuditEngine } from './master-data';
 import { missingPlanAuditEngine } from './missing-plan';
 import { overPlanningAuditEngine } from './over-planning';
@@ -12,7 +13,7 @@ export const FUNCTION_AUDIT_ENGINES: Record<FunctionId, FunctionAuditEngine> = {
   'master-data': masterDataAuditEngine,
   'over-planning': overPlanningAuditEngine,
   'missing-plan': missingPlanAuditEngine,
-  'function-rate': createLegacyEngine('function-rate'),
+  'function-rate': functionRateAuditEngine,
   'internal-cost-rate': createLegacyEngine('internal-cost-rate'),
 };
 
@@ -63,6 +64,14 @@ export {
   isPdColumn,
   DEFAULT_PD_THRESHOLD,
 } from './over-planning';
+export {
+  FUNCTION_RATE_RULE_CATALOG,
+  FUNCTION_RATE_RULES_BY_CODE,
+  FR_RATE_ZERO_RULE_CODE,
+  detectRateColumns,
+  isRateColumn,
+  classifyRateCell,
+} from './function-rate';
 export {
   normalizeProcessPolicies,
   createDefaultProcessPolicies,

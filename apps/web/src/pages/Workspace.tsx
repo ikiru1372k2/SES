@@ -37,6 +37,10 @@ const TrackingTab = lazy(() =>
   import('../components/workspace/TrackingTab').then((module) => ({ default: module.TrackingTab })),
 );
 
+// Module-scope so it is stable across renders and usable in useCallback deps
+// without churn. These functions require a manager-mapping source to run.
+const MAPPING_ENABLED_FUNCTIONS: ReadonlySet<string> = new Set(['over-planning', 'function-rate']);
+
 export function Workspace() {
   const params = useParams<{ processId: string; functionId: string }>();
   const processId = params.processId;
@@ -196,7 +200,8 @@ export function Workspace() {
     if (src.type === 'uploaded_file') return Boolean(src.uploadId);
     return true;
   }
-  const mappingSourceValid = activeFile?.functionId !== 'over-planning' || isMappingSourceValid(mappingSource);
+  const mappingSourceValid =
+    !MAPPING_ENABLED_FUNCTIONS.has(activeFile?.functionId ?? '') || isMappingSourceValid(mappingSource);
   const canRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning && mappingSourceValid);
   const canSave = Boolean(process && latestResult && !isAuditRunning);
   const canDownload = Boolean(process && activeFile && latestResult && hasSavedVersion && !isAuditRunning);
@@ -204,7 +209,7 @@ export function Workspace() {
   const onRunAudit = useCallback(async () => {
     if (!process || !activeFile) return;
     const priorAnchor = anchorResultForFile(process.versions, activeFile.id);
-    const runOptions = activeFile.functionId === 'over-planning' && mappingSource
+    const runOptions = MAPPING_ENABLED_FUNCTIONS.has(activeFile.functionId ?? '') && mappingSource
       ? { mappingSource }
       : undefined;
     await runAudit(process.id, activeFile.id, runOptions);

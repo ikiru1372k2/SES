@@ -123,6 +123,9 @@ function isMappingSourceValid(src: MappingSourceInput | undefined): boolean {
   return true;
 }
 
+// Stable module-scope set so references in render and effects don't churn.
+const MAPPING_ENABLED_FUNCTIONS: ReadonlySet<string> = new Set(['over-planning', 'function-rate']);
+
 export function AuditResultsTab({
   process,
   file,
@@ -170,11 +173,15 @@ export function AuditResultsTab({
   const [sort, setSort] = useState<SortKey>('severity');
   const [expanded, setExpanded] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Mapping-file dropdown candidates: other uploaded files in this process
+  // that share the current audit file's functionId. Over-planning and
+  // function-rate both use this flow; each picks from its own sibling files.
   const overPlanningFiles = useMemo(
-    () => process.files.filter((f) => f.functionId === 'over-planning'),
-    [process.files],
+    () => process.files.filter((f) => f.functionId === file?.functionId),
+    [process.files, file?.functionId],
   );
-  const mappingSourceOk = file?.functionId !== 'over-planning' || isMappingSourceValid(mappingSource);
+  const mappingSourceOk =
+    !MAPPING_ENABLED_FUNCTIONS.has(file?.functionId ?? '') || isMappingSourceValid(mappingSource);
   const searchRef = useRef<HTMLInputElement>(null);
   useKeyboardShortcut('/', () => searchRef.current?.focus(), Boolean(result));
   const policyChanged = Boolean(result && isPolicyChanged(process.auditPolicy, result.policySnapshot));
@@ -263,6 +270,8 @@ export function AuditResultsTab({
     if (file.functionId && result.issues.length > 0) {
       const prefixFor = (fid: string): string => {
         if (fid === 'master-data') return 'RUL-MD-';
+        if (fid === 'missing-plan') return 'RUL-MP-';
+        if (fid === 'function-rate') return 'RUL-FR-';
         if (fid === 'over-planning') return 'RUL-';
         return '';
       };
@@ -271,10 +280,12 @@ export function AuditResultsTab({
         const code = issue.ruleCode ?? issue.ruleId ?? '';
         if (!code) return false;
         if (file.functionId === 'master-data') return !code.startsWith('RUL-MD-');
+        if (file.functionId === 'missing-plan') return !code.startsWith('RUL-MP-');
+        if (file.functionId === 'function-rate') return !code.startsWith('RUL-FR-');
         if (file.functionId === 'over-planning') {
           // Over-planning covers several RUL-EFFORT/RUL-STATE/RUL-MGR codes,
-          // but not RUL-MD-*.
-          return code.startsWith('RUL-MD-');
+          // but not RUL-MD-*, RUL-MP-*, or RUL-FR-*.
+          return code.startsWith('RUL-MD-') || code.startsWith('RUL-MP-') || code.startsWith('RUL-FR-');
         }
         return expectedPrefix ? !code.startsWith(expectedPrefix) : false;
       });
@@ -415,7 +426,7 @@ export function AuditResultsTab({
           </div>
           {file ? (
             <>
-              {file.functionId === 'over-planning' && process.displayCode && (
+              {MAPPING_ENABLED_FUNCTIONS.has(file.functionId ?? '') && process.displayCode && (
                 <div className="mb-3 w-full max-w-sm text-left">
                   <MappingSourcePanel
                     processId={process.id}
@@ -711,6 +722,7 @@ function QgcSettingsDrawer({
   const [draft, setDraft] = useState<AuditPolicy>(process.auditPolicy);
   const isOverPlanning = file?.functionId === 'over-planning';
   const isMissingPlan = file?.functionId === 'missing-plan';
+  const isFunctionRate = file?.functionId === 'function-rate';
 
   function setNumber(key: keyof AuditPolicy, value: string) {
     setDraft((state) => ({ ...state, [key]: Number(value) || 0 }));
@@ -724,7 +736,7 @@ function QgcSettingsDrawer({
     event.preventDefault();
     updateAuditPolicy(process.id, { ...draft, mediumEffortMin: 0, mediumEffortMax: 0, lowEffortEnabled: false });
     if (file) {
-      const runOptions = isOverPlanning && mappingSource ? { mappingSource } : undefined;
+      const runOptions = (isOverPlanning || isFunctionRate) && mappingSource ? { mappingSource } : undefined;
       void runAudit(process.id, file.id, runOptions).then(() => toast.success('Settings saved and audit re-run'));
     } else {
       toast.success('Settings saved');
@@ -763,6 +775,13 @@ function QgcSettingsDrawer({
           <SettingsSection title="Missing Planning rules">
             <Toggle label="Flag missing effort (absent / blank)" checked={draft.missingEffortEnabled} onChange={(checked) => setFlag('missingEffortEnabled', checked)} />
             <Toggle label="Flag zero effort" checked={draft.zeroEffortEnabled} onChange={(checked) => setFlag('zeroEffortEnabled', checked)} />
+          </SettingsSection>
+        ) : isFunctionRate ? (
+          <SettingsSection title="Function Rate rule">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              External rate columns are auto-detected. Any month with a rate of exactly 0 is flagged;
+              blank cells are ignored. No configurable thresholds.
+            </p>
           </SettingsSection>
         ) : (
           <p className="mt-4 text-sm text-gray-500">No configurable thresholds for this function.</p>
