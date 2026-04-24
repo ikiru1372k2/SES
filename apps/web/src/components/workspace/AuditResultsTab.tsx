@@ -124,7 +124,11 @@ function isMappingSourceValid(src: MappingSourceInput | undefined): boolean {
 }
 
 // Stable module-scope set so references in render and effects don't churn.
-const MAPPING_ENABLED_FUNCTIONS: ReadonlySet<string> = new Set(['over-planning', 'function-rate']);
+const MAPPING_ENABLED_FUNCTIONS: ReadonlySet<string> = new Set([
+  'over-planning',
+  'function-rate',
+  'internal-cost-rate',
+]);
 
 export function AuditResultsTab({
   process,
@@ -731,6 +735,7 @@ function QgcSettingsDrawer({
   const isOverPlanning = file?.functionId === 'over-planning';
   const isMissingPlan = file?.functionId === 'missing-plan';
   const isFunctionRate = file?.functionId === 'function-rate';
+  const isInternalCostRate = file?.functionId === 'internal-cost-rate';
 
   function setNumber(key: keyof AuditPolicy, value: string) {
     setDraft((state) => ({ ...state, [key]: Number(value) || 0 }));
@@ -744,7 +749,7 @@ function QgcSettingsDrawer({
     event.preventDefault();
     updateAuditPolicy(process.id, { ...draft, mediumEffortMin: 0, mediumEffortMax: 0, lowEffortEnabled: false });
     if (file) {
-      const runOptions = (isOverPlanning || isFunctionRate) && mappingSource ? { mappingSource } : undefined;
+      const runOptions = (isOverPlanning || isFunctionRate || isInternalCostRate) && mappingSource ? { mappingSource } : undefined;
       // Only toast "re-run" on actual success. Previously the .then() fired
       // even when runAudit silently no-op'd (no sheets selected) and never
       // caught API errors — users saw "Settings saved and audit re-run" for
@@ -797,6 +802,13 @@ function QgcSettingsDrawer({
           <SettingsSection title="Function Rate rule">
             <p className="text-sm text-gray-600 dark:text-gray-300">
               External rate columns are auto-detected. Any month with a rate of exactly 0 is flagged;
+              blank cells are ignored. No configurable thresholds.
+            </p>
+          </SettingsSection>
+        ) : isInternalCostRate ? (
+          <SettingsSection title="Internal Cost Rate rule">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Monthly cost-rate columns are auto-detected. Any month with a rate of exactly 0 is flagged;
               blank cells are ignored. No configurable thresholds.
             </p>
           </SettingsSection>

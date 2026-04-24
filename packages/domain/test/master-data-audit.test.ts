@@ -336,11 +336,9 @@ test('master-data catalog contains a missing rule for every required column plus
   assert.ok(codes.has(MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE));
 });
 
-test('unbuilt functions have empty catalogs, not inherited rules', () => {
-  // missing-plan and function-rate now have dedicated engines and catalogs
-  // (RUL-MP-EFFORT-ZERO, RUL-FR-RATE-ZERO respectively). Only internal-cost-rate
-  // remains an unbuilt placeholder.
-  for (const fn of ['internal-cost-rate'] as const) {
-    assert.equal(getRuleCatalogForFunction(fn).length, 0, `${fn} should not inherit any rules`);
-  }
-});
+// Former invariant: "unbuilt functions have empty catalogs, not inherited
+// rules" — removed now that every function (master-data, over-planning,
+// missing-plan, function-rate, internal-cost-rate) has a dedicated engine
+// with its own catalog. Cross-function rule isolation is still covered by
+// per-function "RUL-*-* appears only under its function" tests in each
+// engine's test file.

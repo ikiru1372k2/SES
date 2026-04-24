@@ -35,13 +35,13 @@ This document prioritises the fixes and defines what we throw away.
 | master-data         | Dedicated engine, 10 required-field rules + Others   | Real             |
 | over-planning       | Dedicated engine, `RUL-OP-MONTH-PD-HIGH` rule        | Real             |
 | missing-plan        | Dedicated engine, `RUL-MP-EFFORT-ZERO` rule          | Real             |
-| function-rate       | Wraps legacy `runAudit()`                            | Placeholder      |
-| internal-cost-rate  | Wraps legacy `runAudit()`                            | Placeholder      |
+| function-rate       | Dedicated engine, `RUL-FR-RATE-ZERO` rule            | Real             |
+| internal-cost-rate  | Dedicated engine, `RUL-ICR-COST-ZERO` rule           | Real             |
 
-Dispatcher routes by `functionId`, but 4 of 5 engines resolve to the same
-implementation. Fix: keep Master Data as-is, promote over-planning to its
-own module, and add explicit "no rules configured" state for the other 3
-until the business owners define them.
+All 5 functions now have dedicated engines with isolated rulesets. No
+function falls through to the legacy effort-based `runAudit()` anymore.
+`createLegacyEngine` remains in the codebase as a safety net for any
+future function registered without a dedicated engine, but is unused.
 
 ### 1.2 Rule catalog — **not function-scoped**
 
@@ -495,3 +495,127 @@ every other engine. No new mechanism was added.
 
 The master-data engine, all `RUL-MD-*` rules, and the missing-plan engine
 are **unchanged** by this change.
+
+---
+
+## 9. Internal Cost Rate — dedicated engine (shipped)
+
+Module: [packages/domain/src/functions-audit/internal-cost-rate/](../packages/domain/src/functions-audit/internal-cost-rate/).
+
+Replaces the `createLegacyEngine('internal-cost-rate')` fallback with a real
+engine following the Function Rate pattern.
+
+### Engine behaviour
+
+Monthly cost-rate cells are flagged only when the value is **exactly 0**:
+
+- Numeric `0` (including JS `-0`, since `-0 === 0`) → flagged.
+- String forms `"0"`, `"0.0"`, `"  0  "`, `" 0.0 "` → flagged.
+- Formula cells evaluating to `0` → flagged (the parser delivers the cached
+  computed value; the engine treats it like a literal `0`).
+- `null` / `undefined` / empty / whitespace-only / non-numeric text
+  (`"n/a"`, `"TBD"`, etc.) → ignored.
+
+One **consolidated issue per row**: a row with N zero months emits a single
+issue — never N issues.
+
+### Column detection
+
+`detectCostRateColumns(rawRows)` uses the same two-strategy approach as
+Function Rate:
+
+- **Strategy A (single-row):** scans the first 4 header rows and keeps the
+  row with the most `isCostRateMonthColumn` matches. A column is a
+  cost-rate month column if its normalised label contains a month token
+  (short or long name) **AND** a 4-digit year (`(19|20)\d{2}`).
+  Intentionally does **not** require the word "rate" — the real ICR file
+  headers are bare dates like `"Jan 31, 2026"`.
+- **Strategy B (two-row merge):** for consecutive pairs `(i, i+1)`,
+  concatenates cells column-by-column and scores the merged label. Handles
+  the sample file's `"Effort Month"` banner row above the date row.
+
+Tie-break: Strategy B wins only on strict count; on ties we keep Strategy
+A's cleaner labels.
+
+### Rule
+
+`RUL-ICR-COST-ZERO` — **High** / **Internal Cost Rate** category.
+
+`reason` format:
+- 1 month: `"Internal cost rate is 0 for <label>."`
+- N months: `"Internal cost rate is 0 for <N> months: <label1>, <label2>, …."`
+
+`thresholdLabel: '= 0'`. `effort = zeroMonthCount`.
+
+### Issue context fields
+
+`missingMonths: readonly string[]` and `zeroMonthCount: number` are
+populated on the issue. Labels are the **raw trimmed header text** (e.g.
+`"Jan 31, 2026"`) preserving the source file's format — no `"Jan-26"`
+rewrite — in left-to-right `colIndex` order from the column scan.
+
+**Schema-reuse note:** these fields were introduced for Function Rate on
+`AuditIssue` (domain type) and on the Prisma `AuditIssue` model
+(`missingMonths Json?`, `zeroMonthCount Int?`). Internal Cost Rate reuses
+them unchanged; no migration was needed and no new columns should be
+proposed for future ICR-style engines.
+
+### Mapping source + escalation reuse
+
+Internal Cost Rate workbooks have no Project Manager column (same shape as
+Function Rate), so the function opts into the existing mapping-source
+pipeline. ICR is added to three gates:
+
+- [apps/api/src/audits.service.ts](../apps/api/src/audits.service.ts) →
+  `mappingEnabledFunctions` set, plus the Project-ID → Manager pre-pass
+  guard (`file.functionId === 'function-rate' || file.functionId ===
+  'internal-cost-rate'`). The engine emits issues with
+  `projectManager: 'Unassigned'`; the pre-pass (reuses
+  `buildProjectIdToManagerMap` + `applyProjectIdToManager`) fills the PM
+  name by joining Project ID against the selected mapping source (a
+  completed master-data run or an uploaded mapping file).
+- [apps/web/src/pages/Workspace.tsx](../apps/web/src/pages/Workspace.tsx)
+  and
+  [apps/web/src/components/workspace/AuditResultsTab.tsx](../apps/web/src/components/workspace/AuditResultsTab.tsx)
+  → `MAPPING_ENABLED_FUNCTIONS` sets. Adding ICR here auto-lights the
+  `MappingSourcePanel` and the Run-button mapping-source validation.
+
+Canonical Run/gating behaviour for ICR (matches Function Rate):
+
+1. With ICR in `MAPPING_ENABLED_FUNCTIONS`, the UI **requires** the user to
+   explicitly pick a mapping source before Run enables. The valid picks are
+   Master Data version, Uploaded mapping file, or the explicit `None`
+   (directory-only opt-out).
+2. When the picked type is `None`, the API skips the Project-ID pre-pass
+   and `buildMappingSourceMap` block entirely — resolution falls through
+   to `resolveIssueEmailsFromDirectory` only.
+3. Unresolved rows (no mapping match, no directory match) are **still
+   persisted** with empty email; they surface in
+   `summary.managerDirectory.unresolvedNames` and flow through escalation
+   like any other unresolved issue. `allowUnresolvedFallback` defaults
+   to `true`; no new policy was introduced.
+
+The summary payload gets a new `internalCostRate` branch mirroring
+`functionRate` for observability parity
+(`mappingSourceType`, `resolvedProjectIdToManager`, `resolvedFromMapping`,
+`allowUnresolvedFallback`).
+
+### Non-regression guarantee
+
+This change touches only:
+- the new ICR module (5 new files + 1 test file + 1 test fixture),
+- three mapping-gate sets (API + 2 UI locations),
+- the `QgcSettingsDrawer`'s ICR branch,
+- the `IssueCategory` union (added `'Internal Cost Rate'`),
+- the engine registry and rule-catalog map entries for
+  `'internal-cost-rate'`,
+- this doc.
+
+Master Data, Over Planning, Missing Plan, and Function Rate engines,
+rules, policies, and UI are unchanged. An exhaustiveness audit over
+`IssueCategory` usages turned up no `switch(category)` blocks in the repo
+and one curated filter list
+([AuditResultsTab.tsx:41](../apps/web/src/components/workspace/AuditResultsTab.tsx#L41))
+that was already not enumerating every category — we preserved that
+shape rather than expanding it for ICR, matching the precedent set when
+`'Function Rate'` was added.
