@@ -7,6 +7,7 @@ import {
   getFunctionAuditEngine,
   MP_EFFORT_ALIASES,
   MP_EFFORT_ZERO_RULE_CODE,
+  MP_EFFORT_MISSING_RULE_CODE,
   MISSING_PLAN_RULE_CATALOG,
   runFunctionAudit,
 } from '../src/functions-audit/index.js';
@@ -61,7 +62,7 @@ async function buildWorkbook(
     const projectNoIndex = headers.indexOf('Project No.');
     if (projectNoIndex >= 0) base[projectNoIndex] = `FILL-${i}`;
     const effortIndex = headers.findIndex((h) =>
-      ['Effort (H)', 'Effort H', 'effort', 'hours', 'planned effort'].includes(h.toLowerCase()),
+      ['effort (h)', 'effort h', 'effort', 'hours', 'planned effort'].includes(h.toLowerCase()),
     );
     if (effortIndex >= 0) base[effortIndex] = 40; // non-zero filler so they don't pollute issue counts
     const stateIndex = headers.indexOf('Project State');
@@ -155,20 +156,40 @@ test('does not flag row with effort = 0.5', async () => {
   assert.equal(result.issues.length, 0);
 });
 
-// ─── Blank effort not flagged ────────────────────────────────────────────────
+// ─── Missing effort (blank/absent) flagged when missingEffortEnabled ─────────
 
-test('does not flag row with blank effort cell', async () => {
+test('flags row with blank effort cell (missingEffortEnabled=true by default)', async () => {
   const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': '' })]);
   const result = runFunctionAudit('missing-plan', file, undefined);
 
-  assert.equal(result.issues.length, 0, 'blank effort should not produce a zero-effort finding');
+  assert.equal(result.issues.length, 1, 'blank effort should produce a missing-effort finding');
+  assert.equal(result.issues[0]!.ruleCode, 'RUL-MP-EFFORT-MISSING');
 });
 
-test('does not flag row with undefined effort cell', async () => {
+test('flags row with undefined effort cell (missingEffortEnabled=true by default)', async () => {
   const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': undefined })]);
   const result = runFunctionAudit('missing-plan', file, undefined);
 
-  assert.equal(result.issues.length, 0);
+  assert.equal(result.issues.length, 1);
+  assert.equal(result.issues[0]!.ruleCode, 'RUL-MP-EFFORT-MISSING');
+});
+
+test('does NOT flag blank effort when missingEffortEnabled=false', async () => {
+  const { normalizeAuditPolicy } = await import('../src/auditPolicy.js');
+  const policy = normalizeAuditPolicy({ missingEffortEnabled: false });
+  const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': '' })]);
+  const result = runFunctionAudit('missing-plan', file, policy);
+
+  assert.equal(result.issues.length, 0, 'blank effort should NOT be flagged when missingEffortEnabled=false');
+});
+
+test('does NOT flag zero effort when zeroEffortEnabled=false', async () => {
+  const { normalizeAuditPolicy } = await import('../src/auditPolicy.js');
+  const policy = normalizeAuditPolicy({ zeroEffortEnabled: false });
+  const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': 0 })]);
+  const result = runFunctionAudit('missing-plan', file, policy);
+
+  assert.equal(result.issues.length, 0, 'zero effort should NOT be flagged when zeroEffortEnabled=false');
 });
 
 // ─── Engine registration ─────────────────────────────────────────────────────
@@ -257,19 +278,19 @@ test('end-to-end: zero-effort row produces issue with IKY- issueKey', async () =
   assert.equal(issue.effort, 0);
 });
 
-test('end-to-end: mixed rows — only zero-effort rows flagged', async () => {
+test('end-to-end: mixed rows — zero-effort and blank-effort rows flagged', async () => {
   const rows = [
-    makeRow({ 'Project No.': 'P001', 'Effort (H)': 0 }),
-    makeRow({ 'Project No.': 'P002', 'Effort (H)': 100 }),
-    makeRow({ 'Project No.': 'P003', 'Effort (H)': 0 }),
-    makeRow({ 'Project No.': 'P004', 'Effort (H)': 50 }),
-    makeRow({ 'Project No.': 'P005', 'Effort (H)': '' }),
+    makeRow({ 'Project No.': 'P001', 'Effort (H)': 0 }),    // zero → RUL-MP-EFFORT-ZERO
+    makeRow({ 'Project No.': 'P002', 'Effort (H)': 100 }),   // positive → not flagged
+    makeRow({ 'Project No.': 'P003', 'Effort (H)': 0 }),    // zero → RUL-MP-EFFORT-ZERO
+    makeRow({ 'Project No.': 'P004', 'Effort (H)': 50 }),    // positive → not flagged
+    makeRow({ 'Project No.': 'P005', 'Effort (H)': '' }),    // blank → RUL-MP-EFFORT-MISSING
   ];
   const file = await buildWorkbook(BASE_HEADERS, rows);
   const result = runFunctionAudit('missing-plan', file, undefined, { issueScope: 'PRC-TEST' });
 
-  assert.equal(result.flaggedRows, 2, 'only the two zero-effort rows should be flagged');
-  assert.equal(result.issues.length, 2);
+  assert.equal(result.flaggedRows, 3, 'two zero-effort and one blank-effort row should be flagged');
+  assert.equal(result.issues.length, 3);
   const flaggedNos = result.issues.map((i) => i.projectNo).sort();
-  assert.deepEqual(flaggedNos, ['P001', 'P003']);
+  assert.deepEqual(flaggedNos, ['P001', 'P003', 'P005']);
 });

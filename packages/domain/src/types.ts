@@ -39,6 +39,8 @@ export interface AuditPolicy {
   inPlanningEffortEnabled: boolean;
   onHoldEffortEnabled: boolean;
   onHoldEffortThreshold: number;
+  /** Per-month PD threshold for the over-planning engine (default 30). */
+  pdThreshold?: number;
   updatedAt: string;
 }
 

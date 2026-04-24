@@ -18,6 +18,7 @@ import { usePageHeader } from '../components/layout/usePageHeader';
 import { PresenceBar } from '../components/shared/PresenceBar';
 import { useCurrentUser } from '../components/auth/authContext';
 import { downloadAuditedWorkbook } from '../lib/excelParser';
+import type { MappingSourceInput } from '../lib/api/auditsApi';
 import { selectCorrectionCount, selectHasUnsavedAudit, selectLatestAuditResult } from '../store/selectors';
 import { useAppStore } from '../store/useAppStore';
 import { isLegacyTileTrackingTabEnabled } from '../lib/featureFlags';
@@ -67,6 +68,9 @@ export function Workspace() {
   const [membersOpen, setMembersOpen] = useState(false);
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [mappingSource, setMappingSource] = useState<MappingSourceInput | undefined>(undefined);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- reset mapping source on function navigation
+  useEffect(() => { setMappingSource(undefined); }, [functionId]);
   const hydrateAttemptedRef = useRef(false);
   const queryClient = useQueryClient();
   const [hydrateFinished, setHydrateFinished] = useState(false);
@@ -137,8 +141,10 @@ export function Workspace() {
   useEffect(() => {
     if (tab !== 'results') return;
     if (!processRecordId) return;
-    const targetFileId = process?.activeFileId
-      ?? process?.files.find((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId)?.id;
+    // Only hydrate from a file that belongs to the current function — using
+    // process.activeFileId directly would leak another function's file ID.
+    const functionFiles = process?.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId) ?? [];
+    const targetFileId = functionFiles.find((file) => file.id === process?.activeFileId)?.id ?? functionFiles[0]?.id;
     if (!targetFileId) return;
     void hydrateLatestAuditResult(processRecordId, targetFileId);
   }, [tab, processRecordId, process?.activeFileId, process?.files, functionId, hydrateLatestAuditResult]);
@@ -184,14 +190,24 @@ export function Workspace() {
   const headVersion = process?.versions[0];
   const headVersionName = headVersion?.versionName ?? '';
   const nextVersionNumber = (process?.versions.length ?? 0) + 1;
-  const canRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning);
+  function isMappingSourceValid(src: MappingSourceInput | undefined): boolean {
+    if (!src || src.type === 'none') return true;
+    if (src.type === 'master_data_version') return Boolean(src.masterDataVersionId);
+    if (src.type === 'uploaded_file') return Boolean(src.uploadId);
+    return true;
+  }
+  const mappingSourceValid = activeFile?.functionId !== 'over-planning' || isMappingSourceValid(mappingSource);
+  const canRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning && mappingSourceValid);
   const canSave = Boolean(process && latestResult && !isAuditRunning);
   const canDownload = Boolean(process && activeFile && latestResult && hasSavedVersion && !isAuditRunning);
 
   const onRunAudit = useCallback(async () => {
     if (!process || !activeFile) return;
     const priorAnchor = anchorResultForFile(process.versions, activeFile.id);
-    await runAudit(process.id, activeFile.id);
+    const runOptions = activeFile.functionId === 'over-planning' && mappingSource
+      ? { mappingSource }
+      : undefined;
+    await runAudit(process.id, activeFile.id, runOptions);
     const runResult = useAppStore.getState().currentAuditResult;
     if (!runResult) return;
     const diff = summarizeDiff(priorAnchor, runResult);
@@ -202,7 +218,7 @@ export function Workspace() {
     } else {
       toast.success(`Audit complete - ${runResult.scannedRows} rows scanned, ${runResult.issues.length} issues found`);
     }
-  }, [process, activeFile, runAudit]);
+  }, [process, activeFile, mappingSource, runAudit]);
 
   const onQuickSave = useCallback(() => {
     if (!process || !latestResult) return;
@@ -258,6 +274,8 @@ export function Workspace() {
       ? 'Upload a file first'
       : selectedSheets === 0
       ? 'Select at least one valid sheet'
+      : !mappingSourceValid
+      ? 'Select a mapping source version or file before running'
       : activeFile.isAudited
       ? 'Re-run the audit with the current sheet selection'
       : 'Run the audit with the current sheet selection';
@@ -346,6 +364,7 @@ export function Workspace() {
     latestResult,
     correctionCount,
     canRun,
+    mappingSourceValid,
     canSave,
     canDownload,
     hasSavedVersion,
@@ -414,7 +433,12 @@ export function Workspace() {
         ) : null}
         {tab === 'results' ? (
           <TabPanel>
-            <AuditResultsTab process={scopedProcess} file={activeFile} />
+            <AuditResultsTab
+              process={scopedProcess}
+              file={activeFile}
+              mappingSource={mappingSource}
+              onMappingSourceChange={setMappingSource}
+            />
           </TabPanel>
         ) : null}
         {tab === 'notifications' ? (

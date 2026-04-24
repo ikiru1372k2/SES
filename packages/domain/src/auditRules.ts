@@ -2,6 +2,7 @@ import type { IssueCategory, Severity } from './types';
 import type { FunctionId } from './functions';
 import { MASTER_DATA_RULE_CATALOG } from './functions-audit/master-data/rules';
 import { MISSING_PLAN_RULE_CATALOG } from './functions-audit/missing-plan/rules';
+import { OVER_PLANNING_ENGINE_RULE_CATALOG as OVER_PLANNING_RULE_CATALOG_IMPORT } from './functions-audit/over-planning/rules';
 
 export interface RuleCatalogEntry {
   ruleCode: string;
@@ -20,82 +21,8 @@ export interface RuleCatalogEntry {
   paramsSchema: Record<string, unknown>;
 }
 
-export const OVER_PLANNING_RULE_CATALOG: RuleCatalogEntry[] = [
-  {
-    ruleCode: 'RUL-EFFORT-OVERPLAN-HIGH',
-    name: 'Overplanned effort',
-    category: 'Overplanning',
-    defaultSeverity: 'High',
-    description: 'Effort exceeds the configured overplanning threshold.',
-    version: 1,
-    isEnabledDefault: true,
-    paramsSchema: { type: 'object', properties: { highEffortThreshold: { type: 'number' } }, required: ['highEffortThreshold'] },
-  },
-  {
-    ruleCode: 'RUL-EFFORT-OVERPLAN-LOW',
-    name: 'Low effort range',
-    category: 'Effort Threshold',
-    defaultSeverity: 'Low',
-    description: 'Effort falls inside the low tracking range.',
-    version: 1,
-    isEnabledDefault: false,
-    paramsSchema: {
-      type: 'object',
-      properties: { lowEffortMin: { type: 'number' }, lowEffortMax: { type: 'number' } },
-      required: ['lowEffortMin', 'lowEffortMax'],
-    },
-  },
-  {
-    ruleCode: 'RUL-EFFORT-MISSING',
-    name: 'Missing effort',
-    category: 'Missing Planning',
-    defaultSeverity: 'High',
-    description: 'Active project has no effort value.',
-    version: 1,
-    isEnabledDefault: true,
-    paramsSchema: { type: 'object', properties: {}, additionalProperties: false },
-  },
-  {
-    ruleCode: 'RUL-EFFORT-ZERO',
-    name: 'Zero effort',
-    category: 'Missing Planning',
-    defaultSeverity: 'Medium',
-    description: 'Effort is explicitly zero.',
-    version: 1,
-    isEnabledDefault: true,
-    paramsSchema: { type: 'object', properties: {}, additionalProperties: false },
-  },
-  {
-    ruleCode: 'RUL-MGR-MISSING',
-    name: 'Missing project manager',
-    category: 'Missing Data',
-    defaultSeverity: 'High',
-    description: 'No project manager is assigned.',
-    version: 1,
-    isEnabledDefault: true,
-    paramsSchema: { type: 'object', properties: {}, additionalProperties: false },
-  },
-  {
-    ruleCode: 'RUL-STATE-ONHOLD-EFFORT',
-    name: 'On Hold with effort',
-    category: 'Planning Risk',
-    defaultSeverity: 'High',
-    description: 'Project is On Hold while still carrying effort.',
-    version: 1,
-    isEnabledDefault: true,
-    paramsSchema: { type: 'object', properties: { onHoldEffortThreshold: { type: 'number' } }, required: ['onHoldEffortThreshold'] },
-  },
-  {
-    ruleCode: 'RUL-STATE-INPLAN-EFFORT',
-    name: 'In Planning with effort',
-    category: 'Planning Risk',
-    defaultSeverity: 'Medium',
-    description: 'Project is in planning while already carrying effort.',
-    version: 1,
-    isEnabledDefault: true,
-    paramsSchema: { type: 'object', properties: {}, additionalProperties: false },
-  },
-];
+// Sourced from the dedicated over-planning module so there is one source of truth.
+export const OVER_PLANNING_RULE_CATALOG: RuleCatalogEntry[] = OVER_PLANNING_RULE_CATALOG_IMPORT;
 
 // Per-function rule catalog. Every rule must live under exactly one function
 // key — this is the structural guarantee the product needs: Master Data

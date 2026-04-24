@@ -19,6 +19,15 @@ export class AuditsController {
     return this.auditsService.run(idOrCode, body, user);
   }
 
+  @Get('processes/:idOrCode/audit-runs')
+  listForProcess(
+    @Param('idOrCode') idOrCode: string,
+    @Query('functionId') functionId: string | undefined,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.auditsService.listForProcess(idOrCode, functionId, user);
+  }
+
   // Latest completed audit run for a file. The web client calls this when
   // the user lands on the Audit Results tab via a deep link (Escalation
   // Center "Open evidence", a bookmark, etc.) and there's no in-session

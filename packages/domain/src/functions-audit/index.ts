@@ -2,6 +2,7 @@ import type { AuditPolicy, AuditResult, WorkbookFile } from '../types';
 import { FUNCTION_IDS, type FunctionId } from '../functions';
 import { masterDataAuditEngine } from './master-data';
 import { missingPlanAuditEngine } from './missing-plan';
+import { overPlanningAuditEngine } from './over-planning';
 import { createLegacyEngine } from './legacy-engine';
 import type { FunctionAuditEngine, FunctionAuditOptions } from './types';
 
@@ -9,7 +10,7 @@ import type { FunctionAuditEngine, FunctionAuditOptions } from './types';
 // mix them. To swap an engine for a function, register the new one here.
 export const FUNCTION_AUDIT_ENGINES: Record<FunctionId, FunctionAuditEngine> = {
   'master-data': masterDataAuditEngine,
-  'over-planning': createLegacyEngine('over-planning'),
+  'over-planning': overPlanningAuditEngine,
   'missing-plan': missingPlanAuditEngine,
   'function-rate': createLegacyEngine('function-rate'),
   'internal-cost-rate': createLegacyEngine('internal-cost-rate'),
@@ -51,8 +52,17 @@ export {
   MISSING_PLAN_RULE_CATALOG,
   MISSING_PLAN_RULES_BY_CODE,
   MP_EFFORT_ZERO_RULE_CODE,
+  MP_EFFORT_MISSING_RULE_CODE,
   MP_EFFORT_ALIASES,
 } from './missing-plan';
+export {
+  OVER_PLANNING_ENGINE_RULE_CATALOG,
+  OVER_PLANNING_RULES_BY_CODE,
+  OP_MONTH_PD_HIGH_RULE_CODE,
+  detectPdColumns,
+  isPdColumn,
+  DEFAULT_PD_THRESHOLD,
+} from './over-planning';
 export {
   normalizeProcessPolicies,
   createDefaultProcessPolicies,

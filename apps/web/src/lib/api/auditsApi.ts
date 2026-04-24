@@ -1,5 +1,21 @@
 import { JSON_HEADERS, parseApiError } from './client';
 
+export interface MappingSourceInput {
+  type: 'master_data_version' | 'uploaded_file' | 'none';
+  masterDataVersionId?: string;
+  uploadId?: string;
+  allowUnresolvedFallback?: boolean;
+}
+
+export interface ApiAuditRunListItem {
+  id: string;
+  displayCode: string;
+  completedAt: string | null;
+  scannedRows: number;
+  flaggedRows: number;
+  file: { functionId: string; name: string; displayCode: string };
+}
+
 export interface ApiAuditRunIssue {
   id: string;
   displayCode: string;
@@ -42,15 +58,29 @@ export interface ApiAuditRunSummary {
 export async function runAuditOnApi(
   processIdOrCode: string,
   fileIdOrCode: string,
+  options?: { mappingSource?: MappingSourceInput },
 ): Promise<ApiAuditRunSummary> {
   const res = await fetch(`/api/v1/processes/${encodeURIComponent(processIdOrCode)}/audit/run`, {
     method: 'POST',
     credentials: 'include',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ fileIdOrCode }),
+    body: JSON.stringify({ fileIdOrCode, ...(options?.mappingSource ? { mappingSource: options.mappingSource } : {}) }),
   });
   if (!res.ok) throw await parseApiError(res, 'Audit run failed');
   return (await res.json()) as ApiAuditRunSummary;
+}
+
+export async function fetchAuditRunsForProcess(
+  processIdOrCode: string,
+  functionId?: string,
+): Promise<ApiAuditRunListItem[]> {
+  const params = functionId ? `?functionId=${encodeURIComponent(functionId)}` : '';
+  const res = await fetch(
+    `/api/v1/processes/${encodeURIComponent(processIdOrCode)}/audit-runs${params}`,
+    { credentials: 'include' },
+  );
+  if (!res.ok) throw await parseApiError(res, 'Failed to load audit runs');
+  return (await res.json()) as ApiAuditRunListItem[];
 }
 
 export async function fetchAuditIssues(runIdOrCode: string): Promise<ApiAuditRunIssue[]> {
