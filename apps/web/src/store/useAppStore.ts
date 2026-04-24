@@ -624,10 +624,20 @@ export const useAppStore = create<AppStore>()(
       runAudit: async (processId, fileId, runOptions) => {
         const process = get().processes.find((item) => item.id === processId);
         const file = process?.files.find((item) => item.id === fileId);
-        if (!process || !file) return;
+        if (!process || !file) {
+          // Resource vanished from state between action dispatch and handler
+          // execution (e.g. file deleted, process navigation mid-flight). Silent
+          // is the right call here — there is literally nothing to audit, and
+          // button-gating should have prevented this path already.
+          return;
+        }
         const selected = file.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected);
         if (!selected.length) {
-          return;
+          // Explicit throw so call sites can surface a toast. Previously this
+          // returned silently, which let callers report "Settings saved and
+          // audit re-run" even though the run was a no-op — the source of the
+          // "Re-run does nothing / UI stays static" bug.
+          throw new Error('No sheets selected for audit. Select at least one sheet and try again.');
         }
 
         // Claim this run with a fresh key. Any earlier in-flight run with

@@ -440,7 +440,11 @@ export function AuditResultsTab({
               )}
               <button
                 onClick={() => {
-                  void runAudit(process.id, file.id, mappingSource ? { mappingSource } : undefined);
+                  void runAudit(process.id, file.id, mappingSource ? { mappingSource } : undefined).catch(
+                    (err: unknown) => {
+                      toast.error(err instanceof Error ? err.message : 'Audit failed — please try again.');
+                    },
+                  );
                 }}
                 disabled={!hasSelected || !mappingSourceOk}
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
@@ -483,7 +487,11 @@ export function AuditResultsTab({
                 <button
                   type="button"
                   onClick={() => {
-                    void runAudit(process.id, file.id, mappingSource ? { mappingSource } : undefined);
+                    void runAudit(process.id, file.id, mappingSource ? { mappingSource } : undefined).catch(
+                      (err: unknown) => {
+                        toast.error(err instanceof Error ? err.message : 'Audit failed — please try again.');
+                      },
+                    );
                   }}
                   disabled={!hasSelected || !mappingSourceOk}
                   className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
@@ -737,7 +745,16 @@ function QgcSettingsDrawer({
     updateAuditPolicy(process.id, { ...draft, mediumEffortMin: 0, mediumEffortMax: 0, lowEffortEnabled: false });
     if (file) {
       const runOptions = (isOverPlanning || isFunctionRate) && mappingSource ? { mappingSource } : undefined;
-      void runAudit(process.id, file.id, runOptions).then(() => toast.success('Settings saved and audit re-run'));
+      // Only toast "re-run" on actual success. Previously the .then() fired
+      // even when runAudit silently no-op'd (no sheets selected) and never
+      // caught API errors — users saw "Settings saved and audit re-run" for
+      // runs that never actually ran.
+      void runAudit(process.id, file.id, runOptions)
+        .then(() => toast.success('Settings saved and audit re-run'))
+        .catch((err: unknown) => {
+          toast.success('Settings saved');
+          toast.error(err instanceof Error ? err.message : 'Audit failed — please re-run manually.');
+        });
     } else {
       toast.success('Settings saved');
     }

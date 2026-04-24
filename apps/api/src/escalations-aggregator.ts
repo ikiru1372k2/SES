@@ -105,9 +105,32 @@ export function aggregateEscalations(
   }
 
   const trackingByKey = new Map(tracking.map((t) => [t.managerKey, t]));
+  // Secondary index by normalized manager name. Lets us match a tracking
+  // entry whose managerKey has drifted between runs — e.g. Run 1 had
+  // `missing-email:smith` because Smith wasn't in the Manager Directory yet,
+  // Run 2 has `smith@x.com` after the Directory entry was added. Without
+  // this fallback, the aggregator would lose the earlier tracking row's
+  // resolved state and appear to create a duplicate.
+  const trackingByName = new Map<string, AggregatorTrackingRow>();
+  for (const t of tracking) {
+    const nameKey = t.managerName.trim().toLowerCase();
+    if (nameKey && !trackingByName.has(nameKey)) trackingByName.set(nameKey, t);
+  }
+
+  // When an issue-side bucket claims a tracking entry via the name fallback,
+  // record its id so the empty-bucket loop below does NOT also emit a
+  // duplicate empty row under the old stored managerKey.
+  const consumedTrackingIds = new Set<string>();
+  for (const [, agg] of byManager) {
+    const nameKey = agg.managerName.trim().toLowerCase();
+    if (!nameKey) continue;
+    const t = trackingByName.get(nameKey);
+    if (t) consumedTrackingIds.add(t.id);
+  }
 
   for (const t of tracking) {
     if (byManager.has(t.managerKey)) continue;
+    if (consumedTrackingIds.has(t.id)) continue;
     const empty: AggBucket = {
       managerName: t.managerName,
       countsByEngine: {},
@@ -119,7 +142,11 @@ export function aggregateEscalations(
   const rows: ProcessEscalationManagerRow[] = [];
 
   for (const [managerKeyValue, agg] of byManager) {
-    const tr = trackingByKey.get(managerKeyValue);
+    // Primary lookup by managerKey; fall back to name when the computed key
+    // has drifted from the stored one.
+    const tr =
+      trackingByKey.get(managerKeyValue) ??
+      trackingByName.get(agg.managerName.trim().toLowerCase());
     const resolved = tr?.resolved ?? false;
     const resolvedEmail = pickResolvedEmail(managerKeyValue, issues, tr);
     const hasEmail = Boolean(resolvedEmail) || hasValidEmailOnIssues(managerKeyValue, issues);
