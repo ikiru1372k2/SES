@@ -83,6 +83,11 @@ export class ProcessesController {
     return this.processesService.createFunctionAuditRequest(idOrCode, body, user);
   }
 
+  @Get(':idOrCode/me/access')
+  myAccess(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
+    return this.processesService.getMyAccess(idOrCode, user);
+  }
+
   @Get(':idOrCode/members')
   listMembers(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
     return this.processesService.listMembers(idOrCode, user);

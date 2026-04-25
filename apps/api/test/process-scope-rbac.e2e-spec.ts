@@ -5,11 +5,23 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
+import ExcelJS from 'exceljs';
 import request from 'supertest';
 import '../src/load-env';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { createRequestId, requestContext } from '../src/common/request-context';
+
+async function minimalXlsxBuffer(): Promise<Buffer> {
+  const rows = [
+    ['QGC effort planning review'],
+    ['Country', 'Business Unit (Project)', 'Customer Name', 'Project No.', 'Project', 'Project State', 'Project Manager', 'Email', 'Effort (H)'],
+    ['100', 'Digital Transformation', 'Siemens AG', '90032101', 'Digital Core SAP S4', 'Authorised', 'Muller, Hans', 'h.muller@company.com', 920],
+  ];
+  const workbook = new ExcelJS.Workbook();
+  workbook.addWorksheet('Effort Data').addRows(rows);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
 
 const hasDb = Boolean(process.env.DATABASE_URL);
 
@@ -231,6 +243,95 @@ describe('process-scope RBAC e2e', { skip: !hasDb }, () => {
         scopes: [],
       })
       .expect(400);
+  });
+
+  it('GET :id/me/access returns the current user permission + scope rows', async () => {
+    const server = app.getHttpServer();
+    const memberEmail = freshEmail('member-meaccess');
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-me-access', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    // Owner sees their own access — permission='owner', no scopes.
+    const ownerAccess = await owner
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/me/access`)
+      .expect(200);
+    assert.equal((ownerAccess.body as { permission: string }).permission, 'owner');
+
+    // Add a member with a function:viewer scope.
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'editor',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', functionId: 'master-data', accessLevel: 'viewer' }],
+      })
+      .expect(201);
+
+    const member = request.agent(server);
+    await member.post('/api/v1/auth/login').send({ email: memberEmail, password: 'pw12345678' }).expect(201);
+
+    const memberAccess = await member
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/me/access`)
+      .expect(200);
+    type AccessBody = {
+      permission: string;
+      scopes: { scopeType: string; functionId: string | null; accessLevel: string }[];
+    };
+    const body = memberAccess.body as AccessBody;
+    assert.equal(body.permission, 'editor');
+    assert.equal(body.scopes.length, 1);
+    assert.equal(body.scopes[0]!.scopeType, 'function');
+    assert.equal(body.scopes[0]!.functionId, 'master-data');
+    assert.equal(body.scopes[0]!.accessLevel, 'viewer');
+
+    // Non-member is rejected (defense-in-depth: findAccessibleProcessOrThrow).
+    const stranger = request.agent(server);
+    const strangerEmail = freshEmail('stranger');
+    await signup(server, strangerEmail);
+    await stranger.post('/api/v1/auth/login').send({ email: strangerEmail, password: 'pw12345678' }).expect(201);
+    await stranger
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/me/access`)
+      .expect(403);
+  });
+
+  it('function-viewer cannot POST audit/run on the scoped function (controller pre-flight)', async () => {
+    const server = app.getHttpServer();
+    const memberEmail = freshEmail('member-audit-run');
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-audit-run', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    // Owner uploads a real xlsx file under master-data.
+    const buf = await minimalXlsxBuffer();
+    const up = await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/files`)
+      .attach('file', buf, { filename: 'book.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      .expect(201);
+    const fileId = (up.body as { id: string }).id;
+
+    // Add member as function:viewer on master-data.
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'editor',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', functionId: 'master-data', accessLevel: 'viewer' }],
+      })
+      .expect(201);
+
+    const member = request.agent(server);
+    await member.post('/api/v1/auth/login').send({ email: memberEmail, password: 'pw12345678' }).expect(201);
+
+    // Function-viewer should be denied at the controller pre-flight.
+    await member
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/audit/run`)
+      .send({ fileIdOrCode: fileId })
+      .expect(403);
   });
 
   it('PATCH updates scopes; deleting member cascades scope rows', async () => {

@@ -13,9 +13,13 @@ import { SheetList } from './SheetList';
 interface Props {
   process: AuditProcess;
   functionId?: FunctionId;
+  /** When false, upload + delete are disabled with a tooltip explaining why. Defaults to true (backward compat). */
+  canEdit?: boolean;
+  /** Tooltip text shown on disabled mutating controls. */
+  readOnlyReason?: string | undefined;
 }
 
-export function FilesSidebar({ process, functionId }: Props) {
+export function FilesSidebar({ process, functionId, canEdit = true, readOnlyReason }: Props) {
   const confirm = useConfirm();
   const uploadFile = useAppStore((state) => state.uploadFile);
   const saveFileDraft = useAppStore((state) => state.saveFileDraft);
@@ -25,8 +29,10 @@ export function FilesSidebar({ process, functionId }: Props) {
   const uploads = useAppStore((state) => state.uploads);
   const scopedFid: FunctionId = functionId ?? DEFAULT_FUNCTION_ID;
   const activeFile = process.files.find((file) => file.id === process.activeFileId) ?? process.files[0];
+  const tooltip = !canEdit ? readOnlyReason : undefined;
 
   async function upload(files: FileList | null) {
+    if (!canEdit) return;
     if (!files?.length) return;
     for (const file of Array.from(files)) {
       try {
@@ -61,6 +67,7 @@ export function FilesSidebar({ process, functionId }: Props) {
   }
 
   async function confirmDelete(file: WorkbookFile) {
+    if (!canEdit) return;
     const ok = await confirm({
       title: `Delete ${file.name}?`,
       description: 'This removes the document and its audit data from this browser.',
@@ -77,15 +84,51 @@ export function FilesSidebar({ process, functionId }: Props) {
       <section className="p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Documents</h2>
-          <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-hover">
+          <label
+            aria-disabled={!canEdit}
+            title={tooltip}
+            className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white ${
+              canEdit
+                ? 'cursor-pointer bg-brand hover:bg-brand-hover'
+                : 'cursor-not-allowed bg-gray-300 dark:bg-gray-700'
+            }`}
+          >
             <Upload size={14} />
             Upload
-            <input type="file" multiple accept=".xlsx,.xlsm" onChange={(event) => { void upload(event.target.files); }} className="hidden" />
+            <input
+              type="file"
+              multiple
+              accept=".xlsx,.xlsm"
+              disabled={!canEdit}
+              onChange={(event) => { void upload(event.target.files); }}
+              className="hidden"
+            />
           </label>
         </div>
-        <label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void upload(event.dataTransfer.files); }} className="mt-3 flex cursor-pointer flex-col items-center rounded-lg border border-dashed border-gray-300 bg-white p-4 text-center text-xs text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700">
-          Drag documents here or pick multiple files
-          <input type="file" multiple accept=".xlsx,.xlsm" onChange={(event) => { void upload(event.target.files); }} className="hidden" />
+        <label
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            if (!canEdit) return;
+            void upload(event.dataTransfer.files);
+          }}
+          aria-disabled={!canEdit}
+          title={tooltip}
+          className={`mt-3 flex flex-col items-center rounded-lg border border-dashed border-gray-300 p-4 text-center text-xs ${
+            canEdit
+              ? 'cursor-pointer bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700'
+              : 'cursor-not-allowed bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-900'
+          }`}
+        >
+          {canEdit ? 'Drag documents here or pick multiple files' : 'Read-only — upload disabled'}
+          <input
+            type="file"
+            multiple
+            accept=".xlsx,.xlsm"
+            disabled={!canEdit}
+            onChange={(event) => { void upload(event.target.files); }}
+            className="hidden"
+          />
         </label>
         <div className="mt-4 space-y-2">
           {Object.entries(uploads).map(([key, item]) => (
@@ -101,6 +144,8 @@ export function FilesSidebar({ process, functionId }: Props) {
               file={file}
               isActive={file.id === process.activeFileId}
               serverBacked={Boolean(process.serverBacked)}
+              canDelete={canEdit}
+              deleteTooltip={tooltip}
               onSelect={() => setActiveFile(process.id, file.id)}
               onView={() => onView(file)}
               onDownload={() => void onDownload(file)}
@@ -118,6 +163,8 @@ function DocumentCard({
   file,
   isActive,
   serverBacked,
+  canDelete,
+  deleteTooltip,
   onSelect,
   onView,
   onDownload,
@@ -126,6 +173,8 @@ function DocumentCard({
   file: WorkbookFile;
   isActive: boolean;
   serverBacked: boolean;
+  canDelete: boolean;
+  deleteTooltip?: string | undefined;
   onSelect: () => void;
   onView: () => void;
   onDownload: () => void;
@@ -196,12 +245,17 @@ function DocumentCard({
         <button
           type="button"
           aria-label={`Delete ${file.name}`}
-          title="Delete document"
+          title={canDelete ? 'Delete document' : deleteTooltip}
+          disabled={!canDelete}
           onClick={(event) => {
             event.stopPropagation();
             onDelete();
           }}
-          className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
+          className={`rounded-md p-1 ${
+            canDelete
+              ? 'text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30'
+              : 'cursor-not-allowed text-gray-300 dark:text-gray-600'
+          }`}
         >
           <Trash2 size={14} />
         </button>

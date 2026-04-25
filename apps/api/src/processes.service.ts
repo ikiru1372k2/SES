@@ -347,6 +347,23 @@ export class ProcessesService {
   // Listing is allowed to any member (viewer+); adding/removing requires owner
   // because a member who can add others can grant themselves privileges.
 
+  /**
+   * Returns the current user's effective permission + scope rows for a process.
+   * Drives the workspace UI's disable-state for mutating controls. Mirrors
+   * exactly what AccessScopeService.resolve will use server-side, so the UI
+   * stays in lock-step with enforcement.
+   */
+  async getMyAccess(idOrCode: string, user: SessionUser) {
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');
+    const ctx = await this.accessScope.loadMemberContext(process.id, user.id);
+    if (!ctx) {
+      // findAccessibleProcessOrThrow already enforces membership; this is a
+      // defensive belt-and-suspenders branch.
+      return { permission: 'viewer' as const, scopes: [] };
+    }
+    return { permission: ctx.member.permission, scopes: ctx.scopes };
+  }
+
   async listMembers(idOrCode: string, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');
     const [members, scopesByMember] = await Promise.all([

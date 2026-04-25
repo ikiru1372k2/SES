@@ -147,6 +147,20 @@ function handleEnvelope(
       const code =
         (envelope.payload as { runCode?: string } | undefined)?.runCode ?? '';
       toast(`${actor} ran an audit ${code}`.trim(), { icon: '🔎' });
+      // Refresh the active workspace file's audit result so viewers/editors
+      // viewing this process see the new findings without a manual reload.
+      // We don't have fileId on the payload, so we refresh whichever file the
+      // workspace is currently focused on for this process — if no workspace
+      // is open or the active file belongs to a different process, this is
+      // a cheap no-op (hydrate uses processId+fileId and matches the store).
+      const state = useAppStore.getState();
+      const proc = state.processes.find(
+        (p) => p.id === envelope.processCode || p.displayCode === envelope.processCode,
+      );
+      const activeFileId = proc?.activeFileId;
+      if (proc && activeFileId) {
+        void state.hydrateLatestAuditResult(proc.id, activeFileId);
+      }
       return;
     }
     case 'tracking.updated': {
