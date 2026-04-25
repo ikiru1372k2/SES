@@ -73,19 +73,22 @@ import { SlaEngineService } from './sla-engine.service';
 
 @Module({
   imports: [
-    ThrottlerModule.forRoot([
-      {
-        name: 'default',
-        ttl: 60_000,
-        // The e2e suite makes many signup / login / API calls in a tight
-        // loop against the in-process server, all from the same IP. The
-        // production limit (400/min) is reached late in the suite and
-        // surfaces as flaky 429s for the last couple of tests. Bump the
-        // ceiling under NODE_ENV=test so CI is deterministic; production
-        // and dev still see the regular cap.
-        limit: process.env.NODE_ENV === 'test' ? 10_000 : 400,
-      },
-    ]),
+    // forRootAsync (not forRoot) so the limit reads NODE_ENV at module
+    // init — by the time the e2e harness has set NODE_ENV=test in
+    // createApp() — instead of capturing it at import time, when the
+    // test runner hasn't set it yet. The e2e suite hammers signup /
+    // login from a single IP; raising the cap under NODE_ENV=test stops
+    // the last couple of tests from flaking on 429s while leaving the
+    // production / dev limit unchanged.
+    ThrottlerModule.forRootAsync({
+      useFactory: () => [
+        {
+          name: 'default',
+          ttl: 60_000,
+          limit: process.env.NODE_ENV === 'test' ? 10_000 : 400,
+        },
+      ],
+    }),
   ],
   controllers: [
     HealthController,
