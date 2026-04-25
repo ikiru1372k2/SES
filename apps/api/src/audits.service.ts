@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import type { AuditIssue, AuditResult, SessionUser, WorkbookFile as DomainWorkbookFile } from '@ses/domain';
@@ -142,6 +142,12 @@ function serializeRun(run: {
   };
 }
 
+type PersistedAuditIssue = AuditIssue & {
+  persistedId: string;
+  displayCode: string;
+  issueKey: string;
+};
+
 @Injectable()
 export class AuditsService {
   constructor(
@@ -205,6 +211,43 @@ export class AuditsService {
       medium: issues.filter((issue) => issue.severity === 'Medium').length,
       low: issues.filter((issue) => issue.severity === 'Low').length,
     };
+  }
+
+  private prepareIssuesForPersistence(
+    issues: AuditIssue[],
+    processDisplayCode: string,
+    displayCodes: string[],
+  ): PersistedAuditIssue[] {
+    return issues.map((issue, index) => ({
+      ...issue,
+      persistedId: createId(),
+      displayCode: displayCodes[index]!,
+      issueKey: createIssueKey(processDisplayCode, {
+        projectNo: issue.projectNo,
+        sheetName: issue.sheetName,
+        rowIndex: issue.rowIndex,
+        ruleCode: issue.ruleCode,
+      }),
+    }));
+  }
+
+  private assertKnownRuleCodes(
+    issues: Array<{ persistedId: string; ruleCode?: string | null; ruleId?: string | null }>,
+    validRuleCodes: Set<string>,
+  ): void {
+    for (const issue of issues) {
+      const resolvedRuleCode = issue.ruleCode ?? issue.ruleId;
+      if (!resolvedRuleCode) {
+        throw new InternalServerErrorException(
+          `Audit engine returned issue ${issue.persistedId} without a ruleCode.`,
+        );
+      }
+      if (!validRuleCodes.has(resolvedRuleCode)) {
+        throw new BadRequestException(
+          `Audit produced unsupported rule code "${resolvedRuleCode}". Refresh audit rules and try again.`,
+        );
+      }
+    }
   }
 
   async run(processIdOrCode: string, body: { fileIdOrCode: string; mappingSource?: MappingSourceDto }, user: SessionUser) {
@@ -317,16 +360,14 @@ export class AuditsService {
         result.issues,
       );
 
-      const issuesWithCodes = await Promise.all(result.issues.map(async (issue) => ({
-        ...issue,
-        displayCode: await this.identifiers.nextIssueCode(tx, runCode),
-        issueKey: createIssueKey(process.displayCode, {
-          projectNo: issue.projectNo,
-          sheetName: issue.sheetName,
-          rowIndex: issue.rowIndex,
-          ruleCode: issue.ruleCode,
-        }),
-      })));
+      const issueDisplayCodes = await Promise.all(
+        result.issues.map(async () => this.identifiers.nextIssueCode(tx, runCode)),
+      );
+      const issuesWithCodes = this.prepareIssuesForPersistence(
+        result.issues,
+        process.displayCode,
+        issueDisplayCodes,
+      );
       const summary = {
         severity: this.severitySummary(issuesWithCodes),
         sheets: result.sheets,
@@ -364,18 +405,20 @@ export class AuditsService {
           : {}),
       };
 
+      const validRuleCodes = new Set(
+        (
+          await tx.auditRule.findMany({
+            select: { ruleCode: true },
+          })
+        ).map((rule) => rule.ruleCode),
+      );
+      this.assertKnownRuleCodes(issuesWithCodes, validRuleCodes);
+
       for (const issue of issuesWithCodes) {
-        // Every engine must emit a ruleCode that exists in AUDIT_RULE_CATALOG
-        // so the AuditIssue → AuditRule FK holds. We never silently coerce
-        // a Master Data finding into an effort-engine rule, so fail loud
-        // if an engine ever returns an issue without one.
         const resolvedRuleCode = issue.ruleCode ?? issue.ruleId;
-        if (!resolvedRuleCode) {
-          throw new Error(`Audit engine returned issue ${issue.id} without a ruleCode.`);
-        }
         await tx.auditIssue.create({
           data: {
-            id: issue.id,
+            id: issue.persistedId,
             displayCode: issue.displayCode!,
             issueKey: issue.issueKey!,
             auditRunId: createdRun.id,
