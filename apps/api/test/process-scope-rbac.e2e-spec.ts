@@ -1,0 +1,289 @@
+import 'reflect-metadata';
+import assert from 'node:assert/strict';
+import { after, before, describe, it } from 'node:test';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import cookieParser from 'cookie-parser';
+import type { NextFunction, Request, Response } from 'express';
+import request from 'supertest';
+import '../src/load-env';
+import { AppModule } from '../src/app.module';
+import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
+import { createRequestId, requestContext } from '../src/common/request-context';
+
+const hasDb = Boolean(process.env.DATABASE_URL);
+
+async function createApp(): Promise<INestApplication> {
+  process.env.SES_ALLOW_DEV_LOGIN = 'true';
+  process.env.NODE_ENV = process.env.NODE_ENV || 'test';
+  const app = await NestFactory.create(AppModule, { logger: false });
+  app.use(cookieParser(process.env.SES_AUTH_SECRET || 'ses-dev-secret'));
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const requestId = createRequestId(req.headers['x-request-id']);
+    res.setHeader('X-Request-ID', requestId);
+    requestContext.run({ requestId }, next);
+  });
+  app.setGlobalPrefix('api/v1');
+  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: false,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
+  await app.init();
+  return app;
+}
+
+function freshEmail(label: string): string {
+  return `scope-${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@ses.test`;
+}
+
+async function signup(server: ReturnType<INestApplication['getHttpServer']>, email: string) {
+  const agent = request.agent(server);
+  await agent
+    .post('/api/v1/auth/signup')
+    .send({ email, displayName: email.split('@')[0], password: 'pw12345678', role: 'auditor' })
+    .expect(201);
+  return agent;
+}
+
+describe('process-scope RBAC e2e', { skip: !hasDb }, () => {
+  let app: INestApplication;
+
+  before(async () => {
+    app = await createApp();
+  });
+
+  after(async () => {
+    await app?.close();
+  });
+
+  it('member without scope rows behaves like before (legacy fallback)', async () => {
+    const server = app.getHttpServer();
+    const ownerEmail = freshEmail('owner-legacy');
+    const memberEmail = freshEmail('member-legacy');
+    const owner = await signup(server, ownerEmail);
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-legacy', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    // Invite as plain editor, no scopes — must keep behaving like before.
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({ email: memberEmail, permission: 'editor' })
+      .expect(201);
+
+    const memberAgent = await signup(server, memberEmail).catch(async () => {
+      // signup will 409 because the user already exists; fall back to login.
+      const a = request.agent(server);
+      await a.post('/api/v1/auth/login').send({ email: memberEmail, password: 'pw12345678' }).expect(201);
+      return a;
+    });
+
+    // Plain editor → can list files for any function.
+    await memberAgent
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/files`)
+      .expect(200);
+  });
+
+  it('scoped function viewer can view that function but not edit, and cannot view other functions', async () => {
+    const server = app.getHttpServer();
+    const ownerEmail = freshEmail('owner-scope-view');
+    const memberEmail = freshEmail('member-scope-view');
+    const owner = await signup(server, ownerEmail);
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-fn-view', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'viewer',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', functionId: 'master-data', accessLevel: 'viewer' }],
+      })
+      .expect(201);
+
+    const member = request.agent(server);
+    await member.post('/api/v1/auth/login').send({ email: memberEmail, password: 'pw12345678' }).expect(201);
+
+    // Allowed: GET on the scoped function.
+    await member
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/files`)
+      .expect(200);
+
+    // Denied: GET on a different function.
+    await member
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/functions/over-planning/files`)
+      .expect(403);
+
+    // Denied: edit even on the scoped function (viewer level).
+    const draftRes = await member
+      .put(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/draft`)
+      .attach('file', Buffer.from('not-a-file'), { filename: 'x.xlsx' });
+    // Either 403 (scope deny) or 415 (file rejection) is acceptable proof
+    // the route ran; the scope deny short-circuits before the upload pipe.
+    assert.ok([403, 415].includes(draftRes.status), `expected 403/415, got ${draftRes.status}`);
+    if (draftRes.status === 415) {
+      // If the route accepted the request past the guard then scope passed —
+      // that would be a bug. Fail explicitly.
+      assert.fail('viewer scope unexpectedly allowed an edit route');
+    }
+  });
+
+  it('escalation-only viewer can hit /escalations but not function file routes', async () => {
+    const server = app.getHttpServer();
+    const ownerEmail = freshEmail('owner-esc');
+    const memberEmail = freshEmail('member-esc');
+    const owner = await signup(server, ownerEmail);
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-esc', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'viewer',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'escalation-center', accessLevel: 'viewer' }],
+      })
+      .expect(201);
+
+    const member = request.agent(server);
+    await member.post('/api/v1/auth/login').send({ email: memberEmail, password: 'pw12345678' }).expect(201);
+
+    await member
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/escalations`)
+      .expect(200);
+
+    await member
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/files`)
+      .expect(403);
+  });
+
+  it('owner is not affected by scope rows', async () => {
+    const server = app.getHttpServer();
+    const ownerEmail = freshEmail('owner-bypass');
+    const owner = await signup(server, ownerEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-owner', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    // Try to write owner-targeted scope rows — service must refuse.
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: ownerEmail,
+        permission: 'owner',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', functionId: 'master-data', accessLevel: 'viewer' }],
+      })
+      .expect(400);
+
+    // Owner can hit any function & escalations.
+    await owner
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/functions/over-planning/files`)
+      .expect(200);
+    await owner
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/escalations`)
+      .expect(200);
+  });
+
+  it('rejects invalid scope payloads', async () => {
+    const server = app.getHttpServer();
+    const ownerEmail = freshEmail('owner-bad');
+    const memberEmail = freshEmail('member-bad');
+    const owner = await signup(server, ownerEmail);
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-bad', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    // Function scope without functionId.
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'viewer',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', accessLevel: 'viewer' }],
+      })
+      .expect(400);
+
+    // Non-function scope with a functionId attached.
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'viewer',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'all-functions', functionId: 'master-data', accessLevel: 'viewer' }],
+      })
+      .expect(400);
+
+    // accessMode='scoped' with no scopes.
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'viewer',
+        accessMode: 'scoped',
+        scopes: [],
+      })
+      .expect(400);
+  });
+
+  it('PATCH updates scopes; deleting member cascades scope rows', async () => {
+    const server = app.getHttpServer();
+    const ownerEmail = freshEmail('owner-patch');
+    const memberEmail = freshEmail('member-patch');
+    const owner = await signup(server, ownerEmail);
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-patch', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    const addRes = await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'viewer',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', functionId: 'master-data', accessLevel: 'viewer' }],
+      })
+      .expect(201);
+    const memberCode = (addRes.body as { displayCode: string }).displayCode;
+
+    // Promote scope to editor via PATCH.
+    await owner
+      .patch(`/api/v1/processes/${encodeURIComponent(processId)}/members/${encodeURIComponent(memberCode)}`)
+      .send({
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', functionId: 'master-data', accessLevel: 'editor' }],
+      })
+      .expect(200);
+
+    // List should reflect the new scope.
+    const listed = await owner.get(`/api/v1/processes/${encodeURIComponent(processId)}/members`).expect(200);
+    type Row = { displayCode: string; scopes: { scopeType: string; functionId: string | null; accessLevel: string }[] };
+    const memberRow = (listed.body as Row[]).find((r) => r.displayCode === memberCode);
+    assert.ok(memberRow);
+    assert.equal(memberRow!.scopes.length, 1);
+    assert.equal(memberRow!.scopes[0]!.accessLevel, 'editor');
+
+    // Delete — list should drop the member; FK cascade removes scope rows.
+    await owner
+      .delete(`/api/v1/processes/${encodeURIComponent(processId)}/members/${encodeURIComponent(memberCode)}`)
+      .expect(200);
+    const listed2 = await owner.get(`/api/v1/processes/${encodeURIComponent(processId)}/members`).expect(200);
+    assert.ok(!(listed2.body as Row[]).some((r) => r.displayCode === memberCode));
+  });
+});

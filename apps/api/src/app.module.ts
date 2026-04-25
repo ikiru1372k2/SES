@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AccessScopeService } from './common/access-scope.service';
 import { ActivityLogService } from './common/activity-log.service';
 import { FunctionAccessGuard } from './common/function-access.guard';
 import { IdentifierService } from './common/identifier.service';
@@ -114,6 +115,7 @@ import { SlaEngineService } from './sla-engine.service';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     PrismaService,
     ProcessAccessService,
+    AccessScopeService,
     IdentifierService,
     ActivityLogService,
     AuthService,
@@ -156,6 +158,7 @@ import { SlaEngineService } from './sla-engine.service';
   exports: [
     PrismaService,
     ProcessAccessService,
+    AccessScopeService,
     IdentifierService,
     ActivityLogService,
     AuthService,
