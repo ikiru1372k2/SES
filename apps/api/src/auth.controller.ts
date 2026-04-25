@@ -13,12 +13,26 @@ import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from './common/current-user';
-import { DevLoginDto } from './dto/auth.dto';
+import { DevLoginDto, LoginDto, SignupDto } from './dto/auth.dto';
 
 @Controller('auth')
 @SkipThrottle({ default: true })
 export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
+
+  @Post('signup')
+  @SkipThrottle({ default: false })
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async signup(@Body() body: SignupDto, @Res({ passthrough: true }) response: Response) {
+    return { user: await this.authService.signup(response, body) };
+  }
+
+  @Post('login')
+  @SkipThrottle({ default: false })
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async login(@Body() body: LoginDto, @Res({ passthrough: true }) response: Response) {
+    return { user: await this.authService.login(response, body) };
+  }
 
   @Post('dev-login')
   @SkipThrottle({ default: false })
@@ -41,11 +55,6 @@ export class AuthController {
   @UseGuards(AuthGuard)
   me(@CurrentUser() user: unknown) {
     return { user };
-  }
-
-  @Post('login')
-  loginStub() {
-    return { ok: false, message: 'OIDC login is not configured in this environment. Use /auth/dev-login for Phase 1.' };
   }
 
   @Get('callback')
