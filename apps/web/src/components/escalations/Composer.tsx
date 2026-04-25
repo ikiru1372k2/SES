@@ -71,13 +71,50 @@ export function Composer({
   const [cc, setCc] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState('');
   const [removedEngines, setRemovedEngines] = useState<Set<string>>(new Set());
-  const [resolvedPreview, setResolvedPreview] = useState<{ subject: string; body: string } | null>(null);
+  const [resolvedPreview, setResolvedPreview] = useState<{
+    subject: string;
+    body: string;
+    bodyHtml?: string;
+  } | null>(null);
   const [dirtyWarn, setDirtyWarn] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [authorNote, setAuthorNote] = useState('');
   const [deadlineAt, setDeadlineAt] = useState<string>(() =>
     toDateInputValue(addBusinessDays(new Date(), 5)),
   );
+  const [projectLinks, setProjectLinks] = useState<Record<string, string>>({});
+  const [projectLinksOpen, setProjectLinksOpen] = useState(false);
+
+  // Unique project IDs across all engine findings — these are the rows the
+  // auditor can attach a project link to. Order matches the engine-iteration
+  // order of `findingsByEngine` so the inputs appear in a stable sequence.
+  const uniqueProjectIds = useMemo(() => {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const fid of FUNCTION_IDS) {
+      for (const f of row.findingsByEngine[fid] ?? []) {
+        const id = f.projectNo?.trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        ordered.push(id);
+      }
+    }
+    return ordered;
+  }, [row.findingsByEngine]);
+
+  // Only forward links that look like real URLs. Empty / partial entries
+  // are stripped so the server never sees them and the preview column
+  // stays hidden until at least one valid link has been entered.
+  const cleanProjectLinks = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const [pid, url] of Object.entries(projectLinks)) {
+      const trimmed = url.trim();
+      if (!trimmed) continue;
+      if (!/^https?:\/\//i.test(trimmed)) continue;
+      out[pid] = trimmed;
+    }
+    return out;
+  }, [projectLinks]);
 
   const outlookCount = row.outlookCount ?? 0;
   const teamsCount = row.teamsCount ?? 0;
@@ -142,6 +179,7 @@ export function Composer({
       removedEngineIds: [...removedEngines],
       authorNote,
       deadlineAt: deadlineAt || null,
+      projectLinks: cleanProjectLinks,
     };
     if (templateId) previewBody.templateId = templateId;
     void previewCompose(trackingRef, previewBody)
@@ -160,7 +198,7 @@ export function Composer({
     return () => {
       cancelled = true;
     };
-  }, [viewMode, trackingRef, templateId, subject, body, cc, removedEngines, authorNote, deadlineAt]);
+  }, [viewMode, trackingRef, templateId, subject, body, cc, removedEngines, authorNote, deadlineAt, cleanProjectLinks]);
 
   const draftMut = useMutation({
     mutationFn: (payload: ComposeDraftPayload) => saveComposeDraft(trackingRef!, payload),
@@ -191,6 +229,7 @@ export function Composer({
         channel,
         authorNote,
         deadlineAt: deadlineAt || null,
+        projectLinks: cleanProjectLinks,
         sources: FUNCTION_IDS.filter(
           (id) => (row.countsByEngine[id] ?? 0) > 0 && !removedEngines.has(id),
         ) as string[],
@@ -230,7 +269,7 @@ export function Composer({
   const dirtyRef = useRef(false);
   useEffect(() => {
     dirtyRef.current = true;
-  }, [subject, body, cc, removedEngines, templateId, authorNote, deadlineAt]);
+  }, [subject, body, cc, removedEngines, templateId, authorNote, deadlineAt, cleanProjectLinks]);
   const latestPayloadRef = useRef<ComposeDraftPayload>({
     subject,
     body,
@@ -238,6 +277,7 @@ export function Composer({
     removedEngineIds: [...removedEngines],
     authorNote,
     deadlineAt: deadlineAt || null,
+    projectLinks: cleanProjectLinks,
     ...(templateId ? { templateId } : {}),
   });
   useEffect(() => {
@@ -248,9 +288,10 @@ export function Composer({
       removedEngineIds: [...removedEngines],
       authorNote,
       deadlineAt: deadlineAt || null,
+      projectLinks: cleanProjectLinks,
       ...(templateId ? { templateId } : {}),
     };
-  }, [subject, body, cc, removedEngines, templateId, authorNote, deadlineAt]);
+  }, [subject, body, cc, removedEngines, templateId, authorNote, deadlineAt, cleanProjectLinks]);
   useAutosaveOnLeave(async () => {
     if (readOnly || !trackingRef || !dirtyRef.current) return;
     if (!latestPayloadRef.current.body?.trim() && !latestPayloadRef.current.subject?.trim()) return;
@@ -322,6 +363,7 @@ export function Composer({
     removedEngineIds: [...removedEngines],
     authorNote,
     deadlineAt: deadlineAt || null,
+    projectLinks: cleanProjectLinks,
     ...(templateId ? { templateId } : {}),
   };
 
@@ -431,6 +473,55 @@ export function Composer({
         </div>
       </div>
 
+      {uniqueProjectIds.length > 0 ? (
+        <div className="rounded border border-gray-200 dark:border-gray-700">
+          <button
+            type="button"
+            onClick={() => setProjectLinksOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+            aria-expanded={projectLinksOpen}
+          >
+            <span>
+              Project links
+              <span className="ml-1 text-gray-400">
+                ({Object.keys(cleanProjectLinks).length}/{uniqueProjectIds.length})
+              </span>
+              <span className="ml-2 font-normal text-gray-500">
+                Optional — paste a URL per project to include it in the email.
+              </span>
+            </span>
+            <span className="text-gray-400">{projectLinksOpen ? '▾' : '▸'}</span>
+          </button>
+          {projectLinksOpen ? (
+            <div className="space-y-2 border-t border-gray-100 px-3 py-2 dark:border-gray-800">
+              {uniqueProjectIds.map((pid) => (
+                <div key={pid} className="grid grid-cols-[7rem,1fr] items-center gap-2">
+                  <label
+                    className="truncate text-xs font-medium text-gray-600 dark:text-gray-300"
+                    title={pid}
+                  >
+                    {pid}
+                  </label>
+                  <input
+                    type="url"
+                    disabled={readOnly}
+                    value={projectLinks[pid] ?? ''}
+                    onChange={(e) =>
+                      setProjectLinks((prev) => ({ ...prev, [pid]: e.target.value }))
+                    }
+                    placeholder="https://bcs.example.com/project/…"
+                    className="w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-900"
+                  />
+                </div>
+              ))}
+              <p className="pt-1 text-[11px] text-gray-500">
+                Only valid http(s) URLs render in the preview. Leave blank to skip a project.
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div>
         <div className="text-xs font-medium text-gray-500">Findings by engine</div>
         <div className="mt-1 space-y-1">
@@ -496,6 +587,8 @@ export function Composer({
           <PreviewPane
             subject={resolvedPreview?.subject ?? (previewLoading ? 'Loading…' : subject)}
             body={resolvedPreview?.body ?? (previewLoading ? 'Loading…' : body)}
+            {...(resolvedPreview?.bodyHtml ? { bodyHtml: resolvedPreview.bodyHtml } : {})}
+            deadlineAt={deadlineAt || null}
           />
         </div>
       )}

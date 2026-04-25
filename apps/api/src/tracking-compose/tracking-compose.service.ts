@@ -9,11 +9,16 @@ import { EscalationStage, Prisma } from '@prisma/client';
 import type { SessionUser } from '@ses/domain';
 import {
   assertTransition,
+  AUDIT_RULES_BY_CODE,
+  buildFindingsByEngineHtmlTable,
   buildFindingsByEngineMarkdown,
+  buildFindingsByEngineTextTable,
   createId,
+  getFunctionLabel,
   substitute,
   type EngineFindingLine,
   type EscalationStage as DomainEscalationStage,
+  type FunctionId,
 } from '@ses/domain';
 import { PrismaService } from '../common/prisma.service';
 import { IdentifierService } from '../common/identifier.service';
@@ -37,6 +42,8 @@ export type ComposeDraftPayload = {
   authorNote?: string;
   /** ISO-8601 date for the {{dueDate}} slot. */
   deadlineAt?: string | null;
+  /** Map of projectNo → URL the auditor pasted in. Empty entries are ignored. */
+  projectLinks?: Record<string, string>;
 };
 
 /**
@@ -74,6 +81,73 @@ function firstName(full: string): string {
   const t = full.trim();
   if (!t) return '';
   return t.split(/\s+/)[0] ?? t;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const SLOT_TOKEN = /\{([a-zA-Z][a-zA-Z0-9_]*)\}/g;
+
+/**
+ * HTML-aware substitution: literal template text is HTML-escaped and \n is
+ * turned into <br>, while slot values (e.g. the findings table) are inserted
+ * verbatim so their pre-built markup survives.
+ */
+function substituteHtml(template: string, htmlSlots: Record<string, string>): string {
+  let result = '';
+  let lastIdx = 0;
+  SLOT_TOKEN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SLOT_TOKEN.exec(template)) !== null) {
+    const literal = template.slice(lastIdx, match.index);
+    result += escapeHtml(literal).replace(/\n/g, '<br>');
+    const slotName = match[1] ?? '';
+    const value = htmlSlots[slotName];
+    result += value ?? '';
+    lastIdx = match.index + match[0].length;
+  }
+  result += escapeHtml(template.slice(lastIdx)).replace(/\n/g, '<br>');
+  return result;
+}
+
+const DEFAULT_SUBJECT_TEMPLATE =
+  'Action Required — {processName}: Open Findings ({findingsCount})';
+
+const DEFAULT_BODY_TEMPLATE = [
+  'Hi {managerFirstName},',
+  '',
+  'I hope you are doing well.',
+  '',
+  'We are members of the Quality Governance Team writing regarding open findings on {processName}. During our quality checks, we observed the following items that need your attention. Could you please review and do the needful at the earliest?',
+  '',
+  '{findingsByEngine}',
+  '',
+  'Kindly respond by {dueDate}. If you have any questions, please reach out.',
+  '',
+  'Thank you,',
+  'Quality Governance Team',
+  '{auditRunDate} — {auditorName}',
+].join('\n');
+
+function formatDueDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function wrapEmailHtml(innerHtml: string): string {
+  return (
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.55;">` +
+    innerHtml +
+    `</div>`
+  );
 }
 
 @Injectable()
@@ -123,8 +197,8 @@ export class TrackingComposeService {
 
   async preview(idOrCode: string, user: SessionUser, body: Partial<ComposeDraftPayload>) {
     const entry = await this.loadEntry(idOrCode, user);
-    const { subject, text } = await this.resolveContent(entry, user, body);
-    return { subject, body: text };
+    const { subject, text, html } = await this.resolveContent(entry, user, body);
+    return { subject, body: text, bodyHtml: html };
   }
 
   async saveDraft(idOrCode: string, user: SessionUser, body: ComposeDraftPayload) {
@@ -225,7 +299,7 @@ export class TrackingComposeService {
       throw new BadRequestException(`Send is not allowed from stage ${entry.stage}.`);
     }
 
-    const { subject, text, channel, managerEmail } = await this.resolveContent(entry, user, body);
+    const { subject, text, html, channel, managerEmail } = await this.resolveContent(entry, user, body);
     const sendChannel: EscalationSendChannel = channel ?? 'email';
     // Channel gate (Issue #75): the 2-Outlooks-then-1-Teams cycle is
     // enforced here so race conditions between multiple auditors can't
@@ -338,6 +412,7 @@ export class TrackingComposeService {
       channel: sendChannel,
       subject,
       body: text,
+      bodyHtml: html,
       to: to.toLowerCase(),
       cc: (body.cc ?? []).map((c) => c.trim()).filter(Boolean),
     };
@@ -424,13 +499,23 @@ export class TrackingComposeService {
     },
     user: SessionUser,
     overrides: Partial<ComposeDraftPayload>,
-  ): Promise<{ subject: string; text: string; channel: EscalationSendChannel; managerEmail: string | null }> {
+  ): Promise<{
+    subject: string;
+    text: string;
+    html: string;
+    channel: EscalationSendChannel;
+    managerEmail: string | null;
+  }> {
     const tenantId = this.tenantId(user);
     const stageKey = stageKeyForLevel(entry.escalationLevel);
     const tpl = await this.pickTemplate(tenantId, stageKey, overrides.templateId);
     const draft = (entry.composeDraft ?? {}) as Partial<ComposeDraftPayload>;
-    const baseSubject = (overrides.subject ?? draft.subject ?? tpl?.subject ?? 'Escalation').trim();
-    const baseBody = (overrides.body ?? draft.body ?? tpl?.body ?? '').trim();
+    // When no template configures a subject/body, fall back to the bundled
+    // professional default rather than the older terse "Escalation" stub.
+    const subjectSource = overrides.subject ?? draft.subject ?? tpl?.subject ?? '';
+    const bodySource = overrides.body ?? draft.body ?? tpl?.body ?? '';
+    const baseSubject = (subjectSource.trim() || DEFAULT_SUBJECT_TEMPLATE).trim();
+    const baseBody = (bodySource.trim() || DEFAULT_BODY_TEMPLATE).trim();
     const channel = (overrides.channel ?? draft.channel ?? (tpl?.channel as EscalationSendChannel) ?? 'email') as EscalationSendChannel;
     if (channel !== 'email' && channel !== 'teams' && channel !== 'both') {
       throw new BadRequestException('Invalid channel');
@@ -441,39 +526,158 @@ export class TrackingComposeService {
     const managerEmail = row?.resolvedEmail ?? row?.directoryEmail ?? entry.managerEmail ?? null;
     const lines: EngineFindingLine[] = [];
     const removed = new Set((overrides.removedEngineIds ?? draft.removedEngineIds ?? []).map(String));
+    const issueKeys: string[] = [];
+    if (row) {
+      for (const engineId of esc.engineIds) {
+        if (removed.has(engineId)) continue;
+        for (const f of row.findingsByEngine[engineId] ?? []) {
+          if (f.issueKey) issueKeys.push(f.issueKey);
+        }
+      }
+    }
+    // Pull the rich AuditIssue context for every finding the email is
+    // about to mention. Restrict to this process so a colliding issueKey
+    // from another process can't leak in. Latest occurrence wins when an
+    // issueKey appears in more than one run.
+    const issueDetails = issueKeys.length
+      ? await this.prisma.auditIssue.findMany({
+          where: {
+            issueKey: { in: issueKeys },
+            auditRun: { processId: entry.processId },
+          },
+          select: {
+            issueKey: true,
+            ruleCode: true,
+            severity: true,
+            reason: true,
+            thresholdLabel: true,
+            recommendedAction: true,
+            sheetName: true,
+            projectManager: true,
+            projectState: true,
+            effort: true,
+            missingMonths: true,
+            zeroMonthCount: true,
+            auditRun: { select: { completedAt: true, startedAt: true } },
+          },
+        })
+      : [];
+    const issueByKey = new Map<string, (typeof issueDetails)[number]>();
+    for (const iss of issueDetails) {
+      const prev = issueByKey.get(iss.issueKey);
+      const t = (x: typeof iss) =>
+        x.auditRun.completedAt?.getTime() ?? x.auditRun.startedAt.getTime() ?? 0;
+      if (!prev || t(iss) >= t(prev)) issueByKey.set(iss.issueKey, iss);
+    }
+    // Auditor-supplied per-project links. Only http(s) URLs make it into
+    // the rendered table; anything else is silently dropped so the column
+    // can't carry junk into the manager's inbox.
+    const linksRaw = (overrides.projectLinks ?? draft.projectLinks ?? {}) as Record<string, unknown>;
+    const projectLinks = new Map<string, string>();
+    for (const [pid, url] of Object.entries(linksRaw)) {
+      if (typeof url !== 'string') continue;
+      const trimmed = url.trim();
+      if (!trimmed) continue;
+      if (!/^https?:\/\//i.test(trimmed)) continue;
+      projectLinks.set(pid.trim(), trimmed);
+    }
     if (row) {
       for (const engineId of esc.engineIds) {
         if (removed.has(engineId)) continue;
         const findings = row.findingsByEngine[engineId] ?? [];
         for (const f of findings) {
+          const iss = f.issueKey ? issueByKey.get(f.issueKey) : null;
+          const ruleEntry = iss ? AUDIT_RULES_BY_CODE.get(iss.ruleCode) : null;
+          const ruleName = ruleEntry?.name ?? '';
+          const severity = iss?.severity ?? ruleEntry?.defaultSeverity ?? '';
+          const missingFieldLabel =
+            engineId === ('master-data' as FunctionId) && ruleName
+              ? ruleName.replace(/\s*required$/i, '').trim()
+              : null;
+          const months = Array.isArray(iss?.missingMonths)
+            ? (iss!.missingMonths as unknown[]).map((m) => String(m).trim()).filter(Boolean).join(', ')
+            : null;
+          const projectLink = f.projectNo ? projectLinks.get(f.projectNo) ?? null : null;
           lines.push({
             engineKey: engineId,
-            engineLabel: engineId,
+            engineLabel: getFunctionLabel(engineId as FunctionId),
             projectNo: f.projectNo ?? '',
             projectName: f.projectName ?? '',
-            severity: '',
-            ruleName: '',
-            notes: '',
+            severity,
+            ruleName,
+            notes: iss?.reason ?? '',
+            issueKey: f.issueKey,
+            detail: {
+              ruleCode: iss?.ruleCode ?? '',
+              ruleName,
+              ruleCategory: ruleEntry?.category ?? '',
+              severity,
+              reason: iss?.reason ?? null,
+              thresholdLabel: iss?.thresholdLabel ?? null,
+              recommendedAction: iss?.recommendedAction ?? null,
+              sheetName: iss?.sheetName ?? null,
+              projectManager: iss?.projectManager ?? null,
+              projectState: iss?.projectState ?? null,
+              effort: iss?.effort ?? null,
+              affectedMonths: months,
+              zeroMonthCount: iss?.zeroMonthCount ?? null,
+              missingFieldLabel,
+              projectLink,
+            },
           });
         }
       }
     }
     const findingsMd = buildFindingsByEngineMarkdown(lines);
+    const findingsTxt = buildFindingsByEngineTextTable(lines);
+    const findingsHtml = buildFindingsByEngineHtmlTable(lines);
     const latestRun = await this.prisma.auditRun.findFirst({
       where: { processId: entry.processId, OR: [{ status: 'completed' }, { completedAt: { not: null } }] },
       orderBy: { completedAt: 'desc' },
       include: { ranBy: { select: { displayName: true } } },
     });
-    const slots: Record<string, string> = {
+    const auditRunDate = latestRun?.completedAt
+      ? latestRun.completedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      : latestRun?.startedAt
+      ? latestRun.startedAt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      : '';
+    const slaDeadline = row?.slaDueAt
+      ? new Date(row.slaDueAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+      : '';
+    const dueDate = formatDueDate(overrides.deadlineAt ?? draft.deadlineAt ?? null);
+    const auditorName = latestRun?.ranBy.displayName ?? user.displayName;
+
+    // Text slots — used by mailto / Teams handoff. Keep the markdown-style
+    // findings list so plain-text mail clients render something readable.
+    const textSlots: Record<string, string> = {
       managerFirstName: firstName(entry.managerName),
+      managerName: entry.managerName,
       processName: entry.process.name,
-      findingsByEngine: findingsMd,
-      slaDeadline: row?.slaDueAt ? new Date(row.slaDueAt).toISOString() : '',
-      auditRunDate: latestRun?.completedAt?.toISOString() ?? latestRun?.startedAt.toISOString() ?? '',
-      auditorName: latestRun?.ranBy.displayName ?? user.displayName,
+      findingsByEngine: findingsTxt || findingsMd,
+      findingsCount: String(lines.length),
+      slaDeadline,
+      dueDate: dueDate || slaDeadline || '',
+      auditRunDate,
+      auditorName,
     };
-    const subject = substitute(baseSubject, slots);
-    const text = substitute(baseBody, slots);
-    return { subject, text, channel, managerEmail };
+
+    // HTML slots — every value is HTML-safe (escaped strings or known-good
+    // markup like the findings table).
+    const htmlSlots: Record<string, string> = {
+      managerFirstName: escapeHtml(firstName(entry.managerName)),
+      managerName: escapeHtml(entry.managerName),
+      processName: escapeHtml(entry.process.name),
+      findingsByEngine: findingsHtml,
+      findingsCount: String(lines.length),
+      slaDeadline: escapeHtml(slaDeadline),
+      dueDate: escapeHtml(dueDate || slaDeadline || ''),
+      auditRunDate: escapeHtml(auditRunDate),
+      auditorName: escapeHtml(auditorName),
+    };
+
+    const subject = substitute(baseSubject, textSlots);
+    const text = substitute(baseBody, textSlots);
+    const html = wrapEmailHtml(substituteHtml(baseBody, htmlSlots));
+    return { subject, text, html, channel, managerEmail };
   }
 }
