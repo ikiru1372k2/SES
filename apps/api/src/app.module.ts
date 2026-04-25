@@ -73,22 +73,19 @@ import { SlaEngineService } from './sla-engine.service';
 
 @Module({
   imports: [
-    // forRootAsync (not forRoot) so the limit reads NODE_ENV at module
-    // init — by the time the e2e harness has set NODE_ENV=test in
-    // createApp() — instead of capturing it at import time, when the
-    // test runner hasn't set it yet. The e2e suite hammers signup /
-    // login from a single IP; raising the cap under NODE_ENV=test stops
-    // the last couple of tests from flaking on 429s while leaving the
-    // production / dev limit unchanged.
-    ThrottlerModule.forRootAsync({
-      useFactory: () => [
-        {
-          name: 'default',
-          ttl: 60_000,
-          limit: process.env.NODE_ENV === 'test' ? 10_000 : 400,
-        },
-      ],
-    }),
+    // `limit` is a Resolvable function so NODE_ENV is read per-request
+    // instead of being captured at module init. Earlier fixes that read
+    // it once (forRoot at decoration time, then forRootAsync at module
+    // init) were still racing the e2e harness's NODE_ENV=test assignment
+    // in createApp() under `node --test`, so the last RBAC tests kept
+    // flaking on 429s. A per-request resolver removes the timing window.
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: () => (process.env.NODE_ENV === 'test' ? 10_000 : 400),
+      },
+    ]),
   ],
   controllers: [
     HealthController,
