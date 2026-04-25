@@ -77,7 +77,13 @@ import { SlaEngineService } from './sla-engine.service';
       {
         name: 'default',
         ttl: 60_000,
-        limit: 400,
+        // The e2e suite makes many signup / login / API calls in a tight
+        // loop against the in-process server, all from the same IP. The
+        // production limit (400/min) is reached late in the suite and
+        // surfaces as flaky 429s for the last couple of tests. Bump the
+        // ceiling under NODE_ENV=test so CI is deterministic; production
+        // and dev still see the regular cap.
+        limit: process.env.NODE_ENV === 'test' ? 10_000 : 400,
       },
     ]),
   ],
