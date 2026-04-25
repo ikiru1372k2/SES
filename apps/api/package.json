@@ -12,7 +12,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "prisma:seed": "tsx prisma/seed.ts",
     "test": "tsx --test test/*.test.ts",
-    "test:e2e": "TS_NODE_TRANSPILE_ONLY=false node --require ts-node/register --test test/files.e2e-spec.ts test/directory.e2e-spec.ts test/auth.e2e-spec.ts test/process-scope-rbac.e2e-spec.ts"
+    "test:e2e": "NODE_ENV=test TS_NODE_TRANSPILE_ONLY=false node --require ts-node/register --test test/files.e2e-spec.ts test/directory.e2e-spec.ts test/auth.e2e-spec.ts test/process-scope-rbac.e2e-spec.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
