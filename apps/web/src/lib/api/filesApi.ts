@@ -65,6 +65,46 @@ export async function listFilesOnApi(
   return (await res.json()) as ApiFileSummary[];
 }
 
+export interface ApiSheetPreview {
+  fileId: string;
+  fileCode: string;
+  sheetName: string;
+  sheetCode: string;
+  page: number;
+  pageSize: number;
+  totalRows: number;
+  headerRowIndex: number;
+  headers: string[];
+  rows: Array<{
+    rowIndex: number;
+    values: string[];
+    issue?: {
+      id: string;
+      displayCode: string;
+      severity: string;
+      issueKey: string;
+    };
+  }>;
+}
+
+export async function fetchSheetPreviewFromApi(
+  fileIdOrCode: string,
+  sheetIdOrCode: string,
+  opts?: { page?: number; pageSize?: number; runIdOrCode?: string },
+): Promise<ApiSheetPreview> {
+  const params = new URLSearchParams();
+  if (opts?.page) params.set('page', String(opts.page));
+  if (opts?.pageSize) params.set('pageSize', String(opts.pageSize));
+  if (opts?.runIdOrCode) params.set('run', opts.runIdOrCode);
+  const query = params.size > 0 ? `?${params.toString()}` : '';
+  const res = await fetch(
+    `/api/v1/files/${encodeURIComponent(fileIdOrCode)}/sheets/${encodeURIComponent(sheetIdOrCode)}/preview${query}`,
+    { credentials: 'include' },
+  );
+  if (!res.ok) throw await parseApiError(res, 'Failed to load sheet preview');
+  return (await res.json()) as ApiSheetPreview;
+}
+
 export async function deleteFileOnApi(fileIdOrCode: string): Promise<void> {
   const res = await fetch(`/api/v1/files/${encodeURIComponent(fileIdOrCode)}`, {
     method: 'DELETE',

@@ -208,7 +208,11 @@ export class AuditsService {
   }
 
   async run(processIdOrCode: string, body: { fileIdOrCode: string; mappingSource?: MappingSourceDto }, user: SessionUser) {
-    const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'editor');
+    // Scope-aware edit enforcement happens at the controller boundary. By the
+    // time we reach the service we only need to confirm the caller can see the
+    // process, otherwise a scoped editor (base viewer) is rejected here even
+    // though they were correctly authorized for this function.
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'viewer');
     const file = await this.prisma.workbookFile.findFirst({
       where: {
         processId: process.id,
@@ -463,6 +467,8 @@ export class AuditsService {
     this.realtime.emitToProcess(process.displayCode, 'audit.completed', {
       runCode: result.displayCode,
       runId: result.id,
+      fileId: file.id,
+      fileCode: file.displayCode,
       flaggedRows: result.flaggedRows,
       scannedRows: result.scannedRows,
     }, { actor });

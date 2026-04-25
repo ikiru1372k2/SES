@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProcessCard } from '../ProcessCard';
 import { ConfirmProvider } from '../../shared/ConfirmProvider';
 import type { AuditProcess, AuditVersion, WorkbookFile } from '../../../lib/types';
+import type { AccessGate } from '../../../hooks/useEffectiveAccess';
 
 vi.mock('react-hot-toast', () => ({
   default: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() },
@@ -19,8 +20,25 @@ vi.mock('../../auth/authContext', () => ({
     displayCode: 'USR-1',
     email: 'u@example.com',
     displayName: 'User',
-    role: 'admin' as const,
+    role: 'auditor' as const,
   }),
+}));
+
+const accessGateMock = vi.fn<() => AccessGate>(() => ({
+  loading: false,
+  error: false,
+  permission: 'owner',
+  scopes: [],
+  isOwner: true,
+  canViewFunction: () => true,
+  canEditFunction: () => true,
+  canViewEscalations: true,
+  canEditEscalations: true,
+  canEditAllFunctions: true,
+}));
+
+vi.mock('../../../hooks/useEffectiveAccess', () => ({
+  useEffectiveAccess: (...args: unknown[]) => accessGateMock(...(args as [])),
 }));
 
 vi.mock('../../../lib/api/membersApi', () => ({
@@ -84,6 +102,18 @@ function renderCard(process: AuditProcess) {
 describe('ProcessCard — share entrypoint', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    accessGateMock.mockImplementation((): AccessGate => ({
+      loading: false,
+      error: false,
+      permission: 'owner',
+      scopes: [],
+      isOwner: true,
+      canViewFunction: () => true,
+      canEditFunction: () => true,
+      canViewEscalations: true,
+      canEditEscalations: true,
+      canEditAllFunctions: true,
+    }));
     vi.mocked(useAppStore).mockImplementation((selector) =>
       selector({
         deleteProcess: vi.fn(),
@@ -113,5 +143,24 @@ describe('ProcessCard — share entrypoint', () => {
     fireEvent.click(screen.getByRole('button', { name: /share process/i }));
     expect(await screen.findByLabelText(/all access/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/scoped/i)).toBeInTheDocument();
+  });
+
+  it('non-owners can still open the members modal but only in view mode', async () => {
+    accessGateMock.mockImplementation((): AccessGate => ({
+      loading: false,
+      error: false,
+      permission: 'viewer',
+      scopes: [],
+      isOwner: false,
+      canViewFunction: () => true,
+      canEditFunction: () => false,
+      canViewEscalations: false,
+      canEditEscalations: false,
+      canEditAllFunctions: false,
+    }));
+    renderCard(makeProcess());
+    fireEvent.click(screen.getByRole('button', { name: /share process/i }));
+    expect(await screen.findByRole('heading', { name: /members/i })).toBeInTheDocument();
+    expect(screen.getByText(/you can see who's on this process/i)).toBeInTheDocument();
   });
 });

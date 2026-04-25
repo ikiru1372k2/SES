@@ -154,7 +154,7 @@ export function FilesSidebar({ process, functionId, canEdit = true, readOnlyReas
           ))}
         </div>
       </section>
-      {activeFile ? <SheetList process={process} file={activeFile} /> : null}
+      {activeFile ? <SheetList process={process} file={activeFile} canEdit={canEdit} readOnlyReason={readOnlyReason} /> : null}
     </div>
   );
 }

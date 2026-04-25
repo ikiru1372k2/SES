@@ -187,6 +187,15 @@ describe('process-scope RBAC e2e', { skip: !hasDb }, () => {
     await member
       .get(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/files`)
       .expect(403);
+
+    await member
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/tracking`)
+      .expect(200);
+
+    await member
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/tracking`)
+      .send({ managerKey: 'mgr-1', managerName: 'Manager One' })
+      .expect(403);
   });
 
   it('owner is not affected by scope rows', async () => {
@@ -332,6 +341,85 @@ describe('process-scope RBAC e2e', { skip: !hasDb }, () => {
       .post(`/api/v1/processes/${encodeURIComponent(processId)}/audit/run`)
       .send({ fileIdOrCode: fileId })
       .expect(403);
+  });
+
+  it('function-scoped editor can run audit successfully even with base viewer permission', async () => {
+    const server = app.getHttpServer();
+    const memberEmail = freshEmail('member-audit-editor');
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-audit-editor', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    const buf = await minimalXlsxBuffer();
+    const up = await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/files`)
+      .attach('file', buf, { filename: 'book.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      .expect(201);
+    const fileId = (up.body as { id: string }).id;
+
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'viewer',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', functionId: 'master-data', accessLevel: 'editor' }],
+      })
+      .expect(201);
+
+    const member = request.agent(server);
+    await member.post('/api/v1/auth/login').send({ email: memberEmail, password: 'pw12345678' }).expect(201);
+
+    const run = await member
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/audit/run`)
+      .send({ fileIdOrCode: fileId })
+      .expect(201);
+
+    assert.equal((run.body as { status?: string }).status, 'completed');
+    assert.equal((run.body as { fileId?: string }).fileId, fileId);
+  });
+
+  it('shared scoped viewer can list and preview uploaded files after the process is shared', async () => {
+    const server = app.getHttpServer();
+    const memberEmail = freshEmail('member-file-visibility');
+    await signup(server, memberEmail);
+
+    const created = await owner.post('/api/v1/processes').send({ name: 'rbac-file-visibility', description: '' }).expect(201);
+    const processId = (created.body as { id: string }).id;
+
+    const buf = await minimalXlsxBuffer();
+    const up = await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/files`)
+      .attach('file', buf, { filename: 'shared.xlsx', contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      .expect(201);
+    const fileId = (up.body as { id: string; sheets: Array<{ displayCode: string }> }).id;
+    const sheetCode = (up.body as { sheets: Array<{ displayCode: string }> }).sheets[0]!.displayCode;
+
+    await owner
+      .post(`/api/v1/processes/${encodeURIComponent(processId)}/members`)
+      .send({
+        email: memberEmail,
+        permission: 'viewer',
+        accessMode: 'scoped',
+        scopes: [{ scopeType: 'function', functionId: 'master-data', accessLevel: 'viewer' }],
+      })
+      .expect(201);
+
+    const member = request.agent(server);
+    await member.post('/api/v1/auth/login').send({ email: memberEmail, password: 'pw12345678' }).expect(201);
+
+    const listed = await member
+      .get(`/api/v1/processes/${encodeURIComponent(processId)}/functions/master-data/files`)
+      .expect(200);
+    assert.equal((listed.body as Array<{ id: string }>).length, 1);
+    assert.equal((listed.body as Array<{ id: string }>)[0]!.id, fileId);
+
+    const preview = await member
+      .get(`/api/v1/files/${encodeURIComponent(fileId)}/sheets/${encodeURIComponent(sheetCode)}/preview`)
+      .expect(200);
+    assert.ok(Array.isArray((preview.body as { rows?: unknown[] }).rows));
+    assert.ok(((preview.body as { rows?: unknown[] }).rows?.length ?? 0) > 0);
   });
 
   it('PATCH updates scopes; deleting member cascades scope rows', async () => {

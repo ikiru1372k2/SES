@@ -9,6 +9,7 @@ import type { AuditProcess } from '../../lib/types';
 import { selectHasUnsavedAudit, selectLatestAuditResult } from '../../store/selectors';
 import { processDashboardPath } from '../../lib/processRoutes';
 import { useAppStore } from '../../store/useAppStore';
+import { useEffectiveAccess } from '../../hooks/useEffectiveAccess';
 import { useCurrentUser } from '../auth/authContext';
 import { Button } from '../shared/Button';
 import { MembersPanel } from '../workspace/MembersPanel';
@@ -29,7 +30,8 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
-  const canManageMembers = currentUser?.role === 'admin';
+  const accessGate = useEffectiveAccess(process.serverBacked ? process.displayCode ?? process.id : null);
+  const canManageMembers = process.serverBacked ? accessGate.isOwner : false;
   const latest = selectLatestAuditResult(process);
   const counts = severityCounts(process);
   const total = Math.max(1, counts.High + counts.Medium + counts.Low);

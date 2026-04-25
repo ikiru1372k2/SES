@@ -101,7 +101,7 @@ type AppStore = {
   // arrives on the Audit Results tab from a deep link (Escalation Center
   // "Open evidence", a bookmarked URL, a hard refresh, etc.) and the
   // in-session result was wiped by a navigation.
-  hydrateLatestAuditResult: (processId: string, fileId: string) => Promise<void>;
+  hydrateLatestAuditResult: (processId: string, fileId: string, opts?: { force?: boolean }) => Promise<void>;
   saveVersion: (processId: string, details: { versionName: string; notes: string }) => AuditProcess | undefined;
   // Overwrite the head version's result with the current audit run, preserving
   // the version name / notes / createdAt. Creates V1 if no version exists.
@@ -746,7 +746,7 @@ export const useAppStore = create<AppStore>()(
         set({ isAuditRunning: false, auditProgressText: '', auditRunKey: null });
       },
 
-      hydrateLatestAuditResult: async (processId, fileId) => {
+      hydrateLatestAuditResult: async (processId, fileId, opts) => {
         const process = get().processes.find((item) => item.id === processId || item.displayCode === processId);
         const file = process?.files.find((item) => item.id === fileId);
         if (!process || !file) return;
@@ -761,7 +761,7 @@ export const useAppStore = create<AppStore>()(
         // need to re-fetch — keep what runAudit produced (it has live
         // post-audit hooks like directory resolution applied).
         const existing = get().currentAuditResult;
-        if (existing && existing.fileId === fileId) return;
+        if (!opts?.force && existing && existing.fileId === fileId) return;
 
         try {
           const apiResult = await fetchLatestAuditRunForFile(processRef, fileDisplayCode);

@@ -42,7 +42,19 @@ const file: WorkbookFile = {
   lastAuditedAt: null,
   isAudited: false,
   functionId: 'over-planning',
-  sheets: [],
+  sheets: [
+    {
+      id: 's-ws',
+      displayCode: 'SHT-WS',
+      name: 'Sheet 1',
+      status: 'valid',
+      rowCount: 3,
+      isSelected: true,
+      headerRowIndex: 0,
+      originalHeaders: [],
+      normalizedHeaders: [],
+    },
+  ],
   rawData: {},
 };
 
@@ -190,6 +202,7 @@ describe('Workspace', () => {
     const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]');
     expect(fileInput).not.toBeNull();
     expect(fileInput!.disabled).toBe(true);
+    expect(screen.getByRole('combobox')).toBeDisabled();
   });
 
   it('keeps FilesSidebar Upload enabled when the user has editor scope (default mock)', () => {
