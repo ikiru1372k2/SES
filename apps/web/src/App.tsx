@@ -17,6 +17,7 @@ import { PageHeaderProvider } from './components/layout/PageHeaderContext';
 import { Dashboard } from './pages/Dashboard';
 import { Debug } from './pages/Debug';
 import { Login } from './pages/Login';
+import { Signup } from './pages/Signup';
 import { ManagerResponse } from './pages/ManagerResponse';
 import { AdminDirectory } from './pages/AdminDirectory';
 import { EscalationCenter } from './pages/EscalationCenter';
@@ -129,6 +130,7 @@ function buildRouter() {
     createRoutesFromElements(
       <>
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
         <Route path="/respond/:token" element={<ManagerResponse />} />
         <Route
           path="/admin/templates"

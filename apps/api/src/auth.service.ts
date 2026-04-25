@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -6,13 +8,15 @@ import {
   OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
+import bcrypt from 'bcryptjs';
 import type { Request, Response } from 'express';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
 import type { SessionUser } from '@ses/domain';
-import { tenantManagerDirectoryEnabled } from '@ses/domain';
+import { createId, tenantManagerDirectoryEnabled } from '@ses/domain';
 import { DEFAULT_TENANT_ID } from './common/default-tenant';
 import { PrismaService } from './common/prisma.service';
 import { requestContext } from './common/request-context';
+import type { LoginDto, SignupDto } from './dto/auth.dto';
 
 type TokenPayload = {
   sub: string;
@@ -55,7 +59,6 @@ export class AuthService implements OnModuleInit {
 
   private async resolveSessionTenantContext(
     userId: string,
-    role: SessionUser['role'],
   ): Promise<{ tenantId: string; tenantDisplayCode: string; managerDirectoryEnabled: boolean }> {
     const member = await this.prisma.processMember.findFirst({
       where: { userId },
@@ -70,18 +73,18 @@ export class AuthService implements OnModuleInit {
         managerDirectoryEnabled: tenantManagerDirectoryEnabled(null),
       };
     }
-    if (role === 'admin') {
-      const t = await this.prisma.tenant.findUnique({ where: { id: DEFAULT_TENANT_ID } });
-      if (!t) {
-        throw new UnauthorizedException('Default tenant is not provisioned');
-      }
-      return {
-        tenantId: t.id,
-        tenantDisplayCode: t.name,
-        managerDirectoryEnabled: tenantManagerDirectoryEnabled(null),
-      };
+    // Fallback to the default tenant for any role without a process membership.
+    // Per-process authorization is enforced separately by processMember lookups,
+    // so this fallback only governs initial tenant binding for fresh accounts.
+    const t = await this.prisma.tenant.findUnique({ where: { id: DEFAULT_TENANT_ID } });
+    if (!t) {
+      throw new InternalServerErrorException('Default tenant is not provisioned');
     }
-    throw new ForbiddenException('No process membership; cannot resolve tenant');
+    return {
+      tenantId: t.id,
+      tenantDisplayCode: t.name,
+      managerDirectoryEnabled: tenantManagerDirectoryEnabled(null),
+    };
   }
 
   private async buildSessionUser(user: {
@@ -92,7 +95,7 @@ export class AuthService implements OnModuleInit {
     role: string;
   }): Promise<SessionUser> {
     const role = (user.role as SessionUser['role']) || 'auditor';
-    const ctx = await this.resolveSessionTenantContext(user.id, role);
+    const ctx = await this.resolveSessionTenantContext(user.id);
     return {
       id: user.id,
       displayCode: user.displayCode,
@@ -200,6 +203,74 @@ export class AuthService implements OnModuleInit {
       role: (user.role as TokenPayload['role']) || 'auditor',
     };
     const token = this.sign(payload);
+    this.setCookie(response, token);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+    requestContext.setUser({ userId: user.id, userCode: user.displayCode, userEmail: user.email });
+    return await this.buildSessionUser(user);
+  }
+
+  async signup(response: Response, payload: SignupDto): Promise<SessionUser> {
+    const email = payload.email.trim().toLowerCase();
+    const role = payload.role;
+    if (role !== 'admin' && role !== 'auditor') {
+      throw new BadRequestException('Invalid role');
+    }
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      throw new ConflictException('Email already registered');
+    }
+    const passwordHash = await bcrypt.hash(payload.password, 10);
+    const id = createId();
+    const displayCode = `USR-${createId().slice(-8).toUpperCase()}`;
+    const user = await this.prisma.user.create({
+      data: {
+        id,
+        displayCode,
+        email,
+        displayName: payload.displayName.trim(),
+        role,
+        passwordHash,
+        isActive: true,
+        lastLoginAt: new Date(),
+      },
+    });
+    const token = this.sign({
+      sub: user.id,
+      displayCode: user.displayCode,
+      email: user.email,
+      displayName: user.displayName,
+      role: (user.role as TokenPayload['role']) || 'auditor',
+    });
+    this.setCookie(response, token);
+    requestContext.setUser({ userId: user.id, userCode: user.displayCode, userEmail: user.email });
+    return await this.buildSessionUser(user);
+  }
+
+  async login(response: Response, payload: LoginDto): Promise<SessionUser> {
+    const email = payload.email.trim().toLowerCase();
+    const user = await this.prisma.user.findFirst({
+      where: { email, isActive: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (!user.passwordHash) {
+      throw new UnauthorizedException('Password login not enabled for this account');
+    }
+    const ok = await bcrypt.compare(payload.password, user.passwordHash);
+    if (!ok) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const token = this.sign({
+      sub: user.id,
+      displayCode: user.displayCode,
+      email: user.email,
+      displayName: user.displayName,
+      role: (user.role as TokenPayload['role']) || 'auditor',
+    });
     this.setCookie(response, token);
     await this.prisma.user.update({
       where: { id: user.id },
