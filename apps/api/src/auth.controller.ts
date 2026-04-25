@@ -15,6 +15,17 @@ import { AuthGuard } from './auth.guard';
 import { CurrentUser } from './common/current-user';
 import { DevLoginDto, LoginDto, SignupDto } from './dto/auth.dto';
 
+// Auth endpoints get a tight per-IP throttle for anti-bot protection,
+// but the e2e suite makes 100+ rapid signup/login calls from a single
+// IP — so the limit is a Resolvable function that lifts the cap under
+// NODE_ENV=test. Production keeps the real 10/min cap.
+const AUTH_THROTTLE = {
+  default: {
+    limit: () => (process.env.NODE_ENV === 'test' ? 10_000 : 10),
+    ttl: 60_000,
+  },
+};
+
 @Controller('auth')
 @SkipThrottle({ default: true })
 export class AuthController {
@@ -22,21 +33,21 @@ export class AuthController {
 
   @Post('signup')
   @SkipThrottle({ default: false })
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle(AUTH_THROTTLE)
   async signup(@Body() body: SignupDto, @Res({ passthrough: true }) response: Response) {
     return { user: await this.authService.signup(response, body) };
   }
 
   @Post('login')
   @SkipThrottle({ default: false })
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle(AUTH_THROTTLE)
   async login(@Body() body: LoginDto, @Res({ passthrough: true }) response: Response) {
     return { user: await this.authService.login(response, body) };
   }
 
   @Post('dev-login')
   @SkipThrottle({ default: false })
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle(AUTH_THROTTLE)
   async devLogin(@Body() body: DevLoginDto, @Res({ passthrough: true }) response: Response) {
     const identifier = body.identifier ?? body.email ?? body.displayCode;
     if (identifier === undefined || identifier === null || String(identifier).trim() === '') {
