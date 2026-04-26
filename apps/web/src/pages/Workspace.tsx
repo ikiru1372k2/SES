@@ -1,11 +1,10 @@
 import { Link, Navigate, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownToLine, History, Play, Save, Users } from 'lucide-react';
+import { ArrowDownToLine, History, Play, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, isValidEmail, type FunctionId } from '@ses/domain';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
-import { MembersPanel } from '../components/workspace/MembersPanel';
 import { WorkspaceShell } from '../components/workspace/WorkspaceShell';
 import { TabPanel } from '../components/workspace/TabPanel';
 import { PreviewTab } from '../components/workspace/PreviewTab';
@@ -28,6 +27,9 @@ import { useRealtime } from '../realtime/useRealtime';
 import { onRealtimeEvent } from '../realtime/socket';
 import { directorySuggestions } from '../lib/api/directoryApi';
 import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
+import { useEffectiveAccess } from '../hooks/useEffectiveAccess';
+
+const READ_ONLY_TOOLTIP = 'Read-only access — ask an admin for editor scope.';
 
 const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
 const VersionHistoryTab = lazy(() =>
@@ -73,7 +75,6 @@ export function Workspace() {
   const currentUser = useCurrentUser();
   const managerDirectoryOn = currentUser?.managerDirectoryEnabled !== false;
   const tabFromUrl = searchParams.get('tab');
-  const [membersOpen, setMembersOpen] = useState(false);
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
   // Blocker handed off when the user picks "Save as new version" from the
@@ -212,8 +213,16 @@ export function Workspace() {
   }
   const mappingSourceValid =
     !MAPPING_ENABLED_FUNCTIONS.has(activeFile?.functionId ?? '') || isMappingSourceValid(mappingSource);
-  const canRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning && mappingSourceValid);
-  const canSave = Boolean(process && latestResult && !isAuditRunning);
+  const accessGate = useEffectiveAccess(process?.serverBacked ? process.displayCode ?? process.id : null);
+  // For local-only (non-serverBacked) processes there's no membership row to
+  // consult — the user is the local owner of their browser session, so allow.
+  const canEditThisFunction = process?.serverBacked
+    ? accessGate.canEditFunction(activeFile?.functionId ?? functionId)
+    : true;
+  const featureCanRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning && mappingSourceValid);
+  const featureCanSave = Boolean(process && latestResult && !isAuditRunning);
+  const canRun = featureCanRun && canEditThisFunction;
+  const canSave = featureCanSave && canEditThisFunction;
   const canDownload = Boolean(process && activeFile && latestResult && hasSavedVersion && !isAuditRunning);
 
   const onRunAudit = useCallback(async () => {
@@ -275,7 +284,6 @@ export function Workspace() {
     );
   }, [activeFile, latestResult, process]);
 
-  const onOpenMembers = useCallback(() => setMembersOpen(true), []);
   const onOpenVersionHistory = useCallback(() => {
     if (!process) return;
     void navigate(versionComparePath(process.displayCode ?? process.id, functionId));
@@ -286,12 +294,16 @@ export function Workspace() {
   const headerConfig = useMemo(() => {
     if (!process) return { breadcrumbs: [] };
     const saveLabel = headVersion ? `Save to ${headVersionName}` : 'Save';
-    const saveTooltip = !latestResult
+    const saveTooltip = !canEditThisFunction
+      ? READ_ONLY_TOOLTIP
+      : !latestResult
       ? 'Run audit first to save.'
       : headVersion
       ? `Update ${headVersionName} in place with the latest findings. Use the caret to create a new named version.`
       : 'Save the current audit findings as V1.';
-    const runTooltip = !activeFile
+    const runTooltip = !canEditThisFunction
+      ? READ_ONLY_TOOLTIP
+      : !activeFile
       ? 'Upload a file first'
       : selectedSheets === 0
       ? 'Select at least one valid sheet'
@@ -326,9 +338,6 @@ export function Workspace() {
         onClick: onDownload,
         disabled: !canDownload,
       });
-    }
-    if (process.serverBacked) {
-      overflow.push({ id: 'members', label: 'Members', icon: Users, onClick: onOpenMembers });
     }
     if (hasSavedVersion) {
       overflow.push({ id: 'versions', label: 'Version history', icon: History, onClick: onOpenVersionHistory });
@@ -385,6 +394,7 @@ export function Workspace() {
     latestResult,
     correctionCount,
     canRun,
+    canEditThisFunction,
     mappingSourceValid,
     canSave,
     canDownload,
@@ -396,7 +406,6 @@ export function Workspace() {
     onSaveAsNew,
     onDownload,
     onDownloadCorrected,
-    onOpenMembers,
     onOpenVersionHistory,
     leaveGuard,
   ]);
@@ -412,10 +421,9 @@ export function Workspace() {
   if (!process) return <Navigate to="/" replace />;
   const scopedProcess = { ...process, files: functionFiles };
   const draft = fileDrafts[`${process.id}:${functionId}`];
-  const canManageMembers = currentUser?.role === 'admin';
 
   return (
-    <AppShell process={process} sidebar={<FilesSidebar process={scopedProcess} functionId={functionId} />}>
+    <AppShell process={process} sidebar={<FilesSidebar process={scopedProcess} functionId={functionId} canEdit={canEditThisFunction} readOnlyReason={READ_ONLY_TOOLTIP} />}>
       <DraftRestoreBanner
         draft={draft}
         currentFile={activeFile}
@@ -459,6 +467,8 @@ export function Workspace() {
               file={activeFile}
               mappingSource={mappingSource}
               onMappingSourceChange={setMappingSource}
+              canEdit={canEditThisFunction}
+              readOnlyReason={READ_ONLY_TOOLTIP}
             />
           </TabPanel>
         ) : null}
@@ -489,14 +499,6 @@ export function Workspace() {
           </TabPanel>
         ) : null}
       </WorkspaceShell>
-      {membersOpen && process.serverBacked ? (
-        <MembersPanel
-          processIdOrCode={process.displayCode ?? process.id}
-          currentUserCode={currentUser?.displayCode}
-          canManage={canManageMembers}
-          onClose={() => setMembersOpen(false)}
-        />
-      ) : null}
       {managerDirectoryOn && resolutionOpen && rawManagerNames.length > 0 ? (
         <ResolutionDrawer
           open={resolutionOpen}

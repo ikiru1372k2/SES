@@ -1,21 +1,52 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
-import type { SessionUser } from '@ses/domain';
+import { isFunctionId, type SessionUser } from '@ses/domain';
 import { AuthGuard } from './auth.guard';
+import { AccessScopeService } from './common/access-scope.service';
 import { CurrentUser } from './common/current-user';
 import { attachmentContentDisposition } from './common/http';
+import { PrismaService } from './common/prisma.service';
+import { ProcessAccessService } from './common/process-access.service';
 import { RunAuditDto } from './dto/audits.dto';
 import { AuditsService } from './audits.service';
 
 @Controller()
 @UseGuards(AuthGuard)
 export class AuditsController {
-  constructor(private readonly auditsService: AuditsService) {}
+  constructor(
+    private readonly auditsService: AuditsService,
+    private readonly processAccess: ProcessAccessService,
+    private readonly accessScope: AccessScopeService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post('processes/:idOrCode/audit/run')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  run(@Param('idOrCode') idOrCode: string, @Body() body: RunAuditDto, @CurrentUser() user: SessionUser) {
+  async run(@Param('idOrCode') idOrCode: string, @Body() body: RunAuditDto, @CurrentUser() user: SessionUser) {
+    // Pre-flight scope check. The audits service still does its legacy
+    // `findAccessibleProcessOrThrow(..., 'editor')` check, but that consults
+    // only the base ProcessMember.permission — a function-viewer who is base
+    // editor would slip through. Resolve the file's function and require
+    // edit on that function scope before delegating.
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');
+    const file = await this.prisma.workbookFile.findFirst({
+      where: {
+        processId: process.id,
+        OR: [{ id: body.fileIdOrCode }, { displayCode: body.fileIdOrCode }],
+      },
+      select: { id: true, functionId: true },
+    });
+    if (!file) throw new NotFoundException(`File ${body.fileIdOrCode} not found`);
+    if (isFunctionId(file.functionId)) {
+      await this.accessScope.require(process.id, user, {
+        kind: 'function',
+        functionId: file.functionId,
+        action: 'edit',
+      });
+    } else {
+      await this.accessScope.require(process.id, user, { kind: 'all-functions', action: 'edit' });
+    }
     return this.auditsService.run(idOrCode, body, user);
   }
 

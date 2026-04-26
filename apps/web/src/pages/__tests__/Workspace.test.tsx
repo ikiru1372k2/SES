@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Workspace } from '../Workspace';
 import { ConfirmProvider } from '../../components/shared/ConfirmProvider';
 import type { AuditProcess, AuditVersion, WorkbookFile } from '../../lib/types';
@@ -42,7 +42,19 @@ const file: WorkbookFile = {
   lastAuditedAt: null,
   isAudited: false,
   functionId: 'over-planning',
-  sheets: [],
+  sheets: [
+    {
+      id: 's-ws',
+      displayCode: 'SHT-WS',
+      name: 'Sheet 1',
+      status: 'valid',
+      rowCount: 3,
+      isSelected: true,
+      headerRowIndex: 0,
+      originalHeaders: [],
+      normalizedHeaders: [],
+    },
+  ],
   rawData: {},
 };
 
@@ -88,9 +100,48 @@ vi.mock('../../lib/api/directoryApi', () => ({
   directorySuggestions: vi.fn().mockResolvedValue({ results: {} }),
 }));
 
+type GateMock = {
+  loading: boolean;
+  error: boolean;
+  permission: 'viewer' | 'editor' | 'owner';
+  scopes: Array<{ scopeType: string; functionId: string | null; accessLevel: string }>;
+  isOwner: boolean;
+  canViewFunction: (fid: string | null | undefined) => boolean;
+  canEditFunction: (fid: string | null | undefined) => boolean;
+  canViewEscalations: boolean;
+  canEditEscalations: boolean;
+  canEditAllFunctions: boolean;
+};
+
+const defaultGate: GateMock = {
+  loading: false,
+  error: false,
+  permission: 'editor',
+  scopes: [],
+  isOwner: false,
+  canViewFunction: () => true,
+  canEditFunction: () => true,
+  canViewEscalations: true,
+  canEditEscalations: true,
+  canEditAllFunctions: true,
+};
+
+const accessGateMock = vi.fn(() => defaultGate);
+
+vi.mock('../../hooks/useEffectiveAccess', () => ({
+  useEffectiveAccess: (...args: unknown[]) => accessGateMock(...(args as [])),
+}));
+
 import { useAppStore } from '../../store/useAppStore';
 
 describe('Workspace', () => {
+  beforeEach(() => {
+    accessGateMock.mockImplementation(() => defaultGate);
+  });
+  afterEach(() => {
+    accessGateMock.mockReset();
+  });
+
   const baseStore = {
     processes: [mockProcess],
     hydrateProcesses: vi.fn().mockResolvedValue(undefined),
@@ -120,6 +171,46 @@ describe('Workspace', () => {
     vi.mocked(useAppStore).mockImplementation((selector) => selector({ ...baseStore } as never));
     renderWorkspaceAt('/processes/p-ws/over-planning');
     expect(screen.getByText('hydrated.xlsx')).toBeInTheDocument();
+  });
+
+  it('does not expose a members-share trigger anywhere in the workspace', () => {
+    vi.mocked(useAppStore).mockImplementation((selector) => selector({ ...baseStore } as never));
+    renderWorkspaceAt('/processes/p-ws/over-planning');
+    // Members management has been migrated to the dashboard process card.
+    expect(screen.queryByRole('button', { name: /^members$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /share process/i })).toBeNull();
+  });
+
+  it('disables FilesSidebar Upload when the user has function-viewer scope', () => {
+    const viewerGate: GateMock = {
+      loading: false,
+      error: false,
+      permission: 'editor',
+      scopes: [{ scopeType: 'function', functionId: 'over-planning', accessLevel: 'viewer' }],
+      isOwner: false,
+      canViewFunction: () => true,
+      canEditFunction: () => false,
+      canViewEscalations: false,
+      canEditEscalations: false,
+      canEditAllFunctions: false,
+    };
+    accessGateMock.mockImplementation(() => viewerGate);
+    vi.mocked(useAppStore).mockImplementation((selector) => selector({ ...baseStore } as never));
+    renderWorkspaceAt('/processes/p-ws/over-planning');
+    // The Upload <input> on the sidebar should be disabled, and the wrapping
+    // label should advertise read-only via aria-disabled.
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    expect(fileInput!.disabled).toBe(true);
+    expect(screen.getByRole('combobox')).toBeDisabled();
+  });
+
+  it('keeps FilesSidebar Upload enabled when the user has editor scope (default mock)', () => {
+    vi.mocked(useAppStore).mockImplementation((selector) => selector({ ...baseStore } as never));
+    renderWorkspaceAt('/processes/p-ws/over-planning');
+    const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(fileInput).not.toBeNull();
+    expect(fileInput!.disabled).toBe(false);
   });
 
   it('shows the draft restore banner when draft metadata is newer than the active file', () => {

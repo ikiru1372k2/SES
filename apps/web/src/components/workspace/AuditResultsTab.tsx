@@ -135,12 +135,19 @@ export function AuditResultsTab({
   file,
   mappingSource,
   onMappingSourceChange,
+  canEdit = true,
+  readOnlyReason,
 }: {
   process: AuditProcess;
   file?: WorkbookFile | undefined;
   mappingSource?: MappingSourceInput | undefined;
   onMappingSourceChange?: (src: MappingSourceInput | undefined) => void;
+  /** When false, Run/Re-run/comment/correction/acknowledgment are disabled. Defaults to true. */
+  canEdit?: boolean;
+  /** Tooltip shown on disabled mutating controls. */
+  readOnlyReason?: string | undefined;
 }) {
+  const editTooltip = !canEdit ? readOnlyReason : undefined;
   // The Zustand `currentAuditResult` is only populated by an interactive
   // run from this same browser session — it gets cleared whenever the user
   // navigates between processes or functions (see useAppStore lines 321,
@@ -450,7 +457,8 @@ export function AuditResultsTab({
                     },
                   );
                 }}
-                disabled={!hasSelected || !mappingSourceOk}
+                disabled={!hasSelected || !mappingSourceOk || !canEdit}
+                title={editTooltip}
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               >
                 Run Audit
@@ -497,7 +505,8 @@ export function AuditResultsTab({
                       },
                     );
                   }}
-                  disabled={!hasSelected || !mappingSourceOk}
+                  disabled={!hasSelected || !mappingSourceOk || !canEdit}
+                  title={editTooltip}
                   className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
                 >
                   Re-run audit
@@ -584,6 +593,8 @@ export function AuditResultsTab({
                             comments={selectIssueComments(process, issue)}
                             onAdd={(body) => addIssueComment(process.id, auditIssueKey(issue), body)}
                             onDelete={(commentId) => deleteIssueComment(process.id, auditIssueKey(issue), commentId)}
+                            canEdit={canEdit}
+                            readOnlyReason={editTooltip}
                           />
                           <div className="mt-4">
                             <div className="mb-2 text-xs font-semibold text-gray-500">Auditor decision</div>
@@ -596,11 +607,13 @@ export function AuditResultsTab({
                                   <button
                                     key={statusOption}
                                     type="button"
+                                    disabled={!canEdit}
+                                    title={editTooltip}
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       setIssueAcknowledgment(process.id, auditIssueKey(issue), statusOption);
                                     }}
-                                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                                       active
                                         ? 'border-brand bg-brand-subtle text-brand'
                                         : 'border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300'
@@ -617,6 +630,8 @@ export function AuditResultsTab({
                             correction={selectIssueCorrection(process, issue)}
                             onSave={(correction) => saveIssueCorrection(process.id, auditIssueKey(issue), correction)}
                             onClear={() => clearIssueCorrection(process.id, auditIssueKey(issue))}
+                            canEdit={canEdit}
+                            readOnlyReason={editTooltip}
                           />
                         </td>
                       </tr>
@@ -640,7 +655,7 @@ function Step({ done, children }: { done: boolean; children: React.ReactNode }) 
   return <div className="flex items-center gap-2"><Icon size={16} className={done ? 'text-green-600' : 'text-gray-400'} />{children}</div>;
 }
 
-function IssueCorrectionEditor({ issue, correction, onSave, onClear }: { issue: AuditIssue; correction?: IssueCorrection | undefined; onSave: (correction: Omit<IssueCorrection, 'issueKey' | 'processId' | 'updatedAt'>) => void; onClear: () => void }) {
+function IssueCorrectionEditor({ issue, correction, onSave, onClear, canEdit = true, readOnlyReason }: { issue: AuditIssue; correction?: IssueCorrection | undefined; onSave: (correction: Omit<IssueCorrection, 'issueKey' | 'processId' | 'updatedAt'>) => void; onClear: () => void; canEdit?: boolean; readOnlyReason?: string | undefined }) {
   const [effort, setEffort] = useState(String(correction?.effort ?? issue.effort));
   const [projectState, setProjectState] = useState(correction?.projectState ?? issue.projectState);
   const [projectManager, setProjectManager] = useState(correction?.projectManager ?? issue.projectManager);
@@ -648,34 +663,36 @@ function IssueCorrectionEditor({ issue, correction, onSave, onClear }: { issue: 
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (!canEdit) return;
     onSave({ effort: Number(effort) || 0, projectState: projectState.trim(), projectManager: projectManager.trim(), note });
   }
 
   return (
-    <section className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+    <section className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700" title={canEdit ? undefined : readOnlyReason}>
       <div className="flex items-center justify-between gap-3">
         <h4 className="font-semibold">Inline correction</h4>
         {correction ? <span className="text-xs text-gray-500">Updated {new Date(correction.updatedAt).toLocaleString()}</span> : null}
       </div>
       <form onSubmit={submit} className="mt-3 grid gap-3 md:grid-cols-4">
-        <label className="text-xs text-gray-500">Effort<input value={effort} onChange={(event) => setEffort(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
-        <label className="text-xs text-gray-500">State<input value={projectState} onChange={(event) => setProjectState(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
-        <label className="text-xs text-gray-500">Manager<input value={projectManager} onChange={(event) => setProjectManager(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
-        <label className="text-xs text-gray-500">Note<input value={note} onChange={(event) => setNote(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+        <label className="text-xs text-gray-500">Effort<input value={effort} disabled={!canEdit} onChange={(event) => setEffort(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900" /></label>
+        <label className="text-xs text-gray-500">State<input value={projectState} disabled={!canEdit} onChange={(event) => setProjectState(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900" /></label>
+        <label className="text-xs text-gray-500">Manager<input value={projectManager} disabled={!canEdit} onChange={(event) => setProjectManager(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900" /></label>
+        <label className="text-xs text-gray-500">Note<input value={note} disabled={!canEdit} onChange={(event) => setNote(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900" /></label>
         <div className="flex gap-2 md:col-span-4">
-          <Button type="submit" size="sm">Save correction</Button>
-          {correction ? <Button variant="secondary" size="sm" onClick={onClear}>Clear correction</Button> : null}
+          <Button type="submit" size="sm" disabled={!canEdit} title={canEdit ? undefined : readOnlyReason}>Save correction</Button>
+          {correction ? <Button variant="secondary" size="sm" onClick={onClear} disabled={!canEdit} title={canEdit ? undefined : readOnlyReason}>Clear correction</Button> : null}
         </div>
       </form>
     </section>
   );
 }
 
-function IssueComments({ comments, onAdd, onDelete }: { comments: IssueComment[]; onAdd: (body: string) => void; onDelete: (commentId: string) => void }) {
+function IssueComments({ comments, onAdd, onDelete, canEdit = true, readOnlyReason }: { comments: IssueComment[]; onAdd: (body: string) => void; onDelete: (commentId: string) => void; canEdit?: boolean; readOnlyReason?: string | undefined }) {
   const [body, setBody] = useState('');
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (!canEdit) return;
     onAdd(body);
     setBody('');
   }
@@ -694,15 +711,30 @@ function IssueComments({ comments, onAdd, onDelete }: { comments: IssueComment[]
                 <div className="text-xs font-semibold text-gray-500">{comment.author} - {new Date(comment.createdAt).toLocaleString()}</div>
                 <p className="mt-1 text-sm text-gray-900 dark:text-gray-100">{comment.body}</p>
               </div>
-              <button type="button" onClick={() => onDelete(comment.id)} className="text-xs text-gray-400 hover:text-red-600">Delete</button>
+              <button
+                type="button"
+                onClick={() => onDelete(comment.id)}
+                disabled={!canEdit}
+                title={canEdit ? undefined : readOnlyReason}
+                className="text-xs text-gray-400 hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:text-gray-300"
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}
         {!comments.length ? <div className="text-sm text-gray-500">No notes yet. Capture PM feedback, approval context, or follow-up details here.</div> : null}
       </div>
       <form onSubmit={submit} className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <input value={body} onChange={(event) => setBody(event.target.value)} placeholder="Add audit note..." className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
-        <Button type="submit" size="sm" disabled={!body.trim()}>Add note</Button>
+        <input
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+          placeholder={canEdit ? 'Add audit note...' : 'Read-only — comments disabled'}
+          disabled={!canEdit}
+          title={canEdit ? undefined : readOnlyReason}
+          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900"
+        />
+        <Button type="submit" size="sm" disabled={!canEdit || !body.trim()} title={canEdit ? undefined : readOnlyReason}>Add note</Button>
       </form>
     </section>
   );

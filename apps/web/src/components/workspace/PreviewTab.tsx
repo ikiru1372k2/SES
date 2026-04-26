@@ -1,14 +1,48 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { AuditProcess, AuditResult, WorkbookFile } from '../../lib/types';
+import { fetchSheetPreviewFromApi } from '../../lib/api/filesApi';
 import { EmptyState } from '../shared/EmptyState';
 import { StatusBadge } from '../shared/StatusBadge';
 
 export function PreviewTab({ process, file, result }: { process: AuditProcess; file?: WorkbookFile | undefined; result: AuditResult | null }) {
   const [sheetName, setSheetName] = useState(file?.sheets[0]?.name ?? '');
   const activeSheet = useMemo(() => file?.sheets.find((sheet) => sheet.name === sheetName) ?? file?.sheets[0], [file, sheetName]);
-  const rows = activeSheet ? (file?.rawData[activeSheet.name] ?? []) : [];
+  const hasLocalRows = Boolean(activeSheet && file && (file.rawData[activeSheet.name]?.length ?? 0) > 0);
+  const previewQ = useQuery({
+    queryKey: ['sheet-preview', file?.id, activeSheet?.id, result?.id],
+    enabled: Boolean(
+      process.serverBacked
+      && file
+      && activeSheet
+      && !hasLocalRows,
+    ),
+    queryFn: () => fetchSheetPreviewFromApi(
+      (file as WorkbookFile & { displayCode?: string }).displayCode ?? file!.id,
+      (activeSheet as { displayCode?: string }).displayCode ?? activeSheet!.name,
+      {
+        page: 1,
+        pageSize: 100,
+        ...(result?.id ? { runIdOrCode: result.id } : {}),
+      },
+    ),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const rows = activeSheet
+    ? (hasLocalRows
+      ? (file?.rawData[activeSheet.name] ?? [])
+      : [
+          previewQ.data?.headers ?? [],
+          ...(previewQ.data?.rows.map((row) => row.values) ?? []),
+        ])
+    : [];
   const headerRowIndex = activeSheet?.headerRowIndex ?? 0;
-  const headers = activeSheet?.originalHeaders?.length ? activeSheet.originalHeaders : rows[headerRowIndex] ?? [];
+  const headers = activeSheet?.originalHeaders?.length
+    ? activeSheet.originalHeaders
+    : previewQ.data?.headers?.length
+      ? previewQ.data.headers
+      : rows[headerRowIndex] ?? [];
   const validSheetCount = file?.sheets.filter((sheet) => sheet.status === 'valid').length ?? 0;
   const skippedSheetCount = file ? file.sheets.length - validSheetCount : 0;
   const selectedSheetCount = file?.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected).length ?? 0;
@@ -65,6 +99,8 @@ export function PreviewTab({ process, file, result }: { process: AuditProcess; f
         </div>
       ) : null}
       <div className="overflow-auto rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+        {previewQ.isLoading ? <div className="border-b border-gray-200 px-4 py-3 text-sm text-gray-500 dark:border-gray-700">Loading preview…</div> : null}
+        {previewQ.isError ? <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">Preview could not be loaded for this shared file.</div> : null}
         <table className="min-w-full border-collapse text-left text-sm">
           <thead className="sticky top-0 bg-gray-100 dark:bg-gray-700">
             <tr>{headers.map((header, index) => <th key={index} scope="col" className="whitespace-nowrap border-b border-gray-200 px-3 py-2 font-semibold dark:border-gray-600">{String(header)}</th>)}</tr>

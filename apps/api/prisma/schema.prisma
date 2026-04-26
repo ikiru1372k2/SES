@@ -120,6 +120,7 @@ model Process {
   processFunctions  ProcessFunction[]
   auditRequests     FunctionAuditRequest[]
   fileDrafts        FileDraft[]
+  scopePermissions  ProcessMemberScopePermission[]
 
   @@index([tenantId])
 }
@@ -157,10 +158,11 @@ model SystemFunction {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  processMap   ProcessFunction[]
-  files        WorkbookFile[]
-  fileDrafts   FileDraft[]
-  auditRules   AuditRule[]
+  processMap       ProcessFunction[]
+  files            WorkbookFile[]
+  fileDrafts       FileDraft[]
+  auditRules       AuditRule[]
+  scopePermissions ProcessMemberScopePermission[]
 }
 
 /// Enablement row per (process, function). Every new Process is seeded
@@ -207,8 +209,34 @@ model ProcessMember {
   addedAt    DateTime @default(now())
   process    Process  @relation(fields: [processId], references: [id], onDelete: Cascade)
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopePermissions ProcessMemberScopePermission[]
 
   @@unique([processId, userId])
+}
+
+/// Optional per-(member, scope) access overrides layered on top of ProcessMember.
+/// When a member has zero rows here, ProcessMember.permission applies process-wide
+/// (legacy behavior). When at least one row exists, the resolver matches by scope.
+model ProcessMemberScopePermission {
+  id          String   @id
+  processId   String
+  memberId    String
+  /// 'all-functions' | 'function' | 'escalation-center'
+  scopeType   String
+  /// Required iff scopeType='function'.
+  functionId  String?
+  /// 'viewer' | 'editor' (owner is never scoped)
+  accessLevel String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  process     Process         @relation(fields: [processId], references: [id], onDelete: Cascade)
+  member      ProcessMember   @relation(fields: [memberId],  references: [id], onDelete: Cascade)
+  function    SystemFunction? @relation(fields: [functionId], references: [id])
+
+  @@unique([memberId, scopeType, functionId])
+  @@index([processId])
+  @@index([memberId])
 }
 
 model WorkbookFile {

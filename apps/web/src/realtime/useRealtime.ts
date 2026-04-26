@@ -104,7 +104,7 @@ export function useRealtime(
   return { members, connected, move };
 }
 
-function handleEnvelope(
+export function handleEnvelope(
   envelope: RealtimeEnvelope,
   selfCode: string | undefined,
   setMembers: React.Dispatch<React.SetStateAction<PresenceMember[]>>,
@@ -144,9 +144,26 @@ function handleEnvelope(
     case 'audit.completed': {
       if (isSelf) return;
       const actor = envelope.actor?.displayName ?? 'Someone';
-      const code =
-        (envelope.payload as { runCode?: string } | undefined)?.runCode ?? '';
+      const payload = envelope.payload as {
+        runCode?: string;
+        fileId?: string;
+        fileCode?: string;
+      } | undefined;
+      const code = payload?.runCode ?? '';
       toast(`${actor} ran an audit ${code}`.trim(), { icon: '🔎' });
+      // Refresh the exact file the other user ran so scoped viewers/editors
+      // see fresh findings immediately instead of staying pinned to a cached
+      // in-session result from before the rerun.
+      const state = useAppStore.getState();
+      const proc = state.processes.find(
+        (p) => p.id === envelope.processCode || p.displayCode === envelope.processCode,
+      );
+      const targetFileId =
+        proc?.files.find((f) => f.id === payload?.fileId || f.displayCode === payload?.fileCode)?.id
+        ?? proc?.activeFileId;
+      if (proc && targetFileId) {
+        void state.hydrateLatestAuditResult(proc.id, targetFileId, { force: true });
+      }
       return;
     }
     case 'tracking.updated': {

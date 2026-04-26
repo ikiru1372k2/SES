@@ -13,6 +13,8 @@ export type ComposeDraftPayload = {
   authorNote?: string;
   /** Issue #75: ISO-8601 date for the {{dueDate}} slot. */
   deadlineAt?: string | null;
+  /** Map of projectNo → URL the auditor pasted in the Composer. */
+  projectLinks?: Record<string, string>;
 };
 
 /**
@@ -25,6 +27,8 @@ export interface SendComposeResult {
   channel: 'email' | 'teams' | 'both';
   subject: string;
   body: string;
+  /** HTML rendering of the body — used by the Composer preview, not by mailto. */
+  bodyHtml?: string;
   to: string;
   cc: string[];
 }
@@ -45,7 +49,7 @@ export async function previewCompose(trackingIdOrCode: string, body: Partial<Com
     body: JSON.stringify(body),
   });
   if (!res.ok) throw await parseApiError(res, 'Preview failed');
-  return (await res.json()) as { subject: string; body: string };
+  return (await res.json()) as { subject: string; body: string; bodyHtml?: string };
 }
 
 export async function saveComposeDraft(trackingIdOrCode: string, body: ComposeDraftPayload) {

@@ -4,7 +4,9 @@ import { AuthGuard } from './auth.guard';
 import { FunctionAccessGuard } from './common/function-access.guard';
 import { CurrentUser } from './common/current-user';
 import { parseIfMatch } from './common/http';
+import { RequiresScope } from './common/requires-scope.decorator';
 import { CreateFunctionAuditRequestDto, CreateProcessDto, UpdateProcessDto } from './dto/processes.dto';
+import { AddProcessMemberDto, UpdateProcessMemberDto } from './dto/process-members.dto';
 import { EscalationsService } from './escalations.service';
 import { ProcessesService } from './processes.service';
 
@@ -67,6 +69,7 @@ export class ProcessesController {
   }
 
   @Get(':idOrCode/escalations')
+  @RequiresScope({ kind: 'escalation-center', action: 'view' })
   escalations(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
     return this.escalationsService.getForProcess(idOrCode, user);
   }
@@ -80,6 +83,11 @@ export class ProcessesController {
     return this.processesService.createFunctionAuditRequest(idOrCode, body, user);
   }
 
+  @Get(':idOrCode/me/access')
+  myAccess(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
+    return this.processesService.getMyAccess(idOrCode, user);
+  }
+
   @Get(':idOrCode/members')
   listMembers(@Param('idOrCode') idOrCode: string, @CurrentUser() user: SessionUser) {
     return this.processesService.listMembers(idOrCode, user);
@@ -88,10 +96,20 @@ export class ProcessesController {
   @Post(':idOrCode/members')
   addMember(
     @Param('idOrCode') idOrCode: string,
-    @Body() body: { email?: string; userCode?: string; permission?: 'viewer' | 'editor' | 'owner' },
+    @Body() body: AddProcessMemberDto,
     @CurrentUser() user: SessionUser,
   ) {
     return this.processesService.addMember(idOrCode, body, user);
+  }
+
+  @Patch(':idOrCode/members/:memberIdOrCode')
+  updateMember(
+    @Param('idOrCode') idOrCode: string,
+    @Param('memberIdOrCode') memberIdOrCode: string,
+    @Body() body: UpdateProcessMemberDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.processesService.updateMember(idOrCode, memberIdOrCode, body, user);
   }
 
   @Delete(':idOrCode/members/:memberIdOrCode')

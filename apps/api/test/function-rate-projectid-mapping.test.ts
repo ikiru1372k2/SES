@@ -27,6 +27,15 @@ type Private = {
     src: unknown,
   ) => Promise<Map<string, string>>;
   applyProjectIdToManager: (issues: AuditIssue[], map: Map<string, string>) => number;
+  prepareIssuesForPersistence: (
+    issues: AuditIssue[],
+    processDisplayCode: string,
+    displayCodes: string[],
+  ) => Array<AuditIssue & { persistedId: string; displayCode: string; issueKey: string }>;
+  assertKnownRuleCodes: (
+    issues: Array<{ persistedId: string; ruleCode?: string | null; ruleId?: string | null }>,
+    validRuleCodes: Set<string>,
+  ) => void;
 };
 
 function priv(svc: AuditsService): Private {
@@ -116,6 +125,38 @@ describe('applyProjectIdToManager', () => {
     const map = new Map([['fr-001', 'Wagner, Anna']]);
     const count = priv(svc).applyProjectIdToManager(issues, map);
     assert.equal(count, 0);
+  });
+});
+
+describe('audit issue persistence guards', () => {
+  it('assigns fresh persisted ids for each saved issue so reruns do not reuse engine ids', () => {
+    const svc = makeService();
+    const sourceIssues = [
+      makeIssue({ id: 'engine-issue-1', projectNo: 'FR-001', sheetName: 'Sheet1', rowIndex: 1, auditStatus: 'RUL-FR-RATE-ZERO' }),
+      makeIssue({ id: 'engine-issue-1', projectNo: 'FR-002', sheetName: 'Sheet1', rowIndex: 2, auditStatus: 'RUL-FR-RATE-ZERO' }),
+    ];
+    const persisted = priv(svc).prepareIssuesForPersistence(sourceIssues, 'PRC-1', ['ISS-1', 'ISS-2']);
+
+    assert.equal(persisted.length, 2);
+    assert.equal(persisted[0]!.displayCode, 'ISS-1');
+    assert.equal(persisted[1]!.displayCode, 'ISS-2');
+    assert.notEqual(persisted[0]!.persistedId, sourceIssues[0]!.id);
+    assert.notEqual(persisted[1]!.persistedId, sourceIssues[1]!.id);
+    assert.notEqual(persisted[0]!.persistedId, persisted[1]!.persistedId);
+    assert.match(persisted[0]!.issueKey, /^IKY-/);
+    assert.match(persisted[1]!.issueKey, /^IKY-/);
+  });
+
+  it('throws BadRequestException when an audit emits an unknown rule code', () => {
+    const svc = makeService();
+    assert.throws(
+      () =>
+        priv(svc).assertKnownRuleCodes(
+          [{ persistedId: 'iss-1', ruleCode: 'RUL-NOT-SEEDED' }],
+          new Set(['RUL-MD-MISSING-EFFORT']),
+        ),
+      (err: unknown) => err instanceof BadRequestException,
+    );
   });
 });
 

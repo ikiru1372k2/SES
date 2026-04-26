@@ -1,4 +1,4 @@
-import { Edit2, MoreHorizontal, Trash2, X } from 'lucide-react';
+import { Edit2, MoreHorizontal, Share2, Trash2, X } from 'lucide-react';
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
@@ -9,7 +9,10 @@ import type { AuditProcess } from '../../lib/types';
 import { selectHasUnsavedAudit, selectLatestAuditResult } from '../../store/selectors';
 import { processDashboardPath } from '../../lib/processRoutes';
 import { useAppStore } from '../../store/useAppStore';
+import { useEffectiveAccess } from '../../hooks/useEffectiveAccess';
+import { useCurrentUser } from '../auth/authContext';
 import { Button } from '../shared/Button';
+import { MembersPanel } from '../workspace/MembersPanel';
 
 function severityCounts(process: AuditProcess) {
   const latest = selectLatestAuditResult(process);
@@ -23,8 +26,12 @@ function severityCounts(process: AuditProcess) {
 export function ProcessCard({ process }: { process: AuditProcess }) {
   const deleteProcess = useAppStore((state) => state.deleteProcess);
   const updateProcess = useAppStore((state) => state.updateProcess);
+  const currentUser = useCurrentUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const accessGate = useEffectiveAccess(process.serverBacked ? process.displayCode ?? process.id : null);
+  const canManageMembers = process.serverBacked ? accessGate.isOwner : false;
   const latest = selectLatestAuditResult(process);
   const counts = severityCounts(process);
   const total = Math.max(1, counts.High + counts.Medium + counts.Low);
@@ -99,7 +106,19 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
           <p className="mt-1 line-clamp-2 text-sm text-gray-500 dark:text-gray-400">{process.description || 'Workbook audit process'}</p>
           {process.nextAuditDue ? <p className={overdue ? 'mt-2 text-xs font-semibold text-red-700' : 'mt-2 text-xs text-gray-500'}>{dueLabel}</p> : null}
         </div>
-        <div className="relative">
+        <div className="flex items-center gap-1">
+          {process.serverBacked ? (
+            <button
+              type="button"
+              title="Share process"
+              aria-label="Share process"
+              onClick={() => setMembersOpen(true)}
+              className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <Share2 size={18} />
+            </button>
+          ) : null}
+          <div className="relative">
           <button
             type="button"
             title="Process actions"
@@ -123,6 +142,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
               </button>
             </div>
           ) : null}
+          </div>
         </div>
       </div>
       <div className="mt-5 text-sm text-gray-600 dark:text-gray-300">{fileCount} files - {versionCount} versions</div>
@@ -146,6 +166,14 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
         <Link to={`/compare`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700 dark:hover:bg-gray-800">Compare</Link>
       </div>
       {editOpen ? <EditProcessModal process={process} onClose={() => setEditOpen(false)} /> : null}
+      {membersOpen && process.serverBacked ? (
+        <MembersPanel
+          processIdOrCode={process.displayCode ?? process.id}
+          currentUserCode={currentUser?.displayCode}
+          canManage={canManageMembers}
+          onClose={() => setMembersOpen(false)}
+        />
+      ) : null}
     </article>
   );
 }

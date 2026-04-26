@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { AccessScopeService } from './common/access-scope.service';
 import { ActivityLogService } from './common/activity-log.service';
 import { FunctionAccessGuard } from './common/function-access.guard';
 import { IdentifierService } from './common/identifier.service';
@@ -72,11 +73,17 @@ import { SlaEngineService } from './sla-engine.service';
 
 @Module({
   imports: [
+    // `limit` is a Resolvable function so NODE_ENV is read per-request
+    // instead of being captured at module init. Earlier fixes that read
+    // it once (forRoot at decoration time, then forRootAsync at module
+    // init) were still racing the e2e harness's NODE_ENV=test assignment
+    // in createApp() under `node --test`, so the last RBAC tests kept
+    // flaking on 429s. A per-request resolver removes the timing window.
     ThrottlerModule.forRoot([
       {
         name: 'default',
         ttl: 60_000,
-        limit: 400,
+        limit: () => (process.env.NODE_ENV === 'test' ? 10_000 : 400),
       },
     ]),
   ],
@@ -114,6 +121,7 @@ import { SlaEngineService } from './sla-engine.service';
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     PrismaService,
     ProcessAccessService,
+    AccessScopeService,
     IdentifierService,
     ActivityLogService,
     AuthService,
@@ -156,6 +164,7 @@ import { SlaEngineService } from './sla-engine.service';
   exports: [
     PrismaService,
     ProcessAccessService,
+    AccessScopeService,
     IdentifierService,
     ActivityLogService,
     AuthService,
