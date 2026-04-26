@@ -20,6 +20,8 @@ import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { ManagerResponse } from './pages/ManagerResponse';
 import { AdminDirectory } from './pages/AdminDirectory';
+import { AdminRoute } from './components/auth/AdminRoute';
+import { AiPilotShell } from './pages/ai-pilot/AiPilotShell';
 import { EscalationCenter } from './pages/EscalationCenter';
 import { EscalationTemplateAdmin } from './pages/EscalationTemplateAdmin';
 import { ProcessTiles } from './pages/ProcessTiles';
@@ -171,6 +173,22 @@ function buildRouter() {
             <ProtectedRoute>
               <AdminDirectory />
             </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/ai-pilot"
+          element={
+            <AdminRoute>
+              <AiPilotShell />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/ai-pilot/:functionId"
+          element={
+            <AdminRoute>
+              <AiPilotShell />
+            </AdminRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

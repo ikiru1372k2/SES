@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, HelpCircle } from 'lucide-react';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { AlertTriangle, HelpCircle, Sparkles } from 'lucide-react';
+import { useCurrentUser } from '../components/auth/authContext';
 import { FUNCTION_REGISTRY, type FunctionId } from '@ses/domain';
 import { AppShell } from '../components/layout/AppShell';
 import { usePageHeader } from '../components/layout/usePageHeader';
@@ -32,6 +33,8 @@ export function ProcessTiles() {
   );
   const hydrateProcesses = useAppStore((state) => state.hydrateProcesses);
   const [modalOpen, setModalOpen] = useState(false);
+  const currentUser = useCurrentUser();
+  const isAdmin = currentUser?.role === 'admin';
 
   const tilesQuery = useQuery({
     queryKey: ['process', processId, 'tiles'],
@@ -118,11 +121,24 @@ export function ProcessTiles() {
                 onOpen={() => navigate(workspacePath(processId, fn.id))}
                 footer={
                   process ? (
-                    <TileEscalationChip
-                      processId={process.displayCode ?? process.id}
-                      functionId={fn.id as FunctionId}
-                      managerCount={escalationsQuery.data?.summary?.perEngineManagerCounts?.[fn.id] ?? 0}
-                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <TileEscalationChip
+                        processId={process.displayCode ?? process.id}
+                        functionId={fn.id as FunctionId}
+                        managerCount={escalationsQuery.data?.summary?.perEngineManagerCounts?.[fn.id] ?? 0}
+                      />
+                      {isAdmin ? (
+                        <Link
+                          to={`/admin/ai-pilot/${fn.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center gap-1 rounded-full border border-brand/40 bg-brand-subtle px-2 py-0.5 text-[10px] font-medium text-brand hover:bg-brand hover:text-white"
+                          title="Open AI Pilot for this function"
+                        >
+                          <Sparkles size={10} />
+                          AI Pilot
+                        </Link>
+                      ) : null}
+                    </div>
                   ) : null
                 }
               />

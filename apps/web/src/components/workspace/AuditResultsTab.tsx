@@ -1,4 +1,5 @@
 import { CheckCircle2, ChevronRight, Circle, Settings, X } from 'lucide-react';
+import { AiBadge } from '../ai-pilot/AiBadge';
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { MappingSourceInput } from '../../lib/api/auditsApi';
 import { MappingSourcePanel } from './MappingSourcePanel';
@@ -574,6 +575,7 @@ export function AuditResultsTab({
                       <td className="max-w-lg p-3">
                         <div className="flex flex-wrap items-center gap-1">
                           <Badge tone={issue.category === 'Needs Review' ? 'amber' : issue.category === 'Data Quality' ? 'blue' : 'gray'}>{issue.ruleName ?? issue.auditStatus}</Badge>
+                          {issue.ruleCode?.startsWith('ai_') ? <AiBadge tooltip="Authored via AI Pilot" /> : null}
                           {issue.category === 'Needs Review' ? <Badge tone="amber">Needs review</Badge> : null}
                         </div>
                         <div className="mt-1 text-gray-700 dark:text-gray-200">{issue.reason ?? issue.notes}</div>
