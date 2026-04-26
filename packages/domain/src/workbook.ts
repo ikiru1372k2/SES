@@ -10,8 +10,10 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   country: ['country'],
   businessUnit: ['business unit', 'business unit project', 'unit'],
   customer: ['customer', 'customer name'],
-  projectNo: ['project no', 'project no.', 'project number', 'project id'],
-  projectName: ['project', 'project name', 'name'],
+  probability: ['probability', 'prob'],
+  category: ['category'],
+  projectNo: ['project no', 'project no.', 'project number', 'project id', 'opp_id', 'opportunity id'],
+  projectName: ['project', 'project name', 'name', 'opportunity'],
   projectState: ['project state', 'state'],
   countryManager: ['project country manager', 'country manager'],
   projectManager: ['project manager', 'manager'],
@@ -19,7 +21,18 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   effort: ['effort', 'hours', 'effort h', 'effort (h)', 'planned effort'],
   status: ['status', 'audit status'],
 };
-const CORE_COLUMNS = ['projectNo', 'projectManager', 'projectState', 'effort'];
+const TEMPLATE_PROFILES = [
+  {
+    minScore: 4,
+    requiredColumns: ['projectNo'],
+    weightedColumns: ['projectNo', 'projectManager', 'projectState', 'effort'],
+  },
+  {
+    minScore: 4,
+    requiredColumns: ['projectNo', 'projectName', 'country', 'probability'],
+    weightedColumns: ['projectNo', 'projectName', 'country', 'probability', 'category', 'businessUnit'],
+  },
+] as const;
 
 type HeaderCandidate = {
   headerRowIndex: number;
@@ -55,9 +68,14 @@ function rowHeaderScore(row: unknown[]): { score: number; normalizedHeaders: str
   const originalHeaders = row.map((cell) => String(cell ?? '').trim());
   const normalizedHeaders = originalHeaders.map((cell, index) => canonicalHeader(cell) ?? (cell ? `column${index + 1}` : ''));
   const matchedColumns = new Set(normalizedHeaders.filter(Boolean).filter((header) => !header.startsWith('column')));
-  const coreMatches = CORE_COLUMNS.filter((column) => matchedColumns.has(column)).length;
+  const profileScore = TEMPLATE_PROFILES.reduce((best, profile) => {
+    const weightedMatches = profile.weightedColumns.filter((column) => matchedColumns.has(column)).length;
+    const requiredMatches = profile.requiredColumns.filter((column) => matchedColumns.has(column)).length;
+    const score = weightedMatches + requiredMatches * 2;
+    return Math.max(best, score);
+  }, 0);
   return {
-    score: matchedColumns.size + coreMatches * 2,
+    score: matchedColumns.size + profileScore,
     normalizedHeaders,
     originalHeaders,
     matchedColumns,
@@ -72,7 +90,10 @@ function detectHeader(rows: unknown[][]): HeaderCandidate | null {
     const candidate = rowHeaderScore(row);
     if (!best || candidate.score > best.score) best = { ...candidate, headerRowIndex: index };
   }
-  if (!best || best.score < 4 || !CORE_COLUMNS.some((column) => best.matchedColumns.has(column))) return null;
+  const matchesProfile = best && TEMPLATE_PROFILES.some((profile) =>
+    best.score >= profile.minScore && profile.requiredColumns.every((column) => best.matchedColumns.has(column)),
+  );
+  if (!best || !matchesProfile) return null;
   return best;
 }
 

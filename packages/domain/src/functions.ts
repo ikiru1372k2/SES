@@ -4,6 +4,7 @@ export const FUNCTION_REGISTRY = [
   { id: 'missing-plan', label: 'Missing Plan', displayOrder: 3 },
   { id: 'function-rate', label: 'Function Rate', displayOrder: 4 },
   { id: 'internal-cost-rate', label: 'Internal Cost Rate', displayOrder: 5 },
+  { id: 'opportunities', label: 'Opportunities', displayOrder: 6 },
 ] as const;
 
 export type FunctionId = (typeof FUNCTION_REGISTRY)[number]['id'];

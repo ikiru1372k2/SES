@@ -284,6 +284,7 @@ export function AuditResultsTab({
         if (fid === 'master-data') return 'RUL-MD-';
         if (fid === 'missing-plan') return 'RUL-MP-';
         if (fid === 'function-rate') return 'RUL-FR-';
+        if (fid === 'opportunities') return 'RUL-OPP-';
         if (fid === 'over-planning') return 'RUL-';
         return '';
       };
@@ -294,10 +295,16 @@ export function AuditResultsTab({
         if (file.functionId === 'master-data') return !code.startsWith('RUL-MD-');
         if (file.functionId === 'missing-plan') return !code.startsWith('RUL-MP-');
         if (file.functionId === 'function-rate') return !code.startsWith('RUL-FR-');
+        if (file.functionId === 'opportunities') return !code.startsWith('RUL-OPP-');
         if (file.functionId === 'over-planning') {
           // Over-planning covers several RUL-EFFORT/RUL-STATE/RUL-MGR codes,
-          // but not RUL-MD-*, RUL-MP-*, or RUL-FR-*.
-          return code.startsWith('RUL-MD-') || code.startsWith('RUL-MP-') || code.startsWith('RUL-FR-');
+          // but not RUL-MD-*, RUL-MP-*, RUL-FR-*, or RUL-OPP-*.
+          return (
+            code.startsWith('RUL-MD-') ||
+            code.startsWith('RUL-MP-') ||
+            code.startsWith('RUL-FR-') ||
+            code.startsWith('RUL-OPP-')
+          );
         }
         return expectedPrefix ? !code.startsWith(expectedPrefix) : false;
       });
@@ -770,6 +777,7 @@ function QgcSettingsDrawer({
   const isMissingPlan = file?.functionId === 'missing-plan';
   const isFunctionRate = file?.functionId === 'function-rate';
   const isInternalCostRate = file?.functionId === 'internal-cost-rate';
+  const isOpportunities = file?.functionId === 'opportunities';
 
   function setNumber(key: keyof AuditPolicy, value: string) {
     setDraft((state) => ({ ...state, [key]: Number(value) || 0 }));
@@ -777,6 +785,18 @@ function QgcSettingsDrawer({
 
   function setFlag(key: keyof AuditPolicy, value: boolean) {
     setDraft((state) => ({ ...state, [key]: value }));
+  }
+
+  type OpportunitiesField = NonNullable<AuditPolicy['opportunities']>;
+  function setOpp<K extends keyof OpportunitiesField>(key: K, value: OpportunitiesField[K]) {
+    setDraft((state) => ({
+      ...state,
+      opportunities: { ...(state.opportunities ?? {}), [key]: value },
+    }));
+  }
+  function setOppNumber(key: keyof OpportunitiesField, value: string) {
+    const parsed = Number(value);
+    setOpp(key, (Number.isFinite(parsed) ? parsed : 0) as OpportunitiesField[typeof key]);
   }
 
   function save(event: FormEvent) {
@@ -845,6 +865,42 @@ function QgcSettingsDrawer({
               Monthly cost-rate columns are auto-detected. Any month with a rate of exactly 0 is flagged;
               blank cells are ignored. No configurable thresholds.
             </p>
+          </SettingsSection>
+        ) : isOpportunities ? (
+          <SettingsSection title="Opportunities checks">
+            <NumberField
+              label="Closed-in-past low-probability max (rule fires when probability is strictly less than)"
+              value={draft.opportunities?.closeDateLowProbabilityMax ?? 75}
+              suffix="%"
+              onChange={(value) => setOppNumber('closeDateLowProbabilityMax', value)}
+            />
+            <NumberField
+              label="Project-start-in-past low-probability max"
+              value={draft.opportunities?.projectStartLowProbabilityMax ?? 90}
+              suffix="%"
+              onChange={(value) => setOppNumber('projectStartLowProbabilityMax', value)}
+            />
+            <NumberField
+              label="Missing BCS exact probability (Service category)"
+              value={draft.opportunities?.missingBcsProbabilityExact ?? 90}
+              suffix="%"
+              onChange={(value) => setOppNumber('missingBcsProbabilityExact', value)}
+            />
+            <NumberField
+              label="BCS available low-probability max (Service category)"
+              value={draft.opportunities?.bcsAvailableLowProbabilityMax ?? 90}
+              suffix="%"
+              onChange={(value) => setOppNumber('bcsAvailableLowProbabilityMax', value)}
+            />
+            <label className="block text-sm">
+              <span className="font-medium text-gray-700 dark:text-gray-200">Brazil expected Business Unit</span>
+              <input
+                type="text"
+                value={draft.opportunities?.brazilExpectedBu ?? 'Brazil'}
+                onChange={(event) => setOpp('brazilExpectedBu', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
+              />
+            </label>
           </SettingsSection>
         ) : (
           <p className="mt-4 text-sm text-gray-500">No configurable thresholds for this function.</p>

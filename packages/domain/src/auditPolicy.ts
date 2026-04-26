@@ -15,6 +15,13 @@ export function createDefaultAuditPolicy(now = new Date().toISOString()): AuditP
     onHoldEffortEnabled: true,
     onHoldEffortThreshold: 200,
     pdThreshold: 30,
+    opportunities: {
+      closeDateLowProbabilityMax: 75,
+      projectStartLowProbabilityMax: 90,
+      missingBcsProbabilityExact: 90,
+      bcsAvailableLowProbabilityMax: 90,
+      brazilExpectedBu: 'Brazil',
+    },
     updatedAt: now,
   };
 }

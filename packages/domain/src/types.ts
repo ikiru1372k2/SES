@@ -43,6 +43,18 @@ export interface AuditPolicy {
   onHoldEffortThreshold: number;
   /** Per-month PD threshold for the over-planning engine (default 30). */
   pdThreshold?: number;
+  /**
+   * Opportunities engine config — namespaced under its own key so other
+   * engines never read these fields. The opportunities engine is the only
+   * consumer; an isolation test enforces this.
+   */
+  opportunities?: {
+    closeDateLowProbabilityMax?: number;
+    projectStartLowProbabilityMax?: number;
+    missingBcsProbabilityExact?: number;
+    bcsAvailableLowProbabilityMax?: number;
+    brazilExpectedBu?: string;
+  };
   updatedAt: string;
 }
 

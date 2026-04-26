@@ -2,79 +2,15 @@ import type ExcelJS from 'exceljs';
 import { MAX_WORKBOOK_FILE_SIZE_BYTES } from '@ses/domain';
 import { auditIssueKey } from './auditEngine';
 import { createId } from './id';
+import { detectHeader } from './workbookDetection';
 import type { AuditIssue, AuditResult, IssueCorrection, SheetInfo, WorkbookFile } from './types';
 
 export { MAX_WORKBOOK_FILE_SIZE_BYTES };
 const HEADER_SCAN_LIMIT = 20;
 const DUPLICATE_NAME_RE = /summary|ref|lookup/i;
-const COLUMN_ALIASES: Record<string, string[]> = {
-  country: ['country'],
-  businessUnit: ['business unit', 'business unit project', 'unit'],
-  customer: ['customer', 'customer name'],
-  projectNo: ['project no', 'project no.', 'project number', 'project id'],
-  projectName: ['project', 'project name', 'name'],
-  projectState: ['project state', 'state'],
-  countryManager: ['project country manager', 'country manager'],
-  projectManager: ['project manager', 'manager'],
-  email: ['email', 'manager email', 'project manager email'],
-  effort: ['effort', 'hours', 'effort h', 'effort (h)', 'planned effort'],
-  status: ['status', 'audit status'],
-};
-const CORE_COLUMNS = ['projectNo', 'projectManager', 'projectState', 'effort'];
-
-type HeaderCandidate = {
-  headerRowIndex: number;
-  originalHeaders: string[];
-  normalizedHeaders: string[];
-  score: number;
-  matchedColumns: Set<string>;
-};
 
 function hasContent(row: unknown[]): boolean {
   return row.some((cell) => String(cell ?? '').trim() !== '');
-}
-
-function normalizeHeaderLabel(value: unknown): string {
-  return String(value ?? '')
-    .toLowerCase()
-    .replace(/\([^)]*\)/g, (match) => ` ${match.slice(1, -1)} `)
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function canonicalHeader(value: unknown): string | null {
-  const normalized = normalizeHeaderLabel(value);
-  if (!normalized) return null;
-  for (const [canonical, aliases] of Object.entries(COLUMN_ALIASES)) {
-    if (aliases.some((alias) => normalized === normalizeHeaderLabel(alias))) return canonical;
-  }
-  return null;
-}
-
-function rowHeaderScore(row: unknown[]): { score: number; normalizedHeaders: string[]; originalHeaders: string[]; matchedColumns: Set<string> } {
-  const originalHeaders = row.map((cell) => String(cell ?? '').trim());
-  const normalizedHeaders = originalHeaders.map((cell, index) => canonicalHeader(cell) ?? (cell ? `column${index + 1}` : ''));
-  const matchedColumns = new Set(normalizedHeaders.filter(Boolean).filter((header) => !header.startsWith('column')));
-  const coreMatches = CORE_COLUMNS.filter((column) => matchedColumns.has(column)).length;
-  return {
-    score: matchedColumns.size + coreMatches * 2,
-    normalizedHeaders,
-    originalHeaders,
-    matchedColumns,
-  };
-}
-
-function detectHeader(rows: unknown[][]): HeaderCandidate | null {
-  let best: HeaderCandidate | null = null;
-  const scanLength = Math.min(rows.length, HEADER_SCAN_LIMIT);
-  for (let index = 0; index < scanLength; index += 1) {
-    const row = rows[index] ?? [];
-    const candidate = rowHeaderScore(row);
-    if (!best || candidate.score > best.score) best = { ...candidate, headerRowIndex: index };
-  }
-  if (!best || best.score < 4 || !CORE_COLUMNS.some((column) => best.matchedColumns.has(column))) return null;
-  return best;
 }
 
 function auditableRowCount(rows: unknown[][], headerRowIndex: number): number {
@@ -165,7 +101,7 @@ export function detectWorkbookSheets(rawData: Record<string, unknown[][]>): Shee
     const fingerprint = sheetFingerprint(rows);
     const duplicateOf = seen.get(fingerprint);
     if (!duplicateOf) seen.set(fingerprint, name);
-    const header = detectHeader(rows);
+    const header = detectHeader(rows, HEADER_SCAN_LIMIT);
 
     let status: SheetInfo['status'] = 'valid';
     let skipReason: string | undefined;

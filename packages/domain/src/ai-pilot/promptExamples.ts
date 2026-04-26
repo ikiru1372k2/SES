@@ -27,4 +27,9 @@ export const PROMPT_EXAMPLES: Record<FunctionId, string[]> = {
     'Flag projects where internal cost is blank',
     'Flag projects where Q1 internal cost dropped vs Q4 prior year',
   ],
+  'opportunities': [
+    'Flag opportunities whose close date is already in the past',
+    'Flag Service category opportunities at 90% missing a BCS code',
+    'Flag Brazil opportunities whose Business Unit is not Brazil',
+  ],
 };

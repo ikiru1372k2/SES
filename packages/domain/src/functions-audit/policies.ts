@@ -1,6 +1,9 @@
 import type { FunctionId } from '../functions';
 import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../auditPolicy';
 import type { AuditPolicy } from '../types';
+import type { OpportunitiesPolicy } from './opportunities';
+
+export type { OpportunitiesPolicy } from './opportunities';
 
 // Per-function policy slice. Over-planning keeps its effort thresholds
 // under the historical name (AuditPolicy) so existing code and DB rows
@@ -19,6 +22,7 @@ export interface FunctionPolicies {
   'missing-plan': EmptyPolicy;
   'function-rate': EmptyPolicy;
   'internal-cost-rate': EmptyPolicy;
+  'opportunities': OpportunitiesPolicy;
 }
 
 export interface ProcessPolicies {
@@ -52,11 +56,15 @@ export function normalizeProcessPolicies(raw: unknown): ProcessPolicies {
         'missing-plan': by['missing-plan'] ?? {},
         'function-rate': by['function-rate'] ?? {},
         'internal-cost-rate': by['internal-cost-rate'] ?? {},
+        'opportunities': by['opportunities'] ?? {},
       },
       updatedAt: raw.updatedAt ?? now,
     };
   }
-  // Legacy shape: treat the blob as the over-planning slice.
+  // Legacy shape: treat the blob as the over-planning slice. Opportunities
+  // settings live nested under AuditPolicy.opportunities, so normalising the
+  // blob via normalizeAuditPolicy already preserves them — we still expose an
+  // empty per-function slice here to keep the FunctionPolicies shape uniform.
   return {
     byFunction: {
       'over-planning': normalizeAuditPolicy(raw as Partial<AuditPolicy> | undefined),
@@ -64,6 +72,7 @@ export function normalizeProcessPolicies(raw: unknown): ProcessPolicies {
       'missing-plan': {},
       'function-rate': {},
       'internal-cost-rate': {},
+      'opportunities': {},
     },
     updatedAt: now,
   };
@@ -77,6 +86,7 @@ export function createDefaultProcessPolicies(now = new Date().toISOString()): Pr
       'missing-plan': {},
       'function-rate': {},
       'internal-cost-rate': {},
+      'opportunities': {},
     },
     updatedAt: now,
   };
