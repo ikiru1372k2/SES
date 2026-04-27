@@ -1,4 +1,5 @@
 import { LogOut, Bug, Users, FileText } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentUser, type SessionUserInfo } from '../auth/authContext';
@@ -94,6 +95,9 @@ export function AvatarMenu({
             {isDev ? (
               <MenuLink to="/debug" icon={<Bug size={14} />} label="Debug log" onNavigate={onBeforeNavigate} onClose={() => setOpen(false)} />
             ) : null}
+          </div>
+          <div className="border-t border-gray-100 py-1 dark:border-gray-800">
+            <ThemeToggle />
           </div>
           <div className="border-t border-gray-100 py-1 dark:border-gray-800">
             <button
