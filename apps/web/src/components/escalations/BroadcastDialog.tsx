@@ -9,7 +9,6 @@ import {
   Megaphone,
   MessageSquare,
   Send,
-  X,
 } from 'lucide-react';
 import {
   broadcastNotification,

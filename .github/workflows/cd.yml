@@ -70,7 +70,6 @@ jobs:
           GIT_REF: ${{ github.sha }}
         run: |
           port="${DEPLOY_SSH_PORT:-22}"
-          remote_dir="${DEPLOY_DIR:-\$HOME/ses}"
           ssh -i ~/.ssh/id_deploy -p "$port" -o BatchMode=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$GIT_REF" <<'REMOTE'
             set -Eeuo pipefail
@@ -82,8 +81,20 @@ jobs:
             # to force-pushes and keeps the deploy reproducible.
             git reset --hard "$target_sha"
             git clean -fd
-            echo "[cd] Running deploy.sh local"
-            ./deploy.sh local
+            echo "[cd] Installing dependencies"
+            npm ci --prefer-offline
+            echo "[cd] Building"
+            npm run prisma:generate --workspace @ses/api
+            npm run build
+            echo "[cd] Migrating database"
+            npm run prisma:migrate:deploy --workspace @ses/api
+            echo "[cd] Restarting API service"
+            # Reload via pm2 if present, otherwise no-op — operator must
+            # configure their own process manager (systemd, pm2, docker).
+            if command -v pm2 >/dev/null 2>&1; then
+              pm2 reload ses-api --update-env 2>/dev/null || true
+            fi
+            echo "[cd] Deploy complete at $(date -u)"
           REMOTE
 
       - name: Clean up SSH key
