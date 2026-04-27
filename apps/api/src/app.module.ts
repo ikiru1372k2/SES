@@ -71,6 +71,7 @@ import { SavedViewsController } from './saved-views.controller';
 import { SavedViewsService } from './saved-views.service';
 import { SlaEngineService } from './sla-engine.service';
 import { AiPilotModule } from './ai-pilot/ai-pilot.module';
+import { S3Service } from './common/services/s3.service';
 
 @Module({
   imports: [
@@ -162,6 +163,7 @@ import { AiPilotModule } from './ai-pilot/ai-pilot.module';
     InAppNotificationsService,
     SavedViewsService,
     SlaEngineService,
+    S3Service,
   ],
   exports: [
     PrismaService,

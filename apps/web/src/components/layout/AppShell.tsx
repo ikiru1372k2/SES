@@ -5,17 +5,19 @@ import type { AuditProcess } from '../../lib/types';
 import { useAppStore } from '../../store/useAppStore';
 import { GlobalShortcutOverlay } from '../shared/GlobalShortcutOverlay';
 import { ProgressBar } from '../shared/ProgressBar';
-import { TopBar } from './TopBar';
+import { MobileSidebarToggle, TopBar } from './TopBar';
 
 export function AppShell({
   process,
   sidebar,
-  topBarAccessory,
+  topBarAccessory: _topBarAccessory,
   contentScrolls = true,
   children,
 }: {
+  /** @deprecated — TopBar no longer accepts a process prop; use PageHeaderContext instead. */
   process?: AuditProcess | undefined;
   sidebar?: ReactNode;
+  /** @deprecated — TopBar no longer accepts an accessory prop; use PageHeaderContext actions instead. */
   topBarAccessory?: ReactNode;
   contentScrolls?: boolean;
   children: ReactNode;
@@ -24,9 +26,14 @@ export function AppShell({
   const progressText = useAppStore((state) => state.auditProgressText);
   const [collapsed, , toggle] = useSidebarCollapsed();
   const documentCount = process ? process.files.length || process.serverFilesCount || 0 : 0;
+
+  const sidebarToggle = sidebar ? (
+    <MobileSidebarToggle open={!collapsed} onToggle={toggle} />
+  ) : undefined;
+
   return (
     <div className="flex h-full flex-col bg-slate-50 text-gray-950 dark:bg-gray-950 dark:text-white">
-      <TopBar process={process} accessory={topBarAccessory} />
+      <TopBar sidebarToggle={sidebarToggle} />
       {isAuditRunning ? (
         <div className="border-b border-gray-200 bg-white px-5 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
           <div className="mb-1">{progressText}</div>
@@ -68,7 +75,9 @@ export function AppShell({
             </aside>
           )
         ) : null}
-        <main className={`flex min-w-0 flex-1 flex-col ${sidebar || !contentScrolls ? 'overflow-hidden' : 'overflow-y-auto'}`}>{children}</main>
+        <main className={`flex min-w-0 flex-1 flex-col ${sidebar || !contentScrolls ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          {children}
+        </main>
       </div>
       <GlobalShortcutOverlay />
     </div>

@@ -3,32 +3,22 @@ import { onRealtimeEvent } from '../realtime/socket';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCoalescedInvalidator } from '../hooks/useCoalescedInvalidator';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { Megaphone, RefreshCw } from 'lucide-react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
-import { FUNCTION_REGISTRY } from '@ses/domain';
 import { AppShell } from '../components/layout/AppShell';
 import { usePageHeader } from '../components/layout/usePageHeader';
 import { EscalationFilters, type SlaFilter } from '../components/escalations/EscalationFilters';
-import { EscalationPanel } from '../components/escalations/EscalationPanel';
-import { EscalationSummaryBar } from '../components/escalations/EscalationSummaryBar';
 import { ManagerTable, type SortKey } from '../components/escalations/ManagerTable';
 import { SavedViewsRail } from '../components/escalations/SavedViewsRail';
-import { ShortcutOverlay } from '../components/escalations/ShortcutOverlay';
-import { AnalyticsStrip } from '../components/escalations/AnalyticsStrip';
-import { BulkComposer } from '../components/escalations/BulkComposer';
-import { BroadcastDialog } from '../components/escalations/BroadcastDialog';
 import { effectiveManagerEmail } from '../components/escalations/nextAction';
-import {
-  AcknowledgeDialog,
-  ReescalateDialog,
-  SnoozeDialog,
-} from '../components/escalations/BulkActionDialog';
 import toast from 'react-hot-toast';
-import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 import { useCurrentUser } from '../components/auth/authContext';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
-import { bulkAcknowledge, bulkReescalate, bulkResolve, bulkSnooze } from '../lib/api/bulkTrackingApi';
+import { bulkResolve } from '../lib/api/bulkTrackingApi';
 import { useAppStore } from '../store/useAppStore';
+import { EscalationPageHeader } from './escalation-center/EscalationPageHeader';
+import { BulkSelectionBar } from './escalation-center/BulkSelectionBar';
+import { EscalationDialogs } from './escalation-center/EscalationDialogs';
+import { useEscalationKeyboard } from './escalation-center/useEscalationKeyboard';
 
 function parseStagesParam(raw: string | null): Set<string> {
   if (!raw) return new Set();
@@ -193,49 +183,21 @@ export function EscalationCenter() {
     setParam({ stages: next.size ? serializeStagesParam(next) : null });
   };
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement ||
-        event.target instanceof HTMLSelectElement
-      ) {
-        return;
-      }
-      if (event.key === '?') {
-        event.preventDefault();
-        setShortcutOpen(true);
-      } else if (event.key === 'Escape' && selectedTrackingIds.size > 0) {
-        // Predictable get-me-out-of-here: clears the current bulk selection
-        // only when nothing more modal is already open.
-        if (!ackOpen && !snoozeOpen && !reescOpen && !bulkComposerOpen) {
-          setSelectedTrackingIds(new Set());
-        }
-      } else if (event.key === 'c' && selectedTrackingIds.size > 0) {
-        event.preventDefault();
-        setBulkComposerOpen(true);
-      } else if (event.key === 'a' && selectedTrackingIds.size > 0) {
-        event.preventDefault();
-        setAckOpen(true);
-      } else if (event.key === 's' && selectedTrackingIds.size > 0) {
-        event.preventDefault();
-        setSnoozeOpen(true);
-      } else if (event.key === 'e' && selectedTrackingIds.size > 0) {
-        event.preventDefault();
-        setReescOpen(true);
-      } else if (event.key === 'r' && selectedTrackingIds.size > 0) {
-        event.preventDefault();
-        void bulkResolve([...selectedTrackingIds])
-          .then((res) => {
-            toast.success(`${res.count} resolved.`);
-            void q.refetch();
-          })
-          .catch((err: Error) => toast.error(err.message));
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [ackOpen, bulkComposerOpen, panelOpen, q, reescOpen, selectedTrackingIds, snoozeOpen]);
+  useEscalationKeyboard({
+    selectedTrackingIds,
+    ackOpen,
+    snoozeOpen,
+    reescOpen,
+    bulkComposerOpen,
+    panelOpen,
+    q,
+    onShortcutOpen: () => setShortcutOpen(true),
+    onAckOpen: () => setAckOpen(true),
+    onSnoozeOpen: () => setSnoozeOpen(true),
+    onReescOpen: () => setReescOpen(true),
+    onBulkComposerOpen: () => setBulkComposerOpen(true),
+    onClearSelection: () => setSelectedTrackingIds(new Set()),
+  });
 
   if (!processId) return <Navigate to="/" replace />;
   if (!process) {
@@ -246,141 +208,43 @@ export function EscalationCenter() {
     );
   }
 
-  const summary = q.data?.summary;
-  const unmapped = summary?.unmappedManagerCount ?? 0;
+  const unmapped = q.data?.summary?.unmappedManagerCount ?? 0;
 
   return (
     <AppShell process={process}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-6 sm:py-8 lg:flex-row lg:px-6">
         <div className="min-w-0 flex-1">
-          <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Escalation Center</h1>
-            <span className="flex-1" />
-            <button
-              type="button"
-              onClick={() => setParam({ needsVerification: needsVerification ? null : '1' })}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium ${
-                needsVerification
-                  ? 'border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100'
-                  : 'border border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300'
-              }`}
-              title="Show only rows marked RESOLVED that still need auditor verification"
-            >
-              Needs verification
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void q.refetch();
-                void queryClient.invalidateQueries({ queryKey: ['directory-suggestions'] });
-              }}
-              disabled={q.isFetching}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-600 hover:border-gray-300 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
-              title="Force a refresh — only needed if the live feed has dropped"
-            >
-              <RefreshCw size={14} className={q.isFetching ? 'animate-spin' : ''} /> Refresh
-            </button>
-            <button
-              type="button"
-              onClick={() => setBroadcastOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
-              title="Send one message to every manager with open findings"
-            >
-              <Megaphone size={14} /> Broadcast
-            </button>
-          </div>
+          <EscalationPageHeader
+            needsVerification={needsVerification}
+            onToggleNeedsVerification={() => setParam({ needsVerification: needsVerification ? null : '1' })}
+            q={q}
+            onRefresh={() => {
+              void q.refetch();
+              void queryClient.invalidateQueries({ queryKey: ['directory-suggestions'] });
+            }}
+            onBroadcast={() => setBroadcastOpen(true)}
+            unmapped={unmapped}
+            onResolveUnmapped={() => setResolveOpen(true)}
+            currentTime={currentTime}
+            rows={q.data?.rows ?? []}
+          />
 
-          {q.isError ? (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
-              {(q.error as Error).message}
-            </div>
-          ) : null}
-
-          {unmapped > 0 ? (
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
-              <span>
-                {unmapped} manager{unmapped === 1 ? '' : 's'} in these findings aren&apos;t in the directory. Notifications can&apos;t be sent until they&apos;re resolved.
-              </span>
-              <button
-                type="button"
-                className="rounded border border-amber-300 px-2 py-1 text-xs font-medium hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900"
-                onClick={() => setResolveOpen(true)}
-              >
-                Resolve
-              </button>
-            </div>
-          ) : null}
-
-          <AnalyticsStrip rows={q.data?.rows ?? []} now={currentTime} />
-
-          {summary ? <EscalationSummaryBar summary={summary} /> : null}
-
-          {selectedTrackingIds.size > 0 ? (
-            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm">
-              <span className="font-medium text-brand">
-                {selectedTrackingIds.size} selected
-              </span>
-              <span className="text-[11px] text-gray-500">
-                Shortcuts: <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">c</kbd> compose ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">a</kbd> ack ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">s</kbd> snooze ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">e</kbd> escalate ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">r</kbd> resolve ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">esc</kbd> clear
-              </span>
-              <span className="flex-1" />
-              <button
-                type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
-                onClick={() => setBulkComposerOpen(true)}
-              >
-                Compose
-              </button>
-              <button
-                type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
-                onClick={() => setAckOpen(true)}
-              >
-                Acknowledge
-              </button>
-              <button
-                type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
-                onClick={() => setSnoozeOpen(true)}
-              >
-                Snooze
-              </button>
-              <button
-                type="button"
-                className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-                onClick={() => setReescOpen(true)}
-              >
-                Re-escalate
-              </button>
-              <button
-                type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
-                onClick={() => {
-                  void bulkResolve([...selectedTrackingIds])
-                    .then((res) => {
-                      toast.success(`${res.count} resolved.`);
-                      void q.refetch();
-                    })
-                    .catch((err: Error) => toast.error(err.message));
-                }}
-              >
-                Resolve
-              </button>
-              <button
-                type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-500 hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
-                onClick={() => setSelectedTrackingIds(new Set())}
-                aria-label="Clear selection"
-              >
-                Clear
-              </button>
-            </div>
-          ) : null}
+          <BulkSelectionBar
+            selectedTrackingIds={selectedTrackingIds}
+            onCompose={() => setBulkComposerOpen(true)}
+            onAck={() => setAckOpen(true)}
+            onSnooze={() => setSnoozeOpen(true)}
+            onReescalate={() => setReescOpen(true)}
+            onResolve={() => {
+              void bulkResolve([...selectedTrackingIds])
+                .then((res) => {
+                  toast.success(`${res.count} resolved.`);
+                  void q.refetch();
+                })
+                .catch((err: Error) => toast.error(err.message));
+            }}
+            onClear={() => setSelectedTrackingIds(new Set())}
+          />
 
           {/* Fixed-height panel so the ManagerTable's existing
               `overflow-auto` scrolls internally instead of growing
@@ -449,71 +313,36 @@ export function EscalationCenter() {
         </div>
       </div>
 
-      <EscalationPanel
+      <EscalationDialogs
         processId={process.id}
         processDisplayCode={process.displayCode ?? process.id}
-        row={panelRow}
-        open={panelOpen}
-        onClose={() => setPanelOpen(false)}
-      />
-
-      <ResolutionDrawer
-        open={resolveOpen}
-        onClose={() => setResolveOpen(false)}
-        rawNames={(q.data?.rows ?? []).filter((r) => r.isUnmapped).map((r) => r.managerName)}
+        panelRow={panelRow}
+        panelOpen={panelOpen}
+        onPanelClose={() => setPanelOpen(false)}
+        resolveOpen={resolveOpen}
+        onResolveClose={() => setResolveOpen(false)}
+        q={q}
         onResolved={() => {
           void q.refetch();
           setResolveOpen(false);
         }}
-      />
-      <ShortcutOverlay open={shortcutOpen} onClose={() => setShortcutOpen(false)} />
-      <BulkComposer
-        trackingIds={[...selectedTrackingIds]}
-        open={bulkComposerOpen}
-        onClose={() => {
+        shortcutOpen={shortcutOpen}
+        onShortcutClose={() => setShortcutOpen(false)}
+        bulkComposerOpen={bulkComposerOpen}
+        onBulkComposerClose={() => {
           setBulkComposerOpen(false);
           void q.refetch();
         }}
-      />
-      <AcknowledgeDialog
-        open={ackOpen}
-        onClose={() => setAckOpen(false)}
-        count={selectedTrackingIds.size}
-        onDone={() => {
-          setSelectedTrackingIds(new Set());
-          void q.refetch();
-        }}
-        runAction={(note) => bulkAcknowledge([...selectedTrackingIds], note || undefined)}
-      />
-      <SnoozeDialog
-        open={snoozeOpen}
-        onClose={() => setSnoozeOpen(false)}
-        count={selectedTrackingIds.size}
-        onDone={() => {
-          setSelectedTrackingIds(new Set());
-          void q.refetch();
-        }}
-        runAction={(days, note) => bulkSnooze([...selectedTrackingIds], days, note || undefined)}
-      />
-      <ReescalateDialog
-        open={reescOpen}
-        onClose={() => setReescOpen(false)}
-        count={selectedTrackingIds.size}
-        onDone={() => {
-          setSelectedTrackingIds(new Set());
-          void q.refetch();
-        }}
-        runAction={(note) => bulkReescalate([...selectedTrackingIds], note || undefined)}
-      />
-      <BroadcastDialog
-        open={broadcastOpen}
-        onClose={() => setBroadcastOpen(false)}
-        onDone={() => void q.refetch()}
-        processIdOrCode={process.displayCode ?? process.id}
-        estimatedAudience={
-          (q.data?.rows ?? []).filter((r) => !r.resolved && Boolean(effectiveManagerEmail(r))).length
-        }
-        functionOptions={FUNCTION_REGISTRY.map((f) => ({ id: f.id, label: f.label }))}
+        selectedTrackingIds={selectedTrackingIds}
+        onSelectionClear={() => setSelectedTrackingIds(new Set())}
+        ackOpen={ackOpen}
+        onAckClose={() => setAckOpen(false)}
+        snoozeOpen={snoozeOpen}
+        onSnoozeClose={() => setSnoozeOpen(false)}
+        reescOpen={reescOpen}
+        onReescClose={() => setReescOpen(false)}
+        broadcastOpen={broadcastOpen}
+        onBroadcastClose={() => setBroadcastOpen(false)}
       />
     </AppShell>
   );

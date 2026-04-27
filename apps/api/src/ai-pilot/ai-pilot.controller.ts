@@ -21,6 +21,8 @@ import { AuthGuard } from '../auth.guard';
 import { CurrentUser } from '../common/current-user';
 import { AdminGuard } from '../common/admin.guard';
 import { AiPilotService } from './ai-pilot.service';
+import { AiPilotRulesService } from './ai-pilot-rules.service';
+import { AiPilotSandboxService } from './ai-pilot-sandbox.service';
 import { GenerateRuleDto } from './dto/generate-rule.dto';
 import { PreviewRuleDto } from './dto/preview-rule.dto';
 import { SaveRuleDto } from './dto/save-rule.dto';
@@ -38,7 +40,11 @@ function requireFunctionId(raw: string): FunctionId {
 @Controller('admin/ai-pilot')
 @UseGuards(AuthGuard, AdminGuard)
 export class AiPilotController {
-  constructor(private readonly service: AiPilotService) {}
+  constructor(
+    private readonly service: AiPilotService,
+    private readonly rules: AiPilotRulesService,
+    private readonly sandbox: AiPilotSandboxService,
+  ) {}
 
   @Get('health')
   health() {
@@ -52,12 +58,12 @@ export class AiPilotController {
 
   @Get('functions/:functionId/rules')
   listForFunction(@Param('functionId') functionId: string) {
-    return this.service.listRulesForFunction(requireFunctionId(functionId));
+    return this.rules.listRulesForFunction(requireFunctionId(functionId));
   }
 
   @Get('rules/:ruleCode')
   getRule(@Param('ruleCode') ruleCode: string) {
-    return this.service.getRule(ruleCode);
+    return this.rules.getRule(ruleCode);
   }
 
   // ---------- Sandbox ----------
@@ -76,7 +82,7 @@ export class AiPilotController {
     @CurrentUser() user: SessionUser,
   ) {
     if (!file) throw new BadRequestException('file required');
-    return this.service.uploadSample(user, requireFunctionId(functionId), file);
+    return this.sandbox.uploadSample(user, requireFunctionId(functionId), file);
   }
 
   @Post('sandbox/:sessionId/sheet')
@@ -85,7 +91,7 @@ export class AiPilotController {
     @Body() body: PickSheetDto,
     @CurrentUser() user: SessionUser,
   ) {
-    return this.service.pickSheet(user, sessionId, body.sheetName);
+    return this.sandbox.pickSheet(user, sessionId, body.sheetName);
   }
 
   @Post('sandbox/:sessionId/generate')
@@ -95,7 +101,7 @@ export class AiPilotController {
     @Body() body: GenerateRuleDto,
     @CurrentUser() user: SessionUser,
   ) {
-    return this.service.generate(user, sessionId, body.prompt);
+    return this.sandbox.generate(user, sessionId, body.prompt);
   }
 
   @Post('sandbox/:sessionId/enhance-prompt')
@@ -105,7 +111,7 @@ export class AiPilotController {
     @Body() body: EnhancePromptDto,
     @CurrentUser() user: SessionUser,
   ) {
-    return this.service.enhancePrompt(user, sessionId, body.prompt, body.columns);
+    return this.sandbox.enhancePrompt(user, sessionId, body.prompt, body.columns);
   }
 
   @Post('sandbox/:sessionId/preview')
@@ -115,7 +121,7 @@ export class AiPilotController {
     @Body() body: PreviewRuleDto,
     @CurrentUser() user: SessionUser,
   ) {
-    return this.service.preview(user, sessionId, body.spec);
+    return this.sandbox.preview(user, sessionId, body.spec);
   }
 
   @Post('sandbox/:sessionId/preview-escalations')
@@ -125,13 +131,13 @@ export class AiPilotController {
     @Body() body: PreviewRuleDto,
     @CurrentUser() user: SessionUser,
   ) {
-    return this.service.previewEscalations(user, sessionId, body.spec);
+    return this.sandbox.previewEscalations(user, sessionId, body.spec);
   }
 
   @Post('rules')
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   save(@Body() body: SaveRuleDto, @CurrentUser() user: SessionUser) {
-    return this.service.saveRule(user, body.spec, body.sandboxSessionId, body.previewedAt);
+    return this.rules.saveRule(user, body.spec, body.sandboxSessionId, body.previewedAt);
   }
 
   @Patch('rules/:ruleCode')
@@ -140,23 +146,28 @@ export class AiPilotController {
     @Body() body: UpdateRuleDto,
     @CurrentUser() user: SessionUser,
   ) {
-    if (body.status) return this.service.setStatus(user, ruleCode, body.status);
+    if (body.status) return this.rules.setStatus(user, ruleCode, body.status);
     throw new BadRequestException('Only status updates are supported in v1');
   }
 
   @Post('rules/:ruleCode/pause')
   pause(@Param('ruleCode') ruleCode: string, @CurrentUser() user: SessionUser) {
-    return this.service.setStatus(user, ruleCode, 'paused');
+    return this.rules.setStatus(user, ruleCode, 'paused');
   }
 
   @Post('rules/:ruleCode/resume')
   resume(@Param('ruleCode') ruleCode: string, @CurrentUser() user: SessionUser) {
-    return this.service.setStatus(user, ruleCode, 'active');
+    return this.rules.setStatus(user, ruleCode, 'active');
   }
 
   @Post('rules/:ruleCode/archive')
   archive(@Param('ruleCode') ruleCode: string, @CurrentUser() user: SessionUser) {
-    return this.service.setStatus(user, ruleCode, 'archived');
+    return this.rules.setStatus(user, ruleCode, 'archived');
+  }
+
+  @Delete('rules/:ruleCode')
+  delete(@Param('ruleCode') ruleCode: string, @CurrentUser() user: SessionUser) {
+    return this.rules.setStatus(user, ruleCode, 'archived');
   }
 
   // ---------- Audit log ----------
@@ -168,7 +179,7 @@ export class AiPilotController {
     @Query('limit') limit: string | undefined,
   ) {
     const lim = limit ? Number.parseInt(limit, 10) : undefined;
-    return this.service.listAuditLog({
+    return this.rules.listAuditLog({
       ruleCode: ruleCode || undefined,
       actorId: actorId || undefined,
       limit: Number.isFinite(lim) ? lim : undefined,
@@ -176,21 +187,14 @@ export class AiPilotController {
   }
 
   // ---------- Welcome state ----------
-  // Kept admin-gated: only admins ever see the modal.
 
   @Get('welcome-state')
   welcomeState(@CurrentUser() user: SessionUser) {
-    return this.service.getWelcomeState(user);
+    return this.rules.getWelcomeState(user);
   }
 
   @Post('welcome-state/dismiss')
   dismissWelcome(@CurrentUser() user: SessionUser) {
-    return this.service.dismissWelcome(user);
-  }
-
-  // Convenience: also allow DELETE on rules to mean archive.
-  @Delete('rules/:ruleCode')
-  delete(@Param('ruleCode') ruleCode: string, @CurrentUser() user: SessionUser) {
-    return this.service.setStatus(user, ruleCode, 'archived');
+    return this.rules.dismissWelcome(user);
   }
 }

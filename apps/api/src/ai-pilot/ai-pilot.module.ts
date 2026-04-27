@@ -8,6 +8,8 @@ import { PrismaService } from '../common/prisma.service';
 import { AiPilotController } from './ai-pilot.controller';
 import { AiPilotCronService } from './ai-pilot.cron';
 import { AiPilotService } from './ai-pilot.service';
+import { AiPilotRulesService } from './ai-pilot-rules.service';
+import { AiPilotSandboxService } from './ai-pilot-sandbox.service';
 import { AiClientService } from './ai-client.service';
 
 @Module({
@@ -25,6 +27,8 @@ import { AiClientService } from './ai-client.service';
     AuthGuard,
     AdminGuard,
     AiPilotService,
+    AiPilotRulesService,
+    AiPilotSandboxService,
     AiClientService,
     AiPilotCronService,
   ],
