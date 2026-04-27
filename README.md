@@ -1,5 +1,7 @@
 # SES — Smart Escalation System
 
+> Last updated: 2026-04-27
+
 SES is a full-stack TypeScript platform for auditing master-data and
 effort-planning Excel workbooks, flagging issues per business function,
 notifying the right owner through the Manager Directory, and walking the
