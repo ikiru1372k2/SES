@@ -35,9 +35,11 @@ Upload Excel workbooks → audit engine flags issues per business function → n
         │                        │  └──────────────────────────────────┘   │
         │                        │                                          │
         │                        │  ┌──────────┐  ┌────────────────────┐   │
-        │                        │  │ SLA Cron │  │  Notifications     │   │
-        │                        │  │ (15 min) │  │  SMTP / MS Teams   │   │
-        │                        │  └──────────┘  └────────────────────┘   │
+        │                        │  │ SLA Cron │  │  Compose Service   │   │
+        │                        │  │ (15 min) │  │  records handoff   │   │
+        │                        │  └──────────┘  └────────┬───────────┘   │
+        │                        └────────────────────────┬─┘               │
+        │  ◄── client opens mailto: / Teams deep-link ────┘                 │
         │                        └────────┬─────────────────────────────────┘
         │                                 │
         └─────────────────────────────────┤
@@ -119,7 +121,11 @@ Upload Excel workbooks → audit engine flags issues per business function → n
         │
         └──► TrackingEntry created per manager
                 │
-                ├── manager found  → notify via SMTP / Teams
+                ├── manager found  → user composes in app
+                │                   → clicks Send → API records handoff
+                │                   → browser opens mailto: (Outlook)
+                │                     or Teams deep-link (Teams)
+                │                   → auditor's own app sends — no SMTP
                 └── no email found → UI shows "Add to directory"
 ```
 
@@ -152,6 +158,39 @@ Upload Excel workbooks → audit engine flags issues per business function → n
   SlaEngine cron runs every 15 min (SLA_ENFORCER_INTERVAL_MINUTES).
   Channel gate: 2 Outlook sends → 1 Teams send → repeat cycle.
 ```
+
+---
+
+## Notification delivery — client handoff pattern
+
+SES does **not** send email or Teams messages itself. There is no SMTP server and no Teams incoming webhook. Instead:
+
+```
+  User clicks "Send" in Composer
+          │
+          ▼
+  POST /api/v1/tracking/:id/send
+  API records the handoff:
+    • writes NotificationLog row
+    • writes TrackingEvent row
+    • advances TrackingEntry.stage
+    • returns { subject, body, to, cc, channel }
+          │
+          ▼
+  Browser receives the resolved content
+          │
+          ├── channel = outlook  →  openMailto()
+          │                         opens  mailto:manager@company.com?subject=...&body=...
+          │                         user's default mail client (Outlook, Gmail, etc.) opens
+          │                         auditor reviews and clicks Send in their own client
+          │
+          └── channel = teams    →  openTeamsChat()
+                                    opens  teams.microsoft.com/l/chat/…?users=…&message=…
+                                    Teams desktop or web app opens with prefilled message
+                                    auditor reviews and clicks Send in Teams
+```
+
+**Why this design:** replies thread back to the auditor naturally (not through SES), no outbound credentials are needed on the server, and the auditor is accountable for what is sent. The API is purely the source of truth for tracking — it records *intent* and *content*, not delivery.
 
 ---
 
@@ -318,8 +357,6 @@ Copy `.env.example` → `.env`. All variables are optional except `DATABASE_URL`
 | `REDIS_URL` | `redis://127.0.0.1:6380` | Socket.IO adapter |
 | `SES_AUTH_SECRET` | *(set in .env.example)* | Signs session cookies; ≥ 32 chars in prod |
 | `SES_ALLOW_DEV_LOGIN` | unset | Password-less login; disabled when `NODE_ENV=production` |
-| `SES_SMTP_URL` | unset | Outbound email for escalations |
-| `SES_TEAMS_INCOMING_WEBHOOK_URL` | unset | MS Teams escalation channel |
 | `AI_SERVICE_URL` | `http://localhost:8000` | FastAPI AI Pilot endpoint |
 | `AI_MODEL` | `qwen2.5:7b` | Ollama model to use |
 | `SLA_ENFORCER_INTERVAL_MINUTES` | `15` | SLA cron cadence |
@@ -358,7 +395,7 @@ cd ../..
 | Database | PostgreSQL 16 |
 | Cache / realtime | Redis 7 (Socket.IO adapter) |
 | Workbook I/O | ExcelJS (XLSX only) |
-| Delivery | SMTP, Microsoft Teams incoming webhook |
+| Delivery | Client-side handoff — `mailto:` (Outlook) or Teams deep-link; no SMTP, no webhook |
 | AI | FastAPI + Ollama (local LLM, default: qwen2.5:7b) |
 | Tests | Node test runner (API + domain), Vitest + React Testing Library (web) |
 
