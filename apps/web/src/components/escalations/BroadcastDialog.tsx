@@ -18,6 +18,7 @@ import {
 import { openMailto, openTeamsChat } from '../../lib/outbound/clientHandoff';
 import { Modal } from '../shared/Modal';
 import { Button } from '../shared/Button';
+import { TokenTextarea } from '../shared/TokenTextarea';
 import { PreviewPane } from './PreviewPane';
 
 // Issue #75: 'both' was removed (client-handoff opens one app at a time).
@@ -648,13 +649,14 @@ export function BroadcastDialog({
 
               <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                 Body
-                <textarea
-                  value={body}
-                  onChange={(e) => { setBody(e.target.value); setActivePresetId(null); }}
-                  rows={channel === 'teams' ? 4 : 7}
-                  required
-                  className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 font-mono text-xs leading-relaxed dark:border-gray-700 dark:bg-gray-900"
-                />
+                <div className="mt-1.5">
+                  <TokenTextarea
+                    value={body}
+                    onChange={(e) => { setBody(e.target.value); setActivePresetId(null); }}
+                    rows={channel === 'teams' ? 4 : 7}
+                    required
+                  />
+                </div>
                 <span className="mt-1 block text-[10px] text-gray-400">
                   Tokens: <code>{'{{managerName}}'}</code> <code>{'{{projectCount}}'}</code>{' '}
                   <code>{'{{dueDate}}'}</code> <code>{'{{auditRunCode}}'}</code> — substituted per-recipient at send time.

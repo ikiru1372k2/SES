@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import toast from 'react-hot-toast';
 import type { NotificationDraft } from '../../../lib/types';
+import { TokenTextarea } from '../../shared/TokenTextarea';
 
 export function BroadcastComposer({
   drafts,
@@ -62,11 +63,13 @@ export function BroadcastComposer({
         </div>
         <div className="flex min-h-0 flex-1 flex-col">
           <label className="block text-xs font-medium text-gray-500">Body</label>
-          <textarea
-            value={body}
-            onChange={(event) => onBodyChange(event.target.value)}
-            className="mt-1 min-h-0 flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
-          />
+          <div className="mt-1">
+            <TokenTextarea
+              value={body}
+              onChange={(event) => onBodyChange(event.target.value)}
+              rows={8}
+            />
+          </div>
         </div>
         <button
           type="button"

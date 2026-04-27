@@ -1,4 +1,5 @@
 import { PreviewPane } from '../PreviewPane';
+import { TokenTextarea } from '../../shared/TokenTextarea';
 
 export interface EditPaneProps {
   viewMode: 'preview' | 'edit';
@@ -37,13 +38,14 @@ export function EditPane({
         </div>
         <div>
           <label className="text-xs font-medium text-gray-500">Body (markdown)</label>
-          <textarea
-            disabled={readOnly}
-            value={body}
-            onChange={(e) => onBodyChange(e.target.value)}
-            rows={10}
-            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 font-mono text-sm dark:border-gray-600 dark:bg-gray-900"
-          />
+          <div className="mt-1">
+            <TokenTextarea
+              disabled={readOnly}
+              value={body}
+              onChange={(e) => onBodyChange(e.target.value)}
+              rows={10}
+            />
+          </div>
         </div>
       </>
     );
