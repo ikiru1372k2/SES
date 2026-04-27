@@ -9,9 +9,11 @@ import {
   buildIssuesCsv,
   createId,
   createIssueKey,
+  mergeAuditResults,
   normalizeObservedManagerLabel,
   normalizeProcessPolicies,
   resolveFunctionPolicy,
+  runAiPilotRules,
   runFunctionAudit,
 } from '@ses/domain';
 import type { FunctionId } from '@ses/domain';
@@ -24,6 +26,7 @@ import { requestContext } from './common/request-context';
 import { RealtimeGateway } from './realtime/realtime.gateway';
 import { StatusReconcilerService } from './status-reconciler.service';
 import { resolveIssueEmailsFromDirectory } from './directory/resolve-issue-emails';
+import { AiPilotService } from './ai-pilot/ai-pilot.service';
 
 /**
  * Stable sha256 over the sorted identity of each issue.
@@ -59,7 +62,7 @@ function serializeIssue(issue: {
   email: string | null;
   rowIndex: number | null;
   auditRun: { displayCode: string };
-  rule: { name: string; version: number; category: string };
+  rule: { name: string; version: number; category: string; source?: string };
 }) {
   return {
     id: issue.id,
@@ -80,6 +83,7 @@ function serializeIssue(issue: {
     ruleCode: issue.ruleCode,
     ruleVersion: issue.rule.version,
     ruleName: issue.rule.name,
+    ruleSource: issue.rule.source ?? 'system',
     auditRunCode: issue.auditRun.displayCode,
     category: issue.rule.category as AuditIssue['category'],
     reason: issue.reason ?? '',
@@ -118,7 +122,7 @@ function serializeRun(run: {
     email: string | null;
     rowIndex: number | null;
     auditRun: { displayCode: string };
-    rule: { name: string; version: number; category: string };
+    rule: { name: string; version: number; category: string; source?: string };
   }>;
   policySnapshot: unknown;
   summary: unknown;
@@ -157,6 +161,7 @@ export class AuditsService {
     private readonly processAccess: ProcessAccessService,
     private readonly realtime: RealtimeGateway,
     private readonly statusReconciler: StatusReconcilerService,
+    private readonly aiPilot: AiPilotService,
   ) {}
 
   private async getRunWithAccess(user: SessionUser, idOrCode: string) {
@@ -316,10 +321,18 @@ export class AuditsService {
       const resolvedFunctionId = (file.functionId ?? 'master-data') as FunctionId;
       const functionPolicy = resolveFunctionPolicy(processPolicies, resolvedFunctionId);
       // PRISMA-JSON: auditPolicy is stored as Json; cast satisfies domain runAudit signature
-      const result = runFunctionAudit(resolvedFunctionId, domainFile, functionPolicy as any, {
+      const engineResult = runFunctionAudit(resolvedFunctionId, domainFile, functionPolicy as any, {
         issueScope: process.displayCode,
         runCode,
       });
+      const aiSpecs = await this.aiPilot.loadActiveSpecs(resolvedFunctionId);
+      const aiResult = runAiPilotRules(domainFile, {
+        functionId: resolvedFunctionId,
+        rules: aiSpecs,
+        issueScope: process.displayCode,
+        runCode,
+      });
+      const result = mergeAuditResults(engineResult, aiResult);
 
       // Pre-resolve emails from an explicit mapping source. Enabled for
       // functions whose audit workbook is authored separately from the

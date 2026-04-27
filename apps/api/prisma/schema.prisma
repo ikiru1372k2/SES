@@ -80,6 +80,9 @@ model User {
   trackingVerifications TrackingEntry[] @relation("TrackingVerifier")
   trackingStageComments TrackingStageComment[] @relation("TrackingStageCommentBy")
   trackingAttachments TrackingAttachment[] @relation("TrackingAttachmentBy")
+  aiRulesAuthored   AiPilotRuleMeta[]       @relation("AiRuleAuthoredBy")
+  aiSandboxSessions AiPilotSandboxSession[] @relation("AiSandboxBy")
+  aiPilotAuditLogs  AiPilotAuditLog[]       @relation("AiAuditLogActor")
 }
 
 model Process {
@@ -158,11 +161,12 @@ model SystemFunction {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  processMap       ProcessFunction[]
-  files            WorkbookFile[]
-  fileDrafts       FileDraft[]
-  auditRules       AuditRule[]
-  scopePermissions ProcessMemberScopePermission[]
+  processMap        ProcessFunction[]
+  files             WorkbookFile[]
+  fileDrafts        FileDraft[]
+  auditRules        AuditRule[]
+  scopePermissions  ProcessMemberScopePermission[]
+  aiSandboxSessions AiPilotSandboxSession[]
 }
 
 /// Enablement row per (process, function). Every new Process is seeded
@@ -340,11 +344,67 @@ model AuditRule {
   isEnabledDefault Boolean  @default(true)
   paramsSchema     Json
   version          Int      @default(1)
+  source           String   @default("system")
+  status           String   @default("active")
   createdAt        DateTime @default(now())
   function         SystemFunction @relation(fields: [functionId], references: [id])
   issues           AuditIssue[]
+  aiMeta           AiPilotRuleMeta?
 
   @@index([functionId])
+  @@index([source, status])
+}
+
+model AiPilotRuleMeta {
+  id              String   @id
+  ruleCode        String   @unique
+  description     String
+  logic           Json
+  flagMessage     String   @default("")
+  authoredById    String
+  sourcePrompt    String
+  sourceSessionId String?
+  llmModel        String   @default("qwen2.5:7b")
+  llmRawResponse  Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  rule            AuditRule              @relation(fields: [ruleCode], references: [ruleCode], onDelete: Cascade)
+  authoredBy      User                   @relation("AiRuleAuthoredBy", fields: [authoredById], references: [id])
+  sourceSession   AiPilotSandboxSession? @relation(fields: [sourceSessionId], references: [id], onDelete: SetNull)
+
+  @@index([authoredById])
+  @@index([sourceSessionId])
+}
+
+model AiPilotSandboxSession {
+  id            String   @id
+  authoredById  String
+  functionId    String
+  fileName      String
+  fileBytes     Bytes
+  sheetName     String?
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  authoredBy    User              @relation("AiSandboxBy", fields: [authoredById], references: [id])
+  function      SystemFunction    @relation(fields: [functionId], references: [id])
+  rulesAuthored AiPilotRuleMeta[]
+
+  @@index([authoredById])
+  @@index([expiresAt])
+}
+
+model AiPilotAuditLog {
+  id        String   @id
+  actorId   String
+  action    String
+  ruleCode  String?
+  payload   Json
+  createdAt DateTime @default(now())
+  actor     User     @relation("AiAuditLogActor", fields: [actorId], references: [id])
+
+  @@index([actorId])
+  @@index([ruleCode])
+  @@index([createdAt])
 }
 
 model AuditRun {

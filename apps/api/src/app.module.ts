@@ -70,6 +70,7 @@ import { InAppNotificationsService } from './in-app-notifications.service';
 import { SavedViewsController } from './saved-views.controller';
 import { SavedViewsService } from './saved-views.service';
 import { SlaEngineService } from './sla-engine.service';
+import { AiPilotModule } from './ai-pilot/ai-pilot.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { SlaEngineService } from './sla-engine.service';
         limit: () => (process.env.NODE_ENV === 'test' ? 10_000 : 400),
       },
     ]),
+    AiPilotModule,
   ],
   controllers: [
     HealthController,

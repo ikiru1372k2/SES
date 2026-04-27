@@ -590,10 +590,17 @@ export class TrackingComposeService {
           const ruleEntry = iss ? AUDIT_RULES_BY_CODE.get(iss.ruleCode) : null;
           const ruleName = ruleEntry?.name ?? '';
           const severity = iss?.severity ?? ruleEntry?.defaultSeverity ?? '';
-          const missingFieldLabel =
-            engineId === ('master-data' as FunctionId) && ruleName
-              ? ruleName.replace(/\s*required$/i, '').trim()
-              : null;
+          // AI Pilot rules carry the human-readable explanation in `reason`
+          // (interpolated flagMessage). For master-data they replace the
+          // engine's column-name extraction; other engines surface `reason`
+          // through their own columns already.
+          const missingFieldLabel = (() => {
+            if (iss?.ruleCode?.startsWith('ai_')) return iss.reason ?? null;
+            if (engineId === ('master-data' as FunctionId) && ruleName) {
+              return ruleName.replace(/\s*required$/i, '').trim();
+            }
+            return null;
+          })();
           const months = Array.isArray(iss?.missingMonths)
             ? (iss!.missingMonths as unknown[]).map((m) => String(m).trim()).filter(Boolean).join(', ')
             : null;

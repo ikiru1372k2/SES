@@ -4,6 +4,7 @@ import { functionRateAuditEngine } from './function-rate';
 import { internalCostRateAuditEngine } from './internal-cost-rate';
 import { masterDataAuditEngine } from './master-data';
 import { missingPlanAuditEngine } from './missing-plan';
+import { opportunitiesAuditEngine } from './opportunities';
 import { overPlanningAuditEngine } from './over-planning';
 import type { FunctionAuditEngine, FunctionAuditOptions } from './types';
 
@@ -15,6 +16,7 @@ export const FUNCTION_AUDIT_ENGINES: Record<FunctionId, FunctionAuditEngine> = {
   'missing-plan': missingPlanAuditEngine,
   'function-rate': functionRateAuditEngine,
   'internal-cost-rate': internalCostRateAuditEngine,
+  'opportunities': opportunitiesAuditEngine,
 };
 
 export function getFunctionAuditEngine(functionId: string | undefined): FunctionAuditEngine {
@@ -80,6 +82,19 @@ export {
   isCostRateMonthColumn,
   classifyCostRateCell,
 } from './internal-cost-rate';
+export {
+  OPPORTUNITIES_RULE_CATALOG,
+  OPPORTUNITIES_RULES_BY_CODE,
+  OPP_CLOSED_DATE_PAST_RULE_CODE,
+  OPP_CLOSED_DATE_PAST_LOW_PROB_RULE_CODE,
+  OPP_PROJECT_START_PAST_LOW_PROB_RULE_CODE,
+  OPP_BCS_MISSING_RULE_CODE,
+  OPP_BCS_AVAILABLE_LOW_PROB_RULE_CODE,
+  OPP_INCORRECT_BU_RULE_CODE,
+  OPP_COMPOSITE_RULE_CODE,
+  DEFAULT_OPPORTUNITIES_POLICY,
+} from './opportunities';
+export type { OpportunitiesPolicy } from './opportunities';
 export {
   normalizeProcessPolicies,
   createDefaultProcessPolicies,

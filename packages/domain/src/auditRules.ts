@@ -4,6 +4,7 @@ import { FUNCTION_RATE_RULE_CATALOG } from './functions-audit/function-rate/rule
 import { INTERNAL_COST_RATE_RULE_CATALOG } from './functions-audit/internal-cost-rate/rules';
 import { MASTER_DATA_RULE_CATALOG } from './functions-audit/master-data/rules';
 import { MISSING_PLAN_RULE_CATALOG } from './functions-audit/missing-plan/rules';
+import { OPPORTUNITIES_RULE_CATALOG } from './functions-audit/opportunities/rules';
 import { OVER_PLANNING_ENGINE_RULE_CATALOG as OVER_PLANNING_RULE_CATALOG_IMPORT } from './functions-audit/over-planning/rules';
 
 export interface RuleCatalogEntry {
@@ -39,6 +40,7 @@ export const RULE_CATALOG_BY_FUNCTION: Record<FunctionId, RuleCatalogEntry[]> = 
   'missing-plan': MISSING_PLAN_RULE_CATALOG,
   'function-rate': FUNCTION_RATE_RULE_CATALOG,
   'internal-cost-rate': INTERNAL_COST_RATE_RULE_CATALOG,
+  'opportunities': OPPORTUNITIES_RULE_CATALOG,
 };
 
 export function getRuleCatalogForFunction(functionId: FunctionId): RuleCatalogEntry[] {

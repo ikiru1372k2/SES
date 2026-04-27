@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GitCompare, Plus, Users } from 'lucide-react';
+import { GitCompare, Plus, Sparkles, Users } from 'lucide-react';
 import { useKeyboardShortcut } from '../hooks/useKeyboardShortcut';
 import { bucketedProcesses } from '../lib/scheduleHelpers';
 import { CreateProcessModal } from '../components/dashboard/CreateProcessModal';
@@ -8,6 +8,7 @@ import { ProcessCard } from '../components/dashboard/ProcessCard';
 import { AppShell } from '../components/layout/AppShell';
 import { usePageHeader } from '../components/layout/usePageHeader';
 import { Button } from '../components/shared/Button';
+import { WelcomeModal as AiPilotWelcomeModal } from '../components/ai-pilot/WelcomeModal';
 import { EmptyState } from '../components/shared/EmptyState';
 import { Skeleton } from '../components/shared/Skeleton';
 import { useCurrentUser } from '../components/auth/authContext';
@@ -102,13 +103,22 @@ export function Dashboard() {
               Compare processes
             </Link>
             {user?.role === 'admin' ? (
-              <Link
-                to="/admin/directory"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100"
-              >
-                <Users size={14} />
-                Manager directory
-              </Link>
+              <>
+                <Link
+                  to="/admin/directory"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-800 hover:border-brand hover:text-brand dark:border-gray-700 dark:text-gray-100"
+                >
+                  <Users size={14} />
+                  Manager directory
+                </Link>
+                <Link
+                  to="/admin/ai-pilot"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-brand bg-brand-subtle px-3 py-2 text-sm font-medium text-brand hover:bg-brand hover:text-white"
+                >
+                  <Sparkles size={14} />
+                  AI Pilot
+                </Link>
+              </>
             ) : null}
             <Button onClick={() => setShowCreate(true)} leading={<Plus size={16} />}>Create New Process</Button>
           </div>
@@ -137,6 +147,7 @@ export function Dashboard() {
         )}
       </div>
       {showCreate ? <CreateProcessModal onClose={() => setShowCreate(false)} /> : null}
+      <AiPilotWelcomeModal />
     </AppShell>
   );
 }

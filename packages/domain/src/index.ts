@@ -20,3 +20,4 @@ export * from './managerDirectory';
 export * from './escalations';
 export * from './tenantSettings';
 export * from './functions-audit';
+export * from './ai-pilot';
