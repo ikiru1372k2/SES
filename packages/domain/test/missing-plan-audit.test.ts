@@ -294,3 +294,82 @@ test('end-to-end: mixed rows — zero-effort and blank-effort rows flagged', asy
   const flaggedNos = result.issues.map((i) => i.projectNo).sort();
   assert.deepEqual(flaggedNos, ['P001', 'P003', 'P005']);
 });
+
+// ─── Policy plumbing through normalizeProcessPolicies ───────────────────────
+// The runner pipes process.auditPolicy through normalizeProcessPolicies and
+// hands the resolved per-function slice to the engine. The toggles
+// historically live on the over-planning blob (and the QGC drawer still
+// writes them there), so the normaliser must forward them to the missing-
+// plan slice — otherwise turning a toggle off in the UI silently has no
+// effect on the missing-plan engine.
+
+test('legacy AuditPolicy with missingEffortEnabled=false reaches missing-plan via resolveFunctionPolicy', async () => {
+  const { normalizeAuditPolicy } = await import('../src/auditPolicy.js');
+  const { normalizeProcessPolicies, resolveFunctionPolicy } = await import(
+    '../src/functions-audit/policies.js'
+  );
+  const legacy = normalizeAuditPolicy({ missingEffortEnabled: false });
+  const policies = normalizeProcessPolicies(legacy);
+  const sliced = resolveFunctionPolicy(policies, 'missing-plan');
+
+  const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': '' })]);
+  const result = runFunctionAudit('missing-plan', file, sliced as never);
+
+  assert.equal(
+    result.issues.length,
+    0,
+    'missing-plan engine must respect missingEffortEnabled=false from a legacy AuditPolicy',
+  );
+});
+
+test('legacy AuditPolicy with zeroEffortEnabled=false reaches missing-plan via resolveFunctionPolicy', async () => {
+  const { normalizeAuditPolicy } = await import('../src/auditPolicy.js');
+  const { normalizeProcessPolicies, resolveFunctionPolicy } = await import(
+    '../src/functions-audit/policies.js'
+  );
+  const legacy = normalizeAuditPolicy({ zeroEffortEnabled: false });
+  const policies = normalizeProcessPolicies(legacy);
+  const sliced = resolveFunctionPolicy(policies, 'missing-plan');
+
+  const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': 0 })]);
+  const result = runFunctionAudit('missing-plan', file, sliced as never);
+
+  assert.equal(
+    result.issues.length,
+    0,
+    'missing-plan engine must respect zeroEffortEnabled=false from a legacy AuditPolicy',
+  );
+});
+
+test('ProcessPolicies missing-plan slice overrides over-planning legacy fallback', async () => {
+  const { normalizeAuditPolicy } = await import('../src/auditPolicy.js');
+  const { normalizeProcessPolicies, resolveFunctionPolicy } = await import(
+    '../src/functions-audit/policies.js'
+  );
+  // Over-planning slice still carries the legacy flags (from a migrated tenant).
+  // The missing-plan slice explicitly sets missingEffortEnabled=true, which
+  // must win over whatever the over-planning slice says.
+  const op = normalizeAuditPolicy({ missingEffortEnabled: false });
+  const policies = normalizeProcessPolicies({
+    byFunction: {
+      'over-planning': op,
+      'master-data': {},
+      'missing-plan': { missingEffortEnabled: true },
+      'function-rate': {},
+      'internal-cost-rate': {},
+      'opportunities': {},
+    },
+    updatedAt: new Date().toISOString(),
+  });
+  const sliced = resolveFunctionPolicy(policies, 'missing-plan');
+
+  const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': '' })]);
+  const result = runFunctionAudit('missing-plan', file, sliced as never);
+
+  assert.equal(
+    result.issues.length,
+    1,
+    'explicit missing-plan slice must override the over-planning carry-over',
+  );
+  assert.equal(result.issues[0]!.ruleCode, MP_EFFORT_MISSING_RULE_CODE);
+});

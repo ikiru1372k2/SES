@@ -14,12 +14,21 @@ export interface MasterDataPolicy {
   /** Reserved for future per-column toggles. */
   enabled?: boolean;
 }
+// Missing-plan toggles share the same names as the legacy AuditPolicy
+// fields. Having them on the slice lets `normalizeProcessPolicies` carry
+// the legacy single-blob settings forward so the engine sees them
+// regardless of whether the caller stores ProcessPolicies or the legacy
+// AuditPolicy shape.
+export interface MissingPlanPolicy {
+  zeroEffortEnabled?: boolean;
+  missingEffortEnabled?: boolean;
+}
 export type EmptyPolicy = Record<string, never>;
 
 export interface FunctionPolicies {
   'over-planning': OverPlanningPolicy;
   'master-data': MasterDataPolicy;
-  'missing-plan': EmptyPolicy;
+  'missing-plan': MissingPlanPolicy;
   'function-rate': EmptyPolicy;
   'internal-cost-rate': EmptyPolicy;
   'opportunities': OpportunitiesPolicy;
@@ -39,6 +48,22 @@ function isProcessPolicies(value: unknown): value is ProcessPolicies {
   );
 }
 
+// Pull missing-plan flags out of a legacy AuditPolicy blob. The two
+// toggles historically lived on the over-planning blob even though the
+// missing-plan engine consumes them — the per-function rework moved each
+// engine to its own slice but this carry-over keeps stored legacy policies
+// (and the QGC drawer, which still writes the flat AuditPolicy shape)
+// driving the missing-plan engine the same way they always did.
+function extractMissingPlanFromLegacy(
+  raw: Partial<AuditPolicy> | undefined,
+): MissingPlanPolicy {
+  if (!raw) return {};
+  const slice: MissingPlanPolicy = {};
+  if (raw.zeroEffortEnabled !== undefined) slice.zeroEffortEnabled = raw.zeroEffortEnabled;
+  if (raw.missingEffortEnabled !== undefined) slice.missingEffortEnabled = raw.missingEffortEnabled;
+  return slice;
+}
+
 /**
  * Accept either the legacy single-blob `AuditPolicy` (all tenants before
  * the rework) or the new `ProcessPolicies` shape. Legacy blobs map to the
@@ -49,11 +74,21 @@ export function normalizeProcessPolicies(raw: unknown): ProcessPolicies {
   const now = new Date().toISOString();
   if (isProcessPolicies(raw)) {
     const by = raw.byFunction ?? ({} as Partial<FunctionPolicies>);
+    const op = normalizeAuditPolicy(by['over-planning']);
+    // Carry the missing-plan flags from over-planning if the missing-plan
+    // slice did not set them itself. Keeps the legacy QGC drawer (which
+    // writes the flags onto the over-planning blob) driving the missing-
+    // plan engine after a process has been migrated to ProcessPolicies.
+    const missingPlanExplicit = (by['missing-plan'] ?? {}) as MissingPlanPolicy;
+    const missingPlan: MissingPlanPolicy = {
+      ...extractMissingPlanFromLegacy(op),
+      ...missingPlanExplicit,
+    };
     return {
       byFunction: {
-        'over-planning': normalizeAuditPolicy(by['over-planning']),
+        'over-planning': op,
         'master-data': by['master-data'] ?? {},
-        'missing-plan': by['missing-plan'] ?? {},
+        'missing-plan': missingPlan,
         'function-rate': by['function-rate'] ?? {},
         'internal-cost-rate': by['internal-cost-rate'] ?? {},
         'opportunities': by['opportunities'] ?? {},
@@ -63,13 +98,16 @@ export function normalizeProcessPolicies(raw: unknown): ProcessPolicies {
   }
   // Legacy shape: treat the blob as the over-planning slice. Opportunities
   // settings live nested under AuditPolicy.opportunities, so normalising the
-  // blob via normalizeAuditPolicy already preserves them — we still expose an
-  // empty per-function slice here to keep the FunctionPolicies shape uniform.
+  // blob via normalizeAuditPolicy already preserves them. The missing-plan
+  // toggles also live on the legacy blob — copy them to the missing-plan
+  // slice so `resolveFunctionPolicy(_, 'missing-plan')` returns the toggles
+  // instead of an empty object.
+  const legacy = raw as Partial<AuditPolicy> | undefined;
   return {
     byFunction: {
-      'over-planning': normalizeAuditPolicy(raw as Partial<AuditPolicy> | undefined),
+      'over-planning': normalizeAuditPolicy(legacy),
       'master-data': {},
-      'missing-plan': {},
+      'missing-plan': extractMissingPlanFromLegacy(legacy),
       'function-rate': {},
       'internal-cost-rate': {},
       'opportunities': {},
