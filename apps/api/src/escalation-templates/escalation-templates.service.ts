@@ -15,7 +15,7 @@ function serialize(t: {
   channel: string;
   active: boolean;
   version: number;
-  createdBy: string;
+  createdById: string;
   createdAt: Date;
   updatedAt: Date;
 }) {
@@ -29,7 +29,7 @@ function serialize(t: {
     channel: t.channel,
     active: t.active,
     version: t.version,
-    createdBy: t.createdBy,
+    createdBy: t.createdById,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
@@ -118,7 +118,7 @@ export class EscalationTemplatesService {
           channel: (body.channel ?? 'email').trim(),
           active: true,
           version: 1,
-          createdBy: user.id,
+          createdById: user.id,
         },
       });
       await this.activity.append(tx, {
@@ -164,7 +164,7 @@ export class EscalationTemplatesService {
           channel: body.channel ?? prior.channel,
           active: body.active ?? true,
           version: prior.version + 1,
-          createdBy: user.id,
+          createdById: user.id,
         },
       });
       await this.activity.append(tx, {

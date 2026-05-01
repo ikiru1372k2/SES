@@ -158,7 +158,7 @@ async function main() {
           channel: tpl.channel,
           active: true,
           version: 1,
-          createdBy: admin.id,
+          createdById: admin.id,
         },
       });
     }
