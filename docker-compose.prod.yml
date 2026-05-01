@@ -66,6 +66,9 @@ services:
       SES_CORS_ORIGINS: ${SES_CORS_ORIGINS:-http://localhost:3210,http://127.0.0.1:3210}
       SES_BASE_URL: ${SES_BASE_URL:-http://localhost:3210}
       SES_COOKIE_SECURE: ${SES_COOKIE_SECURE:-false}
+      AI_SERVICE_URL: ${AI_SERVICE_URL_DOCKER:-http://host.docker.internal:8000}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     depends_on:
       postgres:
         condition: service_healthy

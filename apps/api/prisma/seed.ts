@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { PrismaClient } from '@prisma/client';
-import { AUDIT_RULE_CATALOG, createDefaultAuditPolicy, createId } from '@ses/domain';
+import { AUDIT_RULE_CATALOG, FUNCTION_REGISTRY, createDefaultAuditPolicy, createId } from '@ses/domain';
 import { DEFAULT_TENANT_ID } from '../src/common/default-tenant';
 
 const cwd = process.cwd();
@@ -51,6 +51,14 @@ async function main() {
         isActive: true,
       },
       create: user,
+    });
+  }
+
+  for (const fn of FUNCTION_REGISTRY) {
+    await prisma.systemFunction.upsert({
+      where: { id: fn.id },
+      create: { id: fn.id, label: fn.label, displayOrder: fn.displayOrder, isSystem: true },
+      update: { label: fn.label, displayOrder: fn.displayOrder, isSystem: true },
     });
   }
 
