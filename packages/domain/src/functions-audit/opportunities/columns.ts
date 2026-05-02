@@ -42,6 +42,18 @@ export const OPP_CLS_DATE_PAST_ALIASES: readonly string[] = [
   'Close Date In Past',
 ];
 export const OPP_CLS_DATE_ALIASES: readonly string[] = ['CLS_DATE', 'Close Date'];
+// "Opportunity Owner" is the human in charge of a deal in the source CRM.
+// We treat it as the project manager for escalation routing — same role as
+// `Project Manager` in the master-data file. Email is left blank because
+// the source file doesn't carry one; the Manager Directory resolver fills
+// it in by matching the owner's name (same path master-data uses).
+export const OPP_OWNER_ALIASES: readonly string[] = [
+  'Opportunity Owner',
+  'opportunity owner',
+  'OpportunityOwner',
+  'Owner',
+  'owner',
+];
 
 // Direct lookup first, then a trim-fallback pass for the trailing-space
 // headers seen in real exports (e.g. 'Business Unit ').

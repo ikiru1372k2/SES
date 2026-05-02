@@ -16,7 +16,7 @@ import {
   type DirectoryRowInput,
   type DirectoryRowValidation,
 } from '@ses/domain';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../repositories/types';
 import { PrismaService } from '../common/prisma.service';
 import { IdentifierService } from '../common/identifier.service';
 import { ActivityLogService } from '../common/activity-log.service';

@@ -1,0 +1,245 @@
+syntax = "proto3";
+
+package ses.ai_pilot.v1;
+
+// Service-to-service contract between the SES Nest API (client) and the
+// FastAPI AI sidecar (server). The Nest API never exposes this directly
+// to browsers — see apps/api/src/ai-pilot/ai-pilot.controller.ts for the
+// HTTP boundary the frontend talks to.
+
+service AiPilot {
+  rpc Health(HealthRequest) returns (HealthResponse);
+
+  // Object-reference based registration (preferred). Caller has already
+  // uploaded the file to S3-compatible storage; this RPC carries only
+  // the pointer + metadata so the AI sidecar can fetch via its own
+  // credentials or a pre-signed URL.
+  rpc RegisterObject(RegisterObjectRequest) returns (RegisterObjectResponse);
+
+  // Legacy: client streams sample bytes. Kept behind a compatibility
+  // path; new code should use RegisterObject instead.
+  rpc UploadSample(stream UploadSampleChunk) returns (UploadSampleResponse);
+
+  // Server streams progress events ending with a single Result or Error.
+  // Long-running (LLM-backed) — current frontend awaits the final event,
+  // but the streaming shape is reserved for future progress UI without
+  // proto churn.
+  rpc GenerateRule(GenerateRuleRequest) returns (stream GenerateRuleEvent);
+
+  // Server streams progress events ending with a single Result or Error.
+  rpc EnhancePrompt(EnhancePromptRequest) returns (stream EnhancePromptEvent);
+}
+
+// ---------- PDF AI processing ----------
+//
+// Backend-to-backend pipeline for PDF extraction/summarization. The Nest
+// API persists job state in Postgres (table `pdf_processing_job`); the
+// FastAPI sidecar implements the server side of these RPCs and fetches
+// the PDF from S3 via the supplied ObjectRef (or its pre-signed URL).
+// Browsers never see this contract — they hit the HTTP boundary.
+
+service PdfProcessing {
+  // Idempotent job creation. The sidecar persists the (idempotency_key,
+  // tenant_id, object_key) tuple; a retry returns the same job_id.
+  rpc StartJob(StartPdfJobRequest) returns (StartPdfJobResponse);
+
+  // Snapshot lookup — does not subscribe to progress.
+  rpc GetJob(GetPdfJobRequest) returns (PdfJob);
+
+  // Server-streaming progress for one job. Emits Progress events while
+  // running, then exactly one terminal PdfJob (status=succeeded|failed)
+  // and closes. Reconnect-safe: clients pass the last seen sequence
+  // number to resume.
+  rpc StreamProgress(StreamPdfJobProgressRequest) returns (stream PdfJobEvent);
+}
+
+enum PdfJobKind {
+  PDF_JOB_KIND_UNSPECIFIED = 0;
+  PDF_JOB_KIND_EXTRACT     = 1;  // text + structure
+  PDF_JOB_KIND_SUMMARIZE   = 2;  // LLM summary
+}
+
+enum PdfJobStatus {
+  PDF_JOB_STATUS_UNSPECIFIED = 0;
+  PDF_JOB_STATUS_QUEUED      = 1;
+  PDF_JOB_STATUS_RUNNING     = 2;
+  PDF_JOB_STATUS_SUCCEEDED   = 3;
+  PDF_JOB_STATUS_FAILED      = 4;
+  PDF_JOB_STATUS_CANCELLED   = 5;
+}
+
+message StartPdfJobRequest {
+  string idempotency_key = 1;
+  string tenant_id = 2;
+  string requested_by_id = 3;
+  PdfJobKind kind = 4;
+  ObjectRef object = 5;        // points at the uploaded PDF in S3
+  string prompt = 6;           // ignored for EXTRACT
+  // Free-form caller hints (e.g. {"pages": "1-10"}). Bounded — server
+  // rejects payloads above 4 KiB to keep logs and DB rows compact.
+  string options_json = 7;
+}
+
+message StartPdfJobResponse {
+  string job_id = 1;
+  PdfJobStatus status = 2;
+  // True if this call resolved an existing idempotent job rather than
+  // creating one. Lets clients distinguish first-write from retry.
+  bool deduplicated = 3;
+}
+
+message GetPdfJobRequest {
+  string job_id = 1;
+}
+
+message StreamPdfJobProgressRequest {
+  string job_id = 1;
+  // Optional resume cursor. Server emits events with sequence > cursor.
+  int64 from_sequence = 2;
+}
+
+message PdfJob {
+  string job_id = 1;
+  string tenant_id = 2;
+  string requested_by_id = 3;
+  PdfJobKind kind = 4;
+  PdfJobStatus status = 5;
+  ObjectRef object = 6;
+  // Result is populated only when status == SUCCEEDED. Stored as JSON
+  // because shape varies by kind (extract → text+pages, summarize → text).
+  string result_json = 7;
+  string error_code = 8;
+  string error_message = 9;
+  int32 attempt = 10;
+  int64 started_at_ms = 11;
+  int64 finished_at_ms = 12;
+  int64 created_at_ms = 13;
+  int64 updated_at_ms = 14;
+}
+
+message PdfJobEvent {
+  int64 sequence = 1;
+  oneof event {
+    Progress progress = 2;
+    PdfJob terminal = 3;        // emitted exactly once on stream close
+  }
+}
+
+// ---------- Register (object-reference) ----------
+
+message ObjectRef {
+  string bucket = 1;
+  string object_key = 2;
+  string content_type = 3;
+  int64 size_bytes = 4;
+  string checksum_sha256 = 5;
+  // Optional pre-signed download URL. When empty, the sidecar uses its
+  // own credentials/region config to fetch directly.
+  string presigned_url = 6;
+}
+
+message RegisterObjectRequest {
+  string idempotency_key = 1;
+  string function_id = 2;
+  string original_file_name = 3;
+  ObjectRef object = 4;
+}
+
+message RegisterObjectResponse {
+  string session_id = 1;
+  repeated string columns = 2;
+  string preview_markdown = 3;
+}
+
+// ---------- Health ----------
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ok = 1;
+  string version = 2;
+}
+
+// ---------- Upload ----------
+
+message UploadSampleHeader {
+  string idempotency_key = 1;
+  string function_id = 2;
+  string file_name = 3;
+  int64 total_bytes = 4;
+}
+
+message UploadSampleChunk {
+  oneof chunk {
+    UploadSampleHeader header = 1;
+    bytes data = 2;
+  }
+}
+
+message UploadSampleResponse {
+  string session_id = 1;
+  string file_name = 2;
+  double size_mb = 3;
+  repeated string columns = 4;
+  string preview_markdown = 5;
+}
+
+// ---------- Generate ----------
+
+message GenerateRuleRequest {
+  string idempotency_key = 1;
+  string session_id = 2;
+  string engine = 3;
+  string description = 4;
+  repeated string columns = 5;
+}
+
+message GenerateRuleResult {
+  bool success = 1;
+  string spec_json = 2;
+  string raw_json = 3;
+  string error_detail = 4;
+}
+
+message GenerateRuleEvent {
+  oneof event {
+    Progress progress = 1;
+    GenerateRuleResult result = 2;
+    Error error = 3;
+  }
+}
+
+// ---------- Enhance ----------
+
+message EnhancePromptRequest {
+  string idempotency_key = 1;
+  string session_id = 2;
+  string engine = 3;
+  string prompt = 4;
+  repeated string columns = 5;
+}
+
+message EnhancePromptResult {
+  string enhanced_prompt = 1;
+}
+
+message EnhancePromptEvent {
+  oneof event {
+    Progress progress = 1;
+    EnhancePromptResult result = 2;
+    Error error = 3;
+  }
+}
+
+// ---------- Common ----------
+
+message Progress {
+  int32 percent = 1;
+  string stage = 2;
+}
+
+message Error {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+}

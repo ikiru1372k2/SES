@@ -4,8 +4,16 @@
  * intent, so replies thread back to the auditor and no outbound config is
  * needed on the API.
  *
- * Keep these helpers tiny and self-contained — they're the full surface
- * the Composer and BroadcastDialog rely on for delivery.
+ * The body that gets passed in here is the same plain-text body the Composer
+ * preview shows on the right side of the screen — built by the server's
+ * `buildFindingsByEngineTextTable` (per-engine, numbered, with the right
+ * columns per engine). Outlook renders this body verbatim as plain text:
+ * line breaks, leading spaces and short numbered lists land cleanly.
+ *
+ * `mailto:` is plain-text by spec — there is no way to ship rich HTML
+ * through it. The Composer preview's HTML table is a server-rendered
+ * fidelity check; the auditor's outbound copy is the well-formed plain
+ * text version, which is what the user asked for.
  */
 
 export interface MailtoHandoff {

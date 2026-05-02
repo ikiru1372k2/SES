@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EscalationStage } from '@prisma/client';
+import { EscalationStage } from '../repositories/types';
 import type { SessionUser } from '@ses/domain';
 import { createId } from '@ses/domain';
 import { PrismaService } from '../common/prisma.service';

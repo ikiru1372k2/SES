@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { EscalationStage } from '@prisma/client';
+import { EscalationStage } from '../repositories/types';
 import type { SessionUser } from '@ses/domain';
 import { ActivityLogService } from '../common/activity-log.service';
 import { IdentifierService } from '../common/identifier.service';

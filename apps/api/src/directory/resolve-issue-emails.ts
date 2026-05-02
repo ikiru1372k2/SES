@@ -1,8 +1,8 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma, DataClient } from '../repositories/types';
 import { normalizeObservedManagerLabel } from '@ses/domain';
 import { matchRawNameToDirectoryEntries } from './directory-matching';
 
-type TxOrClient = Prisma.TransactionClient | PrismaClient;
+type TxOrClient = Prisma.TransactionClient | DataClient;
 
 interface IssueEmailInput {
   projectManager: string;

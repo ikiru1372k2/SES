@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { EscalationStage, type Prisma } from '@prisma/client';
+import { EscalationStage, type Prisma } from '../repositories/types';
 import { createId } from '@ses/domain';
 import { PrismaService } from '../common/prisma.service';
 import { ActivityLogService } from '../common/activity-log.service';

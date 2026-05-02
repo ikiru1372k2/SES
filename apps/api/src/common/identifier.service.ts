@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma, DataClient } from '../repositories/types';
 import { ulid } from 'ulid';
 
-type TxLike = Prisma.TransactionClient | PrismaClient;
+type TxLike = Prisma.TransactionClient | DataClient;
 
 function pad(value: number, width: number): string {
   return String(value).padStart(width, '0');

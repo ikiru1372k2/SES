@@ -21,7 +21,12 @@ export interface TrackingEventDto {
   reason: string | null;
   payload: unknown;
   triggeredById: string | null;
+  /** Hydrated by the API so the Activity feed can render "by <name>" without N+1. */
+  triggeredByName?: string | null;
+  triggeredByEmail?: string | null;
   at: string;
+  /** True for events synthesized from entry counters when no real DB event exists. */
+  synthetic?: boolean;
 }
 
 export async function fetchTrackingEvents(trackingIdOrCode: string): Promise<TrackingEventDto[]> {

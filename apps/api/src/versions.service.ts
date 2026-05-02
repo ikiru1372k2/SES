@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from './repositories/types';
 import type { AuditIssue, AuditResult, SessionUser } from '@ses/domain';
 import { compareResults, createId } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';

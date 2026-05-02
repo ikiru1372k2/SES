@@ -12,6 +12,7 @@ import { DEFAULT_FUNCTION_ID } from '@ses/domain';
 import type { ReactNode } from 'react';
 import { AuthGate } from './components/auth/AuthGate';
 import { ConfirmProvider } from './components/shared/ConfirmProvider';
+import { ScopedErrorBoundary } from './components/shared/ScopedErrorBoundary';
 import { CompareProcesses } from './components/dashboard/CompareProcesses';
 import { PageHeaderProvider } from './components/layout/PageHeaderContext';
 import { Dashboard } from './pages/Dashboard';
@@ -107,7 +108,7 @@ function ProcessesCompareRedirect() {
 
 const tilesDashboardRoutes: ProtectedRouteDefinition[] = [
   { path: '/processes/:processId', element: <ProcessTiles /> },
-  { path: '/processes/:processId/escalations', element: <EscalationCenter /> },
+  { path: '/processes/:processId/escalations', element: <ScopedErrorBoundary label="Escalation Center"><EscalationCenter /></ScopedErrorBoundary> },
   { path: '/processes/:processId/:functionId', element: <Workspace /> },
   { path: '/processes/:processId/:functionId/compare', element: <VersionCompare /> },
   { path: '/workspace/:processId', element: <LegacyWorkspaceRedirect /> },

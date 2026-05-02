@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { EscalationStage, Prisma } from '@prisma/client';
+import { EscalationStage, Prisma } from './repositories/types';
 import { createId } from '@ses/domain';
 import { IdentifierService } from './common/identifier.service';
 import { InAppNotificationsService } from './in-app-notifications.service';

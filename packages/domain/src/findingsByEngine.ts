@@ -177,6 +177,34 @@ function columnsForEngine(engineKey: string, hasProjectLink: boolean): EngineCol
         { header: 'Severity', width: hasProjectLink ? '7%' : '10%', read: (r) => dash(r.detail?.severity) },
         ...linkCol,
       ];
+    case 'opportunities':
+      // Opportunity records: surface the columns an account owner needs
+      // to fix the row in the source CRM — opportunity ID + name, the
+      // category (sales phase / status), the probability number that
+      // gates several rules, and the rule violations the engine joined
+      // into `reason`. Mirrors the master-data layout: identity columns
+      // first, what's wrong second, severity last.
+      return [
+        { header: '#', width: '4%', read: () => '' },
+        { header: 'Opportunity ID', width: '14%', read: (r) => dash(r.projectNo) },
+        { header: 'Opportunity', width: hasProjectLink ? '22%' : '28%', read: (r) => clamp(dash(r.projectName), 60) },
+        { header: 'Category', width: hasProjectLink ? '12%' : '14%', read: (r) => dash(r.detail?.projectState) },
+        {
+          header: 'Probability',
+          width: '10%',
+          read: (r) =>
+            r.detail?.effort != null && Number.isFinite(r.detail.effort)
+              ? `${r.detail.effort}%`
+              : '—',
+        },
+        {
+          header: 'Issue',
+          width: hasProjectLink ? '24%' : '32%',
+          read: (r) => clamp(dash(r.detail?.reason ?? r.detail?.ruleName), 110),
+        },
+        { header: 'Severity', width: hasProjectLink ? '8%' : '12%', read: (r) => dash(r.detail?.severity) },
+        ...linkCol,
+      ];
     default:
       return [
         { header: '#', width: '5%', read: () => '' },
@@ -202,6 +230,8 @@ function shortDescriptionForEngine(engineKey: string): string {
       return 'External function rates are missing or recorded as zero for the months shown below. Please update the rate sheet.';
     case 'internal-cost-rate':
       return 'Internal cost rates are missing or recorded as zero for the months shown below. Please confirm or update the cost entries.';
+    case 'opportunities':
+      return 'The following opportunities have data quality issues that block forecasting and pipeline reporting. Please review the records in the source CRM and correct the flagged fields.';
     default:
       return 'Open findings for the projects listed below need attention.';
   }

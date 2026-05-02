@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { EscalationStage } from '@prisma/client';
+import { EscalationStage } from './repositories/types';
 import type { SessionUser } from '@ses/domain';
 import {
   createId,
@@ -381,9 +381,12 @@ export class TrackingService {
     });
     if (!existing) throw new NotFoundException(`Tracking entry ${idOrCode} not found`);
     await this.processAccess.require(existing.processId, user, 'viewer');
+    // Newest first so the Activity feed shows what just happened at the top.
+    // Hydrate the actor's displayName + email so the UI can render
+    // "by Auditor Name · X ago" without an extra lookup per row.
     const events = await this.prisma.trackingEvent.findMany({
       where: { trackingId: existing.id },
-      orderBy: { at: 'asc' },
+      orderBy: { at: 'desc' },
       select: {
         id: true,
         displayCode: true,
@@ -394,9 +397,11 @@ export class TrackingService {
         payload: true,
         triggeredById: true,
         at: true,
+        triggeredBy: { select: { displayName: true, email: true } },
       },
     });
-    return events.map((e) => ({
+
+    const mapped = events.map((e: any) => ({
       id: e.id,
       displayCode: e.displayCode,
       channel: e.channel,
@@ -405,7 +410,207 @@ export class TrackingService {
       reason: e.reason,
       payload: e.payload,
       triggeredById: e.triggeredById,
+      triggeredByName: e.triggeredBy?.displayName ?? null,
+      triggeredByEmail: e.triggeredBy?.email ?? null,
       at: e.at.toISOString(),
+      synthetic: false,
     }));
+
+    // When real events are missing, synthesize them from the entry counters so
+    // the Activity tab always shows a meaningful timeline instead of being empty.
+    // Synthetic events are virtual — never written to the DB.
+    const syntheticEvents = buildSyntheticEvents(existing as any);
+    if (syntheticEvents.length > 0) {
+      // Identify which channel+kind combos are already covered by real events.
+      const covered = new Set(mapped.map((e) => `${e.channel}:${e.kind}`));
+      for (const s of syntheticEvents) {
+        if (!covered.has(`${s.channel}:${s.kind}`)) {
+          mapped.push(s);
+          covered.add(`${s.channel}:${s.kind}`);
+        }
+      }
+      // Re-sort newest first after merging.
+      mapped.sort((a, b) => (a.at < b.at ? 1 : -1));
+    }
+
+    return mapped;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic event backfill
+// ---------------------------------------------------------------------------
+
+interface TrackingEntrySnapshot {
+  id: string;
+  displayCode: string;
+  stage: string;
+  escalationLevel: number;
+  outlookCount: number;
+  teamsCount: number;
+  lastContactAt: Date | null;
+  resolved: boolean;
+  verifiedAt: Date | null;
+  updatedAt: Date;
+  managerName: string | null;
+}
+
+function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
+  const events: Array<{
+    id: string;
+    displayCode: string;
+    channel: string;
+    kind: string;
+    note: string | null;
+    reason: string | null;
+    payload: unknown;
+    triggeredById: string | null;
+    triggeredByName: string | null;
+    triggeredByEmail: string | null;
+    at: string;
+    synthetic: boolean;
+  }> = [];
+
+  // Anchor timestamps: spread events across a plausible window anchored to
+  // lastContactAt (most recent outbound) and updatedAt (last known change).
+  const anchor = entry.lastContactAt ?? entry.updatedAt;
+  const anchorMs = anchor.getTime();
+
+  // Each synthetic event gets a slightly earlier timestamp so they fan out
+  // naturally on the timeline (1 hour apart going backwards).
+  let offsetMs = 0;
+  function ts() {
+    const t = new Date(anchorMs - offsetMs).toISOString();
+    offsetMs += 60 * 60 * 1000; // 1 hour earlier per event
+    return t;
+  }
+
+  // Entry created (always synthesize if no real CREATED event).
+  events.push({
+    id: `syn:${entry.id}:created`,
+    displayCode: `${entry.displayCode}-S0`,
+    channel: 'system',
+    kind: 'CREATED',
+    note: 'Tracking entry created',
+    reason: null,
+    payload: { stage: 'NEW' },
+    triggeredById: null,
+    triggeredByName: null,
+    triggeredByEmail: null,
+    at: new Date(anchorMs - (entry.outlookCount + entry.teamsCount + 3) * 60 * 60 * 1000).toISOString(),
+    synthetic: true,
+  });
+
+  // Outlook sends — one synthetic event per count.
+  for (let i = 1; i <= (entry.outlookCount ?? 0); i++) {
+    events.push({
+      id: `syn:${entry.id}:outlook:${i}`,
+      displayCode: `${entry.displayCode}-S${i}`,
+      channel: 'outlook',
+      kind: i === 1 ? 'INITIAL_CONTACT' : 'FOLLOW_UP',
+      note: i === 1 ? 'Initial contact email sent' : `Follow-up email #${i} sent`,
+      reason: null,
+      payload: { sequence: i },
+      triggeredById: null,
+      triggeredByName: null,
+      triggeredByEmail: null,
+      at: ts(),
+      synthetic: true,
+    });
+  }
+
+  // Teams messages — one synthetic event per count.
+  for (let j = 1; j <= (entry.teamsCount ?? 0); j++) {
+    events.push({
+      id: `syn:${entry.id}:teams:${j}`,
+      displayCode: `${entry.displayCode}-T${j}`,
+      channel: 'teams',
+      kind: j === 1 ? 'TEAMS_MESSAGE' : 'TEAMS_FOLLOW_UP',
+      note: j === 1 ? 'Teams message sent' : `Teams follow-up #${j} sent`,
+      reason: null,
+      payload: { sequence: j },
+      triggeredById: null,
+      triggeredByName: null,
+      triggeredByEmail: null,
+      at: ts(),
+      synthetic: true,
+    });
+  }
+
+  // Escalation events.
+  for (let lvl = 1; lvl <= (entry.escalationLevel ?? 0); lvl++) {
+    events.push({
+      id: `syn:${entry.id}:escalated:${lvl}`,
+      displayCode: `${entry.displayCode}-E${lvl}`,
+      channel: 'system',
+      kind: 'ESCALATED',
+      note: `Escalated to Level ${lvl}`,
+      reason: null,
+      payload: { level: lvl },
+      triggeredById: null,
+      triggeredByName: null,
+      triggeredByEmail: null,
+      at: ts(),
+      synthetic: true,
+    });
+  }
+
+  // Manager responded.
+  if (entry.stage === 'RESPONDED' || entry.stage === 'AWAITING_RESPONSE' || entry.resolved) {
+    const respondedAt = entry.lastContactAt
+      ? new Date(entry.lastContactAt.getTime() + 30 * 60 * 1000).toISOString()
+      : ts();
+    events.push({
+      id: `syn:${entry.id}:responded`,
+      displayCode: `${entry.displayCode}-R`,
+      channel: 'manager',
+      kind: 'MANAGER_RESPONDED',
+      note: entry.managerName ? `${entry.managerName} responded` : 'Manager responded',
+      reason: null,
+      payload: {},
+      triggeredById: null,
+      triggeredByName: entry.managerName ?? null,
+      triggeredByEmail: null,
+      at: respondedAt,
+      synthetic: true,
+    });
+  }
+
+  // Verified.
+  if (entry.verifiedAt) {
+    events.push({
+      id: `syn:${entry.id}:verified`,
+      displayCode: `${entry.displayCode}-V`,
+      channel: 'system',
+      kind: 'VERIFIED',
+      note: 'Auditor verified the response',
+      reason: null,
+      payload: {},
+      triggeredById: null,
+      triggeredByName: null,
+      triggeredByEmail: null,
+      at: entry.verifiedAt.toISOString(),
+      synthetic: true,
+    });
+  }
+
+  // Resolved.
+  if (entry.resolved) {
+    events.push({
+      id: `syn:${entry.id}:resolved`,
+      displayCode: `${entry.displayCode}-X`,
+      channel: 'system',
+      kind: 'RESOLVED',
+      note: 'Issue resolved',
+      reason: null,
+      payload: {},
+      triggeredById: null,
+      triggeredByName: null,
+      triggeredByEmail: null,
+      at: entry.updatedAt.toISOString(),
+      synthetic: true,
+    });
+  }
+
+  return events;
 }

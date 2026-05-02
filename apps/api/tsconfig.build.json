@@ -4,6 +4,7 @@
     "incremental": false
   },
   "exclude": [
-    "test/**/*"
+    "test/**/*",
+    "src/proto-gen/**/*"
   ]
 }

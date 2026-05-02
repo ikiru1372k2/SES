@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from './repositories/types';
 import type { FunctionId, SessionUser } from '@ses/domain';
 import { DEFAULT_FUNCTION_ID } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';
@@ -49,6 +49,7 @@ export class FilesService {
         withSheets = await this.filesRepository.createUploadedFile(tx, {
           processId: process.id,
           processCode: process.displayCode,
+          tenantId: (process as { tenantId?: string }).tenantId ?? null,
           functionId: options.functionId,
           file,
           buffer,
@@ -165,7 +166,7 @@ export class FilesService {
       throw new BadRequestException('pageSize must be between 1 and 500');
     }
     const file = await this.getFileOrThrow(fileIdOrCode, user);
-    const sheet = file.sheets.find((item) => item.id === sheetIdOrCode || item.displayCode === sheetIdOrCode);
+    const sheet = file.sheets.find((item: any) => item.id === sheetIdOrCode || item.displayCode === sheetIdOrCode);
     if (!sheet) throw new NotFoundException(`Sheet ${sheetIdOrCode} not found`);
     const rows = (sheet.rows as unknown[][]) ?? [];
     const headerRowIndex = sheet.headerRowIx ?? 0;
@@ -186,8 +187,8 @@ export class FilesService {
       if (run) {
         issues = new Map(
           run.issues
-            .filter((issue) => issue.sheetName === sheet.sheetName && issue.rowIndex !== null)
-            .map((issue) => [issue.rowIndex!, { id: issue.id, displayCode: issue.displayCode, severity: issue.severity, issueKey: issue.issueKey }]),
+            .filter((issue: any) => issue.sheetName === sheet.sheetName && issue.rowIndex !== null)
+            .map((issue: any) => [issue.rowIndex!, { id: issue.id, displayCode: issue.displayCode, severity: issue.severity, issueKey: issue.issueKey }]),
         );
       }
     }

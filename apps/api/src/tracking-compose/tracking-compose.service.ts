@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EscalationStage, Prisma } from '@prisma/client';
+import { EscalationStage, Prisma } from '../repositories/types';
 import type { SessionUser } from '@ses/domain';
 import {
   assertTransition,
@@ -254,7 +254,7 @@ export class TrackingComposeService {
     const updated = await this.prisma.trackingEntry.update({
       where: { id: entry.id },
       data: {
-        composeDraft: Prisma.JsonNull,
+        composeDraft: null,
         draftLockUserId: null,
         draftLockExpiresAt: null,
         stage: entry.stage === EscalationStage.DRAFTED ? EscalationStage.NEW : entry.stage,
@@ -380,7 +380,7 @@ export class TrackingComposeService {
           teamsCount: teamsInc ? { increment: teamsInc } : undefined,
           lastContactAt: new Date(),
           slaDueAt,
-          composeDraft: Prisma.JsonNull,
+          composeDraft: null,
           draftLockUserId: null,
           draftLockExpiresAt: null,
           rowVersion: { increment: 1 },
@@ -652,14 +652,18 @@ export class TrackingComposeService {
       ? new Date(row.slaDueAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
       : '';
     const dueDate = formatDueDate(overrides.deadlineAt ?? draft.deadlineAt ?? null);
-    const auditorName = latestRun?.ranBy.displayName ?? user.displayName;
+    // `?.` after both segments — `latestRun` may be null (no completed
+    // runs yet) and `ranBy` may be missing if the relation lookup didn't
+    // find the user (e.g. the auditor was deleted). Either way, fall
+    // back to the current session user so compose preview never crashes.
+    const auditorName = latestRun?.ranBy?.displayName ?? user.displayName;
 
     // Text slots — used by mailto / Teams handoff. Keep the markdown-style
     // findings list so plain-text mail clients render something readable.
     const textSlots: Record<string, string> = {
       managerFirstName: firstName(entry.managerName),
       managerName: entry.managerName,
-      processName: entry.process.name,
+      processName: entry.process?.name ?? '',
       findingsByEngine: findingsTxt || findingsMd,
       findingsCount: String(lines.length),
       slaDeadline,
@@ -673,7 +677,7 @@ export class TrackingComposeService {
     const htmlSlots: Record<string, string> = {
       managerFirstName: escapeHtml(firstName(entry.managerName)),
       managerName: escapeHtml(entry.managerName),
-      processName: escapeHtml(entry.process.name),
+      processName: escapeHtml(entry.process?.name ?? ''),
       findingsByEngine: findingsHtml,
       findingsCount: String(lines.length),
       slaDeadline: escapeHtml(slaDeadline),

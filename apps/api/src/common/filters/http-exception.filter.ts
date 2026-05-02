@@ -51,7 +51,41 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    const err = exception as Error;
+    // Map PostgreSQL error codes to meaningful HTTP responses so clients see
+    // 409/400 instead of a cryptic 500 for data-integrity violations.
+    const err = exception as Error & { code?: string };
+    if (err?.code) {
+      // 23505 = unique_violation, 23503 = foreign_key_violation,
+      // 23502 = not_null_violation, 23514 = check_violation
+      if (err.code === '23505') {
+        response.status(HttpStatus.CONFLICT).json({
+          statusCode: HttpStatus.CONFLICT,
+          message: 'A record with these values already exists.',
+          requestId: response.getHeader('X-Request-ID'),
+          ...(isProd ? {} : { detail: err.message, path: request.url }),
+        });
+        return;
+      }
+      if (err.code === '23503') {
+        response.status(HttpStatus.UNPROCESSABLE_ENTITY).json({
+          statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+          message: 'Referenced record does not exist.',
+          requestId: response.getHeader('X-Request-ID'),
+          ...(isProd ? {} : { detail: err.message, path: request.url }),
+        });
+        return;
+      }
+      if (err.code === '23502' || err.code === '23514') {
+        response.status(HttpStatus.BAD_REQUEST).json({
+          statusCode: HttpStatus.BAD_REQUEST,
+          message: 'Invalid data — required field missing or constraint violated.',
+          requestId: response.getHeader('X-Request-ID'),
+          ...(isProd ? {} : { detail: err.message, path: request.url }),
+        });
+        return;
+      }
+    }
+
     this.logger.error(err?.message ?? 'Unhandled error', err?.stack, `${request.method} ${request.url}`);
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
