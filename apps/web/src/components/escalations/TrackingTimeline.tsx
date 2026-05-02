@@ -45,6 +45,10 @@ const EVENT_STYLE: Record<string, { label: string; tone: Tone; Icon: LucideIcon 
   bulk_acknowledge:   { label: 'Acknowledged',         tone: 'emerald', Icon: CheckCircle2 },
   bulk_reescalate:    { label: 'Re-escalated',         tone: 'red',     Icon: ArrowUpCircle },
   manager_response:   { label: 'Manager responded',    tone: 'emerald', Icon: Users },
+  broadcast_sent:     { label: 'Global broadcast prepared', tone: 'blue', Icon: Send },
+  broadcast_prepared: { label: 'Global broadcast prepared', tone: 'blue', Icon: Send },
+  broadcast_skipped:  { label: 'Broadcast skipped', tone: 'amber', Icon: AlertTriangle },
+  broadcast_failed:   { label: 'Broadcast failed', tone: 'red', Icon: AlertTriangle },
   escalation_reminder:{ label: 'Reminder sent',        tone: 'blue',    Icon: Mail },
   resolved:           { label: 'Resolved',             tone: 'emerald', Icon: CheckCircle2 },
   verified:           { label: 'Verified',             tone: 'emerald', Icon: CheckCircle2 },
@@ -214,7 +218,13 @@ export function TrackingTimeline({
   events: TrackingEventDto[];
   emptyLabel?: string;
 }) {
-  const grouped = useMemo(() => groupByDay(events.map(summarize)), [events]);
+  const grouped = useMemo(() => {
+    const ordered = [...events].sort((a, b) => {
+      const byTime = new Date(b.at).getTime() - new Date(a.at).getTime();
+      return byTime || b.displayCode.localeCompare(a.displayCode);
+    });
+    return groupByDay(ordered.map(summarize));
+  }, [events]);
 
   if (!events.length) {
     return (

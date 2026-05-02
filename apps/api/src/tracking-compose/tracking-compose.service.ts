@@ -28,6 +28,18 @@ import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { DEFAULT_TENANT_ID } from '../common/default-tenant';
 import { EscalationsService } from '../escalations.service';
 import { OutboundDeliveryService, type EscalationSendChannel } from '../outbound/outbound-delivery.service';
+import {
+  DEFAULT_BODY_TEMPLATE,
+  DEFAULT_SUBJECT_TEMPLATE,
+  assertChannelAllowed,
+  escapeHtml,
+  firstName,
+  formatDueDate,
+  isIndividualComposeSources,
+  stageKeyForEntry,
+  substituteHtml,
+  wrapEmailHtml,
+} from './tracking-compose.helpers';
 
 const LOCK_MS = 10 * 60 * 1000;
 
@@ -38,117 +50,10 @@ export type ComposeDraftPayload = {
   cc: string[];
   removedEngineIds?: string[];
   channel?: EscalationSendChannel;
-  /** Auditor-only note persisted alongside the send. Not shown to the manager. */
   authorNote?: string;
-  /** ISO-8601 date for the {{dueDate}} slot. */
   deadlineAt?: string | null;
-  /** Map of projectNo → URL the auditor pasted in. Empty entries are ignored. */
   projectLinks?: Record<string, string>;
 };
-
-/**
- * Issue #75: escalation cycle is outlook → outlook → teams, then the cycle
- * is complete. The server is the source of truth for the gate; the UI
- * mirrors it from `outlookCount` / `teamsCount` on the tracking entry.
- * Admin-only `forceReescalate` zeroes the counters to start a new cycle.
- */
-function assertChannelAllowed(
-  entry: { outlookCount: number; teamsCount: number },
-  channel: EscalationSendChannel,
-): void {
-  const effective: 'outlook' | 'teams' = channel === 'teams' ? 'teams' : 'outlook';
-  if (effective === 'outlook') {
-    if (entry.outlookCount >= 2) {
-      throw new ConflictException('Outlook limit reached for this cycle — escalate via Teams next.');
-    }
-    return;
-  }
-  if (entry.outlookCount < 2) {
-    throw new ConflictException('Send two Outlook reminders before escalating to Teams.');
-  }
-  if (entry.teamsCount >= 1) {
-    throw new ConflictException('Cycle complete — resolve or force re-escalate before sending again.');
-  }
-}
-
-function stageKeyForLevel(level: number): string {
-  if (level >= 2) return 'ESCALATED_L2';
-  if (level >= 1) return 'ESCALATED_L1';
-  return 'NEW';
-}
-
-function firstName(full: string): string {
-  const t = full.trim();
-  if (!t) return '';
-  return t.split(/\s+/)[0] ?? t;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-const SLOT_TOKEN = /\{([a-zA-Z][a-zA-Z0-9_]*)\}/g;
-
-/**
- * HTML-aware substitution: literal template text is HTML-escaped and \n is
- * turned into <br>, while slot values (e.g. the findings table) are inserted
- * verbatim so their pre-built markup survives.
- */
-function substituteHtml(template: string, htmlSlots: Record<string, string>): string {
-  let result = '';
-  let lastIdx = 0;
-  SLOT_TOKEN.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = SLOT_TOKEN.exec(template)) !== null) {
-    const literal = template.slice(lastIdx, match.index);
-    result += escapeHtml(literal).replace(/\n/g, '<br>');
-    const slotName = match[1] ?? '';
-    const value = htmlSlots[slotName];
-    result += value ?? '';
-    lastIdx = match.index + match[0].length;
-  }
-  result += escapeHtml(template.slice(lastIdx)).replace(/\n/g, '<br>');
-  return result;
-}
-
-const DEFAULT_SUBJECT_TEMPLATE =
-  'Action Required — {processName}: Open Findings ({findingsCount})';
-
-const DEFAULT_BODY_TEMPLATE = [
-  'Hi {managerFirstName},',
-  '',
-  'I hope you are doing well.',
-  '',
-  'We are members of the Quality Governance Team writing regarding open findings on {processName}. During our quality checks, we observed the following items that need your attention. Could you please review and do the needful at the earliest?',
-  '',
-  '{findingsByEngine}',
-  '',
-  'Kindly respond by {dueDate}. If you have any questions, please reach out.',
-  '',
-  'Thank you,',
-  'Quality Governance Team',
-  '{auditRunDate} — {auditorName}',
-].join('\n');
-
-function formatDueDate(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-
-function wrapEmailHtml(innerHtml: string): string {
-  return (
-    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.55;">` +
-    innerHtml +
-    `</div>`
-  );
-}
 
 @Injectable()
 export class TrackingComposeService {
@@ -285,10 +190,6 @@ export class TrackingComposeService {
     ) {
       throw new ForbiddenException('Another user holds the compose lock.');
     }
-    // The ladder may be at any stage the cycle allows: NEW/DRAFTED for the
-    // first Outlook, AWAITING_RESPONSE for the second Outlook, and
-    // AWAITING_RESPONSE / ESCALATED_L1 / NO_RESPONSE for the Teams leg. Any
-    // other stage is a bug in the client: refuse loudly.
     if (
       entry.stage !== EscalationStage.NEW &&
       entry.stage !== EscalationStage.DRAFTED &&
@@ -299,16 +200,11 @@ export class TrackingComposeService {
       throw new BadRequestException(`Send is not allowed from stage ${entry.stage}.`);
     }
 
-    const { subject, text, html, channel, managerEmail } = await this.resolveContent(entry, user, body);
+    const { subject, text, html, issueCount, channel, managerEmail } = await this.resolveContent(entry, user, body);
     const sendChannel: EscalationSendChannel = channel ?? 'email';
-    // Channel gate (Issue #75): the 2-Outlooks-then-1-Teams cycle is
-    // enforced here so race conditions between multiple auditors can't
-    // punch through the counter.
-    assertChannelAllowed({ outlookCount: entry.outlookCount, teamsCount: entry.teamsCount }, sendChannel);
+    const individualCounts = await this.countIndividualSends(entry.id);
+    assertChannelAllowed(individualCounts, sendChannel);
     if (sendChannel === 'both') {
-      // The client-handoff path opens one window per channel; mailto and
-      // the Teams deep-link can't be atomically composed anyway. Force the
-      // auditor to pick one explicitly.
       throw new BadRequestException('Channel "both" is no longer supported — pick Outlook or Teams.');
     }
 
@@ -317,25 +213,19 @@ export class TrackingComposeService {
       throw new BadRequestException('Manager email is required before send.');
     }
 
-    // Issue #75: no SMTP, no Teams webhook. The web client opens mailto: /
-    // teams deep-link with the prefilled content after this endpoint
-    // returns. We only RECORD the handoff here so the ladder advances and
-    // the activity timeline reflects what happened.
-
     const slaHours = entry.process.slaInitialHours ?? 120;
     const slaDueAt = new Date(Date.now() + slaHours * 60 * 60 * 1000);
-    const issueCount = body.sources?.length ? body.sources.length : 0;
     const deadlineAt = body.deadlineAt ? new Date(body.deadlineAt) : null;
     const authorNote = (body.authorNote ?? '').slice(0, 2000);
 
-    // The Teams leg transitions to ESCALATED_L1 so the timeline clearly
-    // distinguishes an Outlook reminder from a Teams escalation.
     const nextStage: EscalationStage =
       sendChannel === 'teams' ? EscalationStage.ESCALATED_L1 : EscalationStage.AWAITING_RESPONSE;
 
+    const directSources = body.sources?.length ? body.sources : ['compose'];
     const logRow = await this.prisma.$transaction(async (tx) => {
       const log = await tx.notificationLog.create({
         data: {
+          id: createId(),
           displayCode: await this.identifiers.nextNotificationLogCode(tx, entry.process.displayCode),
           processId: entry.processId,
           actorUserId: user.id,
@@ -346,7 +236,7 @@ export class TrackingComposeService {
           subject,
           bodyPreview: text.slice(0, 2000),
           resolvedBody: text,
-          sources: body.sources as object,
+          sources: directSources as object,
           issueCount,
           authorNote,
           deadlineAt,
@@ -362,7 +252,7 @@ export class TrackingComposeService {
           note: subject.slice(0, 200),
           reason: 'escalation_send',
           payload: {
-            sources: body.sources,
+            sources: directSources,
             notificationLogId: log.id,
             deadlineAt: deadlineAt?.toISOString() ?? null,
             authorNote,
@@ -404,8 +294,6 @@ export class TrackingComposeService {
       issueCount: logRow.issueCount,
     }, { actor: { id: user.id, code: user.displayCode, email: user.email, displayName: user.displayName } });
 
-    // Return the resolved content so the client can hand it to the user's
-    // mail / Teams app immediately — no second round-trip for preview.
     return {
       ok: true,
       notificationLogId: logRow.id,
@@ -418,12 +306,28 @@ export class TrackingComposeService {
     };
   }
 
-  /**
-   * Admin-only cycle reset (Issue #75). Zeroes the Outlook / Teams
-   * counters and stamps a `cycle_reset` TrackingEvent so the activity
-   * feed explains why a manager is seeing a fresh round of reminders.
-   * Transitions back to NEW so the gate reopens at Outlook #1.
-   */
+  private async countIndividualSends(trackingEntryId: string): Promise<{ outlookCount: number; teamsCount: number }> {
+    const latestReset = await this.prisma.trackingEvent.findFirst({
+      where: { trackingId: trackingEntryId, kind: 'cycle_reset' },
+      orderBy: { at: 'desc' },
+      select: { at: true },
+    });
+    const logs = await this.prisma.notificationLog.findMany({
+      where: { trackingEntryId },
+      select: { channel: true, sources: true, sentAt: true },
+    });
+    let outlookCount = 0;
+    let teamsCount = 0;
+    const resetAt = latestReset?.at instanceof Date ? latestReset.at.getTime() : null;
+    for (const log of logs as Array<{ channel: string; sources: unknown; sentAt: Date }>) {
+      if (resetAt !== null && log.sentAt.getTime() <= resetAt) continue;
+      if (!isIndividualComposeSources(log.sources)) continue;
+      if (log.channel === 'teams') teamsCount += 1;
+      else if (log.channel === 'email' || log.channel === 'outlook') outlookCount += 1;
+    }
+    return { outlookCount, teamsCount };
+  }
+
   async forceReescalate(idOrCode: string, user: SessionUser) {
     if (user.role !== 'admin') {
       throw new ForbiddenException('Admin role required to force a new cycle.');
@@ -494,6 +398,7 @@ export class TrackingComposeService {
       managerName: string;
       managerEmail: string | null;
       escalationLevel: number;
+      stage: string;
       process: { id: string; displayCode: string; name: string; slaInitialHours: number };
       composeDraft: unknown;
     },
@@ -503,15 +408,14 @@ export class TrackingComposeService {
     subject: string;
     text: string;
     html: string;
+    issueCount: number;
     channel: EscalationSendChannel;
     managerEmail: string | null;
   }> {
     const tenantId = this.tenantId(user);
-    const stageKey = stageKeyForLevel(entry.escalationLevel);
+    const stageKey = stageKeyForEntry(entry.stage, entry.escalationLevel);
     const tpl = await this.pickTemplate(tenantId, stageKey, overrides.templateId);
     const draft = (entry.composeDraft ?? {}) as Partial<ComposeDraftPayload>;
-    // When no template configures a subject/body, fall back to the bundled
-    // professional default rather than the older terse "Escalation" stub.
     const subjectSource = overrides.subject ?? draft.subject ?? tpl?.subject ?? '';
     const bodySource = overrides.body ?? draft.body ?? tpl?.body ?? '';
     const baseSubject = (subjectSource.trim() || DEFAULT_SUBJECT_TEMPLATE).trim();
@@ -535,10 +439,6 @@ export class TrackingComposeService {
         }
       }
     }
-    // Pull the rich AuditIssue context for every finding the email is
-    // about to mention. Restrict to this process so a colliding issueKey
-    // from another process can't leak in. Latest occurrence wins when an
-    // issueKey appears in more than one run.
     const issueDetails = issueKeys.length
       ? await this.prisma.auditIssue.findMany({
           where: {
@@ -569,9 +469,6 @@ export class TrackingComposeService {
         x.auditRun.completedAt?.getTime() ?? x.auditRun.startedAt.getTime() ?? 0;
       if (!prev || t(iss) >= t(prev)) issueByKey.set(iss.issueKey, iss);
     }
-    // Auditor-supplied per-project links. Only http(s) URLs make it into
-    // the rendered table; anything else is silently dropped so the column
-    // can't carry junk into the manager's inbox.
     const linksRaw = (overrides.projectLinks ?? draft.projectLinks ?? {}) as Record<string, unknown>;
     const projectLinks = new Map<string, string>();
     for (const [pid, url] of Object.entries(linksRaw)) {
@@ -590,10 +487,6 @@ export class TrackingComposeService {
           const ruleEntry = iss ? AUDIT_RULES_BY_CODE.get(iss.ruleCode) : null;
           const ruleName = ruleEntry?.name ?? '';
           const severity = iss?.severity ?? ruleEntry?.defaultSeverity ?? '';
-          // AI Pilot rules carry the human-readable explanation in `reason`
-          // (interpolated flagMessage). For master-data they replace the
-          // engine's column-name extraction; other engines surface `reason`
-          // through their own columns already.
           const missingFieldLabel = (() => {
             if (iss?.ruleCode?.startsWith('ai_')) return iss.reason ?? null;
             if (engineId === ('master-data' as FunctionId) && ruleName) {
@@ -652,14 +545,8 @@ export class TrackingComposeService {
       ? new Date(row.slaDueAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
       : '';
     const dueDate = formatDueDate(overrides.deadlineAt ?? draft.deadlineAt ?? null);
-    // `?.` after both segments — `latestRun` may be null (no completed
-    // runs yet) and `ranBy` may be missing if the relation lookup didn't
-    // find the user (e.g. the auditor was deleted). Either way, fall
-    // back to the current session user so compose preview never crashes.
     const auditorName = latestRun?.ranBy?.displayName ?? user.displayName;
 
-    // Text slots — used by mailto / Teams handoff. Keep the markdown-style
-    // findings list so plain-text mail clients render something readable.
     const textSlots: Record<string, string> = {
       managerFirstName: firstName(entry.managerName),
       managerName: entry.managerName,
@@ -672,8 +559,6 @@ export class TrackingComposeService {
       auditorName,
     };
 
-    // HTML slots — every value is HTML-safe (escaped strings or known-good
-    // markup like the findings table).
     const htmlSlots: Record<string, string> = {
       managerFirstName: escapeHtml(firstName(entry.managerName)),
       managerName: escapeHtml(entry.managerName),
@@ -689,6 +574,6 @@ export class TrackingComposeService {
     const subject = substitute(baseSubject, textSlots);
     const text = substitute(baseBody, textSlots);
     const html = wrapEmailHtml(substituteHtml(baseBody, htmlSlots));
-    return { subject, text, html, channel, managerEmail };
+    return { subject, text, html, issueCount: lines.length, channel, managerEmail };
   }
 }

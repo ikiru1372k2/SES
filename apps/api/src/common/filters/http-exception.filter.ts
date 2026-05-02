@@ -53,7 +53,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     // Map PostgreSQL error codes to meaningful HTTP responses so clients see
     // 409/400 instead of a cryptic 500 for data-integrity violations.
-    const err = exception as Error & { code?: string };
+    const err = exception as Error & { code?: string; detail?: string; table?: string; column?: string };
+    if (err?.code) {
+      this.logger.warn(
+        `pg error ${err.code} on ${request.method} ${request.url}: ${err.message}${err.detail ? ' | ' + err.detail : ''}`,
+      );
+    }
     if (err?.code) {
       // 23505 = unique_violation, 23503 = foreign_key_violation,
       // 23502 = not_null_violation, 23514 = check_violation

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { createId } from '@paralleldrive/cuid2';
 import { EscalationStage } from '../repositories/types';
 import type { SessionUser } from '@ses/domain';
 import { ActivityLogService } from '../common/activity-log.service';
@@ -60,6 +61,7 @@ export class NotificationsService {
     // Insert the notification log row.
     const logRow = await this.prisma.notificationLog.create({
       data: {
+        id: createId(),
         displayCode: await this.identifiers.nextNotificationLogCode(this.prisma, process.displayCode),
         processId: process.id,
         actorUserId: user.id,

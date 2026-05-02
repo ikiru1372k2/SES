@@ -2,7 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { AlertTriangle, CheckCircle2, Mail, Send } from 'lucide-react';
-import { bulkCompose, bulkSend } from '../../lib/api/bulkTrackingApi';
+import { bulkCompose } from '../../lib/api/bulkTrackingApi';
+import { openBlankWindow } from '../../lib/outbound/clientHandoff';
 import { Modal } from '../shared/Modal';
 import { Button } from '../shared/Button';
 import { PreviewPane } from './PreviewPane';
@@ -43,6 +44,48 @@ const INITIAL_PROGRESS: Progress = {
   skippedReasons: [],
 };
 
+function buildMailto(item: PreviewItem): string {
+  return `mailto:${encodeURIComponent(item.managerEmail ?? '')}?subject=${encodeURIComponent(item.subject)}&body=${encodeURIComponent(item.body)}`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function writeBulkHandoff(win: Window, drafts: PreviewItem[]): void {
+  const sendable = drafts.filter((d) => (d.managerEmail ?? '').trim());
+  const rows = sendable.map((d, index) => {
+    const body = escapeHtml(d.body);
+    return `<section class="row">
+      <div class="meta">
+        <strong>${index + 1}. ${escapeHtml(d.managerName)}</strong>
+        <span>${escapeHtml(d.managerEmail ?? '')}</span>
+      </div>
+      <div class="actions">
+        <a class="btn" href="${buildMailto(d)}">Open Outlook</a>
+        <button class="ghost" onclick="copyBody(${index})">Copy body</button>
+      </div>
+      <pre id="body-${index}">${body}</pre>
+    </section>`;
+  }).join('');
+  win.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Bulk Outlook handoff</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#f3f4f6;margin:0;padding:24px;color:#111827}
+.wrap{max-width:900px;margin:0 auto}.head{margin-bottom:16px}.head h1{font-size:20px;margin:0 0 6px}.head p{font-size:13px;color:#4b5563;margin:0}
+.row{background:white;border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:12px}
+.meta{display:flex;justify-content:space-between;gap:12px;font-size:13px}.meta span{color:#6b7280}
+.actions{display:flex;gap:8px;margin:12px 0}.btn,.ghost{border-radius:6px;padding:7px 12px;font-size:13px;font-weight:600;text-decoration:none;cursor:pointer}
+.btn{background:#2563eb;color:white;border:1px solid #2563eb}.ghost{background:white;color:#374151;border:1px solid #d1d5db}
+pre{white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.5;color:#111827;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px;max-height:220px;overflow:auto}
+</style></head><body><main class="wrap">
+<div class="head"><h1>Bulk Outlook handoff</h1><p>Open each Outlook draft from here. Nothing is recorded in the escalation ladder until you use the individual manager compose flow.</p></div>
+${rows || '<p>No managers with email addresses.</p>'}
+</main><script>
+function copyBody(i){var el=document.getElementById('body-'+i);navigator.clipboard.writeText(el.innerText);}
+</script></body></html>`);
+  win.document.close();
+}
+
 export function BulkComposer({
   trackingIds,
   open,
@@ -67,56 +110,24 @@ export function BulkComposer({
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const sendMut = useMutation({
-    mutationFn: () =>
-      bulkSend(trackingIds, {
-        subject: drafts[active]?.subject ?? '',
-        body: drafts[active]?.body ?? '',
-        cc: [],
-        sources: [],
-        channel: 'email',
-      }),
-    onMutate: () => {
-      setProgress({
-        kind: 'sending',
-        success: 0,
-        failed: 0,
-        skipped: 0,
-        total: trackingIds.length,
-        skippedReasons: [],
-      });
-    },
-    onSuccess: async (result) => {
-      const skippedReasons = (result.progress ?? [])
-        .filter((row) => row['state'] === 'skipped' || row['state'] === 'failed')
-        .map((row) => ({
-          trackingId: String(row['trackingId'] ?? ''),
-          reason: String(row['reason'] ?? row['error'] ?? 'unknown'),
-        }));
-      const skipped = (result as { skipped?: number }).skipped ?? 0;
-      setProgress({
-        kind: 'done',
-        success: result.success,
-        failed: result.failed,
-        skipped,
-        total: result.total,
-        skippedReasons,
-      });
-      await qc.invalidateQueries({ queryKey: ['escalations'] });
-      if (result.failed === 0 && skipped === 0) {
-        toast.success(`Sent ${result.success} notification${result.success === 1 ? '' : 's'}.`);
-      } else {
-        toast(
-          `Sent ${result.success} · skipped ${skipped} · failed ${result.failed}.`,
-          { icon: '⚠️' },
-        );
-      }
-    },
-    onError: (error: Error) => {
-      setProgress((p) => ({ ...p, kind: 'done', failed: trackingIds.length }));
-      toast.error(error.message);
-    },
-  });
+  function openHandoff() {
+    const win = openBlankWindow();
+    if (!win) { toast.error('Allow popups to open the Outlook handoff.'); return; }
+    const skippedReasons = drafts
+      .filter((d) => !(d.managerEmail ?? '').trim())
+      .map((d) => ({ trackingId: d.trackingId, reason: 'missing_email' }));
+    writeBulkHandoff(win, drafts);
+    setProgress({
+      kind: 'done',
+      success: drafts.length - skippedReasons.length,
+      failed: 0,
+      skipped: skippedReasons.length,
+      total: drafts.length,
+      skippedReasons,
+    });
+    toast.success('Outlook handoff prepared.');
+    void qc.invalidateQueries({ queryKey: ['escalations'] });
+  }
 
   // Load drafts once per modal opening. Deps are explicit so we don't
   // rerun when drafts change (that would overwrite the user's edits).
@@ -133,7 +144,7 @@ export function BulkComposer({
     () => drafts.filter((d) => !(d.managerEmail ?? '').trim()).length,
     [drafts],
   );
-  const sendDisabled = sendMut.isPending || drafts.length === 0 || progress.kind === 'sending';
+  const sendDisabled = drafts.length === 0 || progress.kind === 'sending';
 
   function updateCurrent(patch: Partial<PreviewItem>) {
     if (!current) return;
@@ -178,7 +189,7 @@ export function BulkComposer({
           {confirming ? (
             <Button
               onClick={() => {
-                sendMut.mutate();
+                openHandoff();
                 setConfirming(false);
               }}
               disabled={sendDisabled}
@@ -192,7 +203,7 @@ export function BulkComposer({
               disabled={sendDisabled}
               leading={<Mail size={14} />}
             >
-              Send all {trackingIds.length}
+              Prepare Outlook handoff
             </Button>
           )}
         </>

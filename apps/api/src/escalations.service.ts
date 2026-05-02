@@ -6,6 +6,11 @@ import { PrismaService } from './common/prisma.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { aggregateEscalations, type AggregatorIssueRow, type AggregatorTrackingRow } from './escalations-aggregator';
 
+function isIndividualComposeSources(sources: unknown): boolean {
+  if (!Array.isArray(sources)) return false;
+  return sources.some((source) => typeof source === 'string' && source.trim().length > 0 && source !== '__broadcast__');
+}
+
 @Injectable()
 export class EscalationsService {
   constructor(
@@ -77,6 +82,35 @@ export class EscalationsService {
       },
     });
 
+    const trackingIds = trackingRows.map((t) => t.id);
+    const resetEvents = trackingIds.length
+      ? await this.prisma.trackingEvent.findMany({
+          where: { trackingId: { in: trackingIds }, kind: 'cycle_reset' },
+          select: { trackingId: true, at: true },
+        })
+      : [];
+    const latestResetByTrackingId = new Map<string, number>();
+    for (const event of resetEvents as Array<{ trackingId: string; at: Date }>) {
+      const current = latestResetByTrackingId.get(event.trackingId) ?? 0;
+      latestResetByTrackingId.set(event.trackingId, Math.max(current, event.at.getTime()));
+    }
+    const notificationLogs = trackingIds.length
+      ? await this.prisma.notificationLog.findMany({
+          where: { trackingEntryId: { in: trackingIds } },
+          select: { trackingEntryId: true, channel: true, sources: true, sentAt: true },
+        })
+      : [];
+    const individualCounts = new Map<string, { outlookCount: number; teamsCount: number }>();
+    for (const log of notificationLogs as Array<{ trackingEntryId: string | null; channel: string; sources: unknown; sentAt: Date }>) {
+      if (!log.trackingEntryId || !isIndividualComposeSources(log.sources)) continue;
+      const resetAt = latestResetByTrackingId.get(log.trackingEntryId);
+      if (resetAt !== undefined && log.sentAt.getTime() <= resetAt) continue;
+      const counts = individualCounts.get(log.trackingEntryId) ?? { outlookCount: 0, teamsCount: 0 };
+      if (log.channel === 'teams') counts.teamsCount += 1;
+      else if (log.channel === 'email' || log.channel === 'outlook') counts.outlookCount += 1;
+      individualCounts.set(log.trackingEntryId, counts);
+    }
+
     const tracking: AggregatorTrackingRow[] = trackingRows.map((t) => ({
       managerKey: t.managerKey,
       managerName: t.managerName,
@@ -87,8 +121,8 @@ export class EscalationsService {
       slaDueAt: t.slaDueAt,
       id: t.id,
       displayCode: t.displayCode,
-      outlookCount: t.outlookCount,
-      teamsCount: t.teamsCount,
+      outlookCount: individualCounts.get(t.id)?.outlookCount ?? 0,
+      teamsCount: individualCounts.get(t.id)?.teamsCount ?? 0,
     }));
 
     const payload = aggregateEscalations(process.id, issues, tracking);

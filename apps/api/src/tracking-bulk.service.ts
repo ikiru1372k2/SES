@@ -294,9 +294,9 @@ export class TrackingBulkService {
    * or includeResolved (sweep even resolved rows; rarely useful, but
    * supported for "compliance reminder" workflows).
    *
-   * Re-uses the same per-entry send pipeline as sendBulk so missing-email
-   * rows are skipped rather than failing the whole call, and every send
-   * creates the usual NotificationLog + TrackingEvent audit trail.
+   * Broadcasts are audit-only global notices. They create NotificationLog and
+   * TrackingEvent rows, but they do not consume the per-manager compose ladder
+   * counters used by the 2-Outlook-then-Teams workflow.
    */
   async broadcast(input: BroadcastInput, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(
@@ -309,7 +309,7 @@ export class TrackingBulkService {
         processId: process.id,
         ...(input.filter?.includeResolved ? {} : { resolved: false }),
       },
-      select: { id: true, managerName: true, managerEmail: true, projectStatuses: true },
+      select: { id: true, managerName: true, managerEmail: true, projectStatuses: true, processId: true },
       orderBy: { managerName: 'asc' },
     });
 
@@ -338,11 +338,156 @@ export class TrackingBulkService {
       };
     }
 
-    const result = await this.sendBulk(
-      { trackingIds: filtered.map((e) => e.id), payload: input.payload },
-      user,
-    );
-    return { ...result, audience: filtered.length };
+    const channel = input.payload.channel === 'teams' ? 'teams' : 'email';
+    const deadlineAt = input.payload.deadlineAt ? new Date(input.payload.deadlineAt) : null;
+    const authorNote = (input.payload.authorNote ?? '').slice(0, 2000);
+    let success = 0;
+    let failed = 0;
+    let skipped = 0;
+    const progress: Array<Record<string, unknown>> = [];
+    const recipients: Array<Record<string, unknown>> = [];
+
+    for (const [index, entry] of filtered.entries()) {
+      const managerEmail = (entry.managerEmail ?? '').trim();
+      if (!managerEmail) {
+        await this.prisma.trackingEvent.create({
+          data: {
+            id: createId(),
+            displayCode: await this.identifiers.nextTrackingEventCode(this.prisma),
+            trackingId: entry.id,
+            kind: 'broadcast_skipped',
+            channel: 'system',
+            note: 'Broadcast skipped: missing manager email.',
+            reason: 'missing_email',
+            payload: { functionId: input.filter?.functionId ?? null } as object,
+            triggeredById: user.id,
+          },
+        });
+        skipped += 1;
+        progress.push({
+          index,
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          state: 'skipped',
+          reason: 'missing_email',
+          success,
+          failed,
+          skipped,
+          total: filtered.length,
+        });
+        recipients.push({
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          managerEmail: null,
+          state: 'skipped',
+          reason: 'missing_email',
+        });
+        continue;
+      }
+
+      try {
+        const preview = await this.compose.preview(entry.id, user, input.payload);
+        await this.prisma.$transaction(async (tx) => {
+          const log = await tx.notificationLog.create({
+            data: {
+              id: createId(),
+              displayCode: await this.identifiers.nextNotificationLogCode(tx, process.displayCode),
+              processId: entry.processId,
+              actorUserId: user.id,
+              trackingEntryId: entry.id,
+              managerEmail: managerEmail.toLowerCase(),
+              managerName: entry.managerName,
+              channel,
+              subject: preview.subject,
+              bodyPreview: preview.body.slice(0, 2000),
+              resolvedBody: preview.body,
+              sources: {
+                kind: 'broadcast',
+                functionId: input.filter?.functionId ?? null,
+              } as object,
+              issueCount: 0,
+              authorNote,
+              deadlineAt,
+            },
+          });
+          await tx.trackingEvent.create({
+            data: {
+              id: createId(),
+              displayCode: await this.identifiers.nextTrackingEventCode(tx),
+              trackingId: entry.id,
+              kind: 'broadcast_prepared',
+              channel: channel === 'teams' ? 'teams' : 'outlook',
+              note: preview.subject.slice(0, 200),
+              reason: 'broadcast_prepared',
+              payload: {
+                notificationLogId: log.id,
+                functionId: input.filter?.functionId ?? null,
+                deadlineAt: deadlineAt?.toISOString() ?? null,
+                authorNote,
+              } as object,
+              triggeredById: user.id,
+            },
+          });
+        });
+        success += 1;
+        progress.push({
+          index,
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          state: 'sent',
+          success,
+          failed,
+          skipped,
+          total: filtered.length,
+        });
+        recipients.push({
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          managerEmail: managerEmail.toLowerCase(),
+          state: 'sent',
+          channel,
+          subject: preview.subject,
+          body: preview.body,
+          cc: input.payload.cc ?? [],
+        });
+      } catch (error) {
+        failed += 1;
+        const message = (error as Error).message;
+        await this.prisma.trackingEvent.create({
+          data: {
+            id: createId(),
+            displayCode: await this.identifiers.nextTrackingEventCode(this.prisma),
+            trackingId: entry.id,
+            kind: 'broadcast_failed',
+            channel: 'system',
+            note: message.slice(0, 200),
+            reason: 'broadcast_failed',
+            payload: { functionId: input.filter?.functionId ?? null, error: message } as object,
+            triggeredById: user.id,
+          },
+        });
+        progress.push({
+          index,
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          state: 'failed',
+          error: message,
+          success,
+          failed,
+          skipped,
+          total: filtered.length,
+        });
+        recipients.push({
+          trackingId: entry.id,
+          managerName: entry.managerName,
+          managerEmail,
+          state: 'failed',
+          reason: message,
+        });
+      }
+    }
+
+    return { progress, recipients, success, failed, skipped, total: filtered.length, audience: filtered.length };
   }
 }
 

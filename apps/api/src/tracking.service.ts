@@ -421,10 +421,25 @@ export class TrackingService {
     // Synthetic events are virtual — never written to the DB.
     const syntheticEvents = buildSyntheticEvents(existing as any);
     if (syntheticEvents.length > 0) {
-      // Identify which channel+kind combos are already covered by real events.
+      const realOutlookCount = mapped.filter((e) => e.channel === 'outlook' && (e.kind === 'escalation_sent' || e.kind === 'contact')).length;
+      const realTeamsCount = mapped.filter((e) => e.channel === 'teams' && (e.kind === 'escalation_sent' || e.kind === 'contact')).length;
+      const hasRealManagerResponse = mapped.some(
+        (e) => e.kind === 'manager_response' || (e.kind === 'stage_transition' && e.reason === 'manager_responded'),
+      );
+      const hasRealVerification = mapped.some((e) => e.kind === 'auditor_verified' || e.reason === 'verification');
+      const hasRealResolved = mapped.some(
+        (e) => e.kind === 'resolved' || (e.kind === 'stage_transition' && e.reason === 'manager_resolution_confirmed'),
+      );
       const covered = new Set(mapped.map((e) => `${e.channel}:${e.kind}`));
       for (const s of syntheticEvents) {
-        if (!covered.has(`${s.channel}:${s.kind}`)) {
+        const duplicate =
+          ((s.kind === 'INITIAL_CONTACT' || s.kind === 'FOLLOW_UP') && syntheticSequence(s) <= realOutlookCount) ||
+          ((s.kind === 'TEAMS_MESSAGE' || s.kind === 'TEAMS_FOLLOW_UP') && syntheticSequence(s) <= realTeamsCount) ||
+          (s.kind === 'MANAGER_RESPONDED' && hasRealManagerResponse) ||
+          (s.kind === 'VERIFIED' && hasRealVerification) ||
+          (s.kind === 'RESOLVED' && hasRealResolved) ||
+          covered.has(`${s.channel}:${s.kind}`);
+        if (!duplicate) {
           mapped.push(s);
           covered.add(`${s.channel}:${s.kind}`);
         }
@@ -436,10 +451,6 @@ export class TrackingService {
     return mapped;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Synthetic event backfill
-// ---------------------------------------------------------------------------
 
 interface TrackingEntrySnapshot {
   id: string;
@@ -455,37 +466,31 @@ interface TrackingEntrySnapshot {
   managerName: string | null;
 }
 
-function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
-  const events: Array<{
-    id: string;
-    displayCode: string;
-    channel: string;
-    kind: string;
-    note: string | null;
-    reason: string | null;
-    payload: unknown;
-    triggeredById: string | null;
-    triggeredByName: string | null;
-    triggeredByEmail: string | null;
-    at: string;
-    synthetic: boolean;
-  }> = [];
+function syntheticSequence(event: { payload: unknown }): number {
+  if (!event.payload || typeof event.payload !== 'object') return 1;
+  const sequence = (event.payload as { sequence?: unknown }).sequence;
+  return typeof sequence === 'number' && Number.isFinite(sequence) ? sequence : 1;
+}
 
-  // Anchor timestamps: spread events across a plausible window anchored to
-  // lastContactAt (most recent outbound) and updatedAt (last known change).
+function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
+  type SynEvent = {
+    id: string; displayCode: string; channel: string; kind: string;
+    note: string | null; reason: string | null; payload: unknown;
+    triggeredById: string | null; triggeredByName: string | null;
+    triggeredByEmail: string | null; at: string; synthetic: boolean;
+  };
+  const events: SynEvent[] = [];
+
+  const totalSends = (entry.outlookCount ?? 0) + (entry.teamsCount ?? 0);
   const anchor = entry.lastContactAt ?? entry.updatedAt;
   const anchorMs = anchor.getTime();
+  const HOUR = 60 * 60 * 1000;
 
-  // Each synthetic event gets a slightly earlier timestamp so they fan out
-  // naturally on the timeline (1 hour apart going backwards).
-  let offsetMs = 0;
-  function ts() {
-    const t = new Date(anchorMs - offsetMs).toISOString();
-    offsetMs += 60 * 60 * 1000; // 1 hour earlier per event
-    return t;
+  function slotTime(slot: number): string {
+    const hoursBack = totalSends - slot + 2;
+    return new Date(anchorMs - hoursBack * HOUR).toISOString();
   }
 
-  // Entry created (always synthesize if no real CREATED event).
   events.push({
     id: `syn:${entry.id}:created`,
     displayCode: `${entry.displayCode}-S0`,
@@ -494,15 +499,13 @@ function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
     note: 'Tracking entry created',
     reason: null,
     payload: { stage: 'NEW' },
-    triggeredById: null,
-    triggeredByName: null,
-    triggeredByEmail: null,
-    at: new Date(anchorMs - (entry.outlookCount + entry.teamsCount + 3) * 60 * 60 * 1000).toISOString(),
+    triggeredById: null, triggeredByName: null, triggeredByEmail: null,
+    at: slotTime(0),
     synthetic: true,
   });
 
-  // Outlook sends — one synthetic event per count.
-  for (let i = 1; i <= (entry.outlookCount ?? 0); i++) {
+  let slot = 1;
+  for (let i = 1; i <= (entry.outlookCount ?? 0); i++, slot++) {
     events.push({
       id: `syn:${entry.id}:outlook:${i}`,
       displayCode: `${entry.displayCode}-S${i}`,
@@ -511,16 +514,13 @@ function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
       note: i === 1 ? 'Initial contact email sent' : `Follow-up email #${i} sent`,
       reason: null,
       payload: { sequence: i },
-      triggeredById: null,
-      triggeredByName: null,
-      triggeredByEmail: null,
-      at: ts(),
+      triggeredById: null, triggeredByName: null, triggeredByEmail: null,
+      at: slotTime(slot),
       synthetic: true,
     });
   }
 
-  // Teams messages — one synthetic event per count.
-  for (let j = 1; j <= (entry.teamsCount ?? 0); j++) {
+  for (let j = 1; j <= (entry.teamsCount ?? 0); j++, slot++) {
     events.push({
       id: `syn:${entry.id}:teams:${j}`,
       displayCode: `${entry.displayCode}-T${j}`,
@@ -529,37 +529,13 @@ function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
       note: j === 1 ? 'Teams message sent' : `Teams follow-up #${j} sent`,
       reason: null,
       payload: { sequence: j },
-      triggeredById: null,
-      triggeredByName: null,
-      triggeredByEmail: null,
-      at: ts(),
+      triggeredById: null, triggeredByName: null, triggeredByEmail: null,
+      at: slotTime(slot),
       synthetic: true,
     });
   }
 
-  // Escalation events.
-  for (let lvl = 1; lvl <= (entry.escalationLevel ?? 0); lvl++) {
-    events.push({
-      id: `syn:${entry.id}:escalated:${lvl}`,
-      displayCode: `${entry.displayCode}-E${lvl}`,
-      channel: 'system',
-      kind: 'ESCALATED',
-      note: `Escalated to Level ${lvl}`,
-      reason: null,
-      payload: { level: lvl },
-      triggeredById: null,
-      triggeredByName: null,
-      triggeredByEmail: null,
-      at: ts(),
-      synthetic: true,
-    });
-  }
-
-  // Manager responded.
-  if (entry.stage === 'RESPONDED' || entry.stage === 'AWAITING_RESPONSE' || entry.resolved) {
-    const respondedAt = entry.lastContactAt
-      ? new Date(entry.lastContactAt.getTime() + 30 * 60 * 1000).toISOString()
-      : ts();
+  if (entry.stage === 'RESPONDED') {
     events.push({
       id: `syn:${entry.id}:responded`,
       displayCode: `${entry.displayCode}-R`,
@@ -571,12 +547,11 @@ function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
       triggeredById: null,
       triggeredByName: entry.managerName ?? null,
       triggeredByEmail: null,
-      at: respondedAt,
+      at: entry.updatedAt.toISOString(),
       synthetic: true,
     });
   }
 
-  // Verified.
   if (entry.verifiedAt) {
     events.push({
       id: `syn:${entry.id}:verified`,
@@ -586,15 +561,12 @@ function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
       note: 'Auditor verified the response',
       reason: null,
       payload: {},
-      triggeredById: null,
-      triggeredByName: null,
-      triggeredByEmail: null,
+      triggeredById: null, triggeredByName: null, triggeredByEmail: null,
       at: entry.verifiedAt.toISOString(),
       synthetic: true,
     });
   }
 
-  // Resolved.
   if (entry.resolved) {
     events.push({
       id: `syn:${entry.id}:resolved`,
@@ -604,9 +576,7 @@ function buildSyntheticEvents(entry: TrackingEntrySnapshot) {
       note: 'Issue resolved',
       reason: null,
       payload: {},
-      triggeredById: null,
-      triggeredByName: null,
-      triggeredByEmail: null,
+      triggeredById: null, triggeredByName: null, triggeredByEmail: null,
       at: entry.updatedAt.toISOString(),
       synthetic: true,
     });
