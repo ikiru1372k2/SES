@@ -67,6 +67,7 @@ export function EscalationPanel({
   useEffect(() => {
     const key = row?.managerKey ?? null;
     if (key && key !== prevManagerKeyRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTab('findings');
     }
     prevManagerKeyRef.current = key;

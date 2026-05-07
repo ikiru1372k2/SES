@@ -27,6 +27,12 @@ function buildService(opts: {
     trackingEntry: {
       findMany: () => Promise.resolve(opts.tracking),
     },
+    trackingEvent: {
+      findMany: () => Promise.resolve([]),
+    },
+    notificationLog: {
+      findMany: () => Promise.resolve([]),
+    },
     managerDirectory: {
       findMany: () => Promise.resolve(opts.directory),
     },

@@ -132,6 +132,7 @@ export function Composer({
   const readOnly = locked;
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCc([]);
   }, [row.managerKey]);
 

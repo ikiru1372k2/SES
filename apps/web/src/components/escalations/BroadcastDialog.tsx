@@ -6,7 +6,7 @@ import {
   type BroadcastOutcome,
   type BroadcastRecipient,
 } from '../../lib/api/bulkTrackingApi';
-import { fillEmailWindow, fillLoadingWindow, openBlankWindow } from '../../lib/outbound/clientHandoff';
+import { fillLoadingWindow, openBlankWindow } from '../../lib/outbound/clientHandoff';
 import { Modal } from '../shared/Modal';
 import { Button } from '../shared/Button';
 import { PreviewPane } from './PreviewPane';
