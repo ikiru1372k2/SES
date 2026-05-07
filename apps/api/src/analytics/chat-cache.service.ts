@@ -19,6 +19,8 @@ export class ChatCacheService {
     processCode: string;
     functionId: string | null;
     datasetVersion: string;
+    /** Distinguish stub vs real-agent answers so they never collide. */
+    useStub?: boolean;
   }): string {
     return createHash('sha256')
       .update(
@@ -27,6 +29,7 @@ export class ChatCacheService {
           p: input.processCode,
           f: input.functionId,
           v: input.datasetVersion,
+          s: input.useStub ? 1 : 0,
         }),
       )
       .digest('hex');

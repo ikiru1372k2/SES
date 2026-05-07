@@ -334,6 +334,7 @@ export class AnalyticsService {
       processCode,
       functionId: body.functionId ?? null,
       datasetVersion,
+      useStub: body.useStub ?? false,
     });
 
     res.setHeader('Content-Type', 'text/event-stream');

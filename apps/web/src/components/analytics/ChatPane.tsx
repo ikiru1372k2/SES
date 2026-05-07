@@ -53,7 +53,8 @@ export function ChatPane({
     setInput('');
     setPending(true);
     try {
-      const reqBody: import('../../lib/api/analyticsApi').ChatRequestBody = { question: q, useStub: true };
+      // Real agent by default. Pass useStub=true explicitly only for offline demos.
+      const reqBody: import('../../lib/api/analyticsApi').ChatRequestBody = { question: q, useStub: false };
       if (functionId !== undefined) reqBody.functionId = functionId;
       if (versionRef !== undefined) reqBody.versionRef = versionRef;
       if (compareTo !== undefined) reqBody.compareTo = compareTo;
