@@ -21,6 +21,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      minio:
+        image: bitnami/minio:latest
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ROOT_USER: ci-access-key
+          MINIO_ROOT_PASSWORD: ci-secret-key-32chars-min-length-ok
+          MINIO_DEFAULT_BUCKETS: ses-ci
+        options: >-
+          --health-cmd "curl -sf http://localhost:9000/minio/health/live"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       DATABASE_URL: postgresql://ses:ses@127.0.0.1:5432/ses
       SES_AUTH_SECRET: ses-ci-secret-0123456789abcdef0123456789abcdef
@@ -28,8 +41,10 @@ jobs:
       OBJECT_STORAGE_DRIVER: s3
       OBJECT_STORAGE_REGION: us-east-1
       OBJECT_STORAGE_ACCESS_KEY: ci-access-key
-      OBJECT_STORAGE_SECRET_KEY: ci-secret-key
+      OBJECT_STORAGE_SECRET_KEY: ci-secret-key-32chars-min-length-ok
       OBJECT_STORAGE_BUCKET: ses-ci
+      OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:9000
+      OBJECT_STORAGE_FORCE_PATH_STYLE: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
