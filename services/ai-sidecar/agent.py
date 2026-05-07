@@ -256,13 +256,61 @@ async def _real_agent_loop(
 
     schema_sample = rows[0]
     columns = list(schema_sample.keys())
-    sample_values = {k: schema_sample[k] for k in columns[:6]}
+
+    # Build a real data dictionary so the model isn't guessing column meanings.
+    def _distinct(col: str, limit: int = 25) -> list[Any]:
+        seen: list[Any] = []
+        s: set[str] = set()
+        for r in rows:
+            v = r.get(col)
+            if v is None:
+                continue
+            k = str(v)
+            if k in s:
+                continue
+            s.add(k)
+            seen.append(v)
+            if len(seen) >= limit:
+                break
+        return seen
+
+    # Build a distinct-values dictionary across ALL low-cardinality columns so
+    # the model can match the user's natural-language question to the actual
+    # data — no function-specific hardcoding. Works the same way for every
+    # function (master-data, over-planning, missing-plan, function-rate,
+    # internal-cost-rate, opportunities) because we describe what's actually
+    # in `issues`, not what's expected to be there.
+    LOW_CARD_LIMIT = 30  # if distinct count exceeds this, omit (high-cardinality)
+    distinct_dict: dict[str, list[Any]] = {}
+    for col in columns:
+        vals = _distinct(col, LOW_CARD_LIMIT + 1)
+        if 0 < len(vals) <= LOW_CARD_LIMIT:
+            distinct_dict[col] = vals
+
+    sample_rows = rows[:3]
+
     user_msg = (
         f"Question: {question}\n\n"
-        f"Available columns on `issues`: {', '.join(columns)}\n"
-        f"Row count: {len(rows)}\n"
-        f"Sample row (first 6 cols): {json.dumps(sample_values, default=str)}\n"
-        f"dataset_version: {dataset_version}\n"
+        f"DATA DICTIONARY for the `issues` view in this scope:\n"
+        f"- columns: {', '.join(columns)}\n"
+        f"- total rows: {len(rows)}\n"
+        f"- distinct values per low-cardinality column (use EXACT strings in WHERE clauses):\n"
+        f"{json.dumps(distinct_dict, default=str, indent=2)[:3500]}\n\n"
+        f"- 3 sample rows: {json.dumps(sample_rows, default=str)[:1500]}\n"
+        f"- dataset_version: {dataset_version}\n\n"
+        f"How to map the user's words to columns and values:\n"
+        f"- The user's question describes audit findings. Look at the distinct\n"
+        f"  ruleCode list above and match keywords from the question to the\n"
+        f"  actual ruleCode strings (e.g. if user says 'missing X', look for\n"
+        f"  any ruleCode containing 'X' or 'MISSING_X').\n"
+        f"- Use ruleCode LIKE '%KEYWORD%' for fuzzy matches across rule families.\n"
+        f"- 'unmapped' / 'missing manager' → projectManager IS NULL OR projectManager = '' OR projectManager = 'Unassigned'.\n"
+        f"- 'missing email' → email IS NULL OR email = ''.\n"
+        f"- For 'top N <thing>', GROUP BY <thing-column> and ORDER BY COUNT(*) DESC.\n"
+        f"- ALWAYS use ruleCode / engineId / severity values copied verbatim\n"
+        f"  from the distinct lists above. Never invent rule codes.\n"
+        f"- If no matching ruleCode exists for the user's keyword, search the\n"
+        f"  reason and projectName columns with ILIKE '%keyword%' instead.\n"
     )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": _SYSTEM_PROMPT},
