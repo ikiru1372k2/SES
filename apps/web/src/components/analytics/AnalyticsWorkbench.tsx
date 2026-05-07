@@ -92,7 +92,22 @@ export function AnalyticsWorkbench({ processCode, functionId }: Props) {
             <option value="">No compare</option>
             {versionOptions.map((v) => <option key={v} value={v}>{v}</option>)}
           </select>
-          <div className="ml-auto"><OllamaHealthPill /></div>
+          <div className="ml-auto flex items-center gap-2">
+            <a
+              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900"
+              href={`/api/v1/analytics/processes/${encodeURIComponent(processCode)}/export.xlsx${functionId ? `?functionId=${encodeURIComponent(functionId)}` : ''}`}
+            >
+              Export Excel
+            </a>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-900"
+            >
+              Print / PDF
+            </button>
+            <OllamaHealthPill />
+          </div>
         </div>
 
         {summary.data ? (

@@ -91,4 +91,14 @@ export class AnalyticsController {
   ) {
     return this.analytics.chatHistory(processCode, user, asFunctionId(q.functionId));
   }
+
+  @Get('processes/:processCode/export.xlsx')
+  async exportXlsx(
+    @Param('processCode') processCode: string,
+    @Query('functionId') functionId: string | undefined,
+    @CurrentUser() user: SessionUser,
+    @Res() res: Response,
+  ) {
+    return this.analytics.exportXlsx(processCode, user, asFunctionId(functionId), res);
+  }
 }

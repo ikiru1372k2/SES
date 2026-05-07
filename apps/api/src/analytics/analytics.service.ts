@@ -452,4 +452,72 @@ export class AnalyticsService {
   evictCacheForScope(processCode: string, functionId?: FunctionId | null) {
     this.cache.evictMatching({ processCode, functionId: functionId ?? null });
   }
+
+  /** GET /analytics/processes/:p/export.xlsx → workbook with issues + summary. */
+  async exportXlsx(
+    processCode: string,
+    user: SessionUser,
+    functionId: FunctionId | undefined,
+    res: Response,
+  ): Promise<void> {
+    const ExcelJS = (await import('exceljs')).default;
+    const summary = await this.summary(processCode, user, functionId);
+    const managers = await this.managers(processCode, user, functionId);
+    const anomalies = await this.anomalies(processCode, user, functionId);
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'SES Analytics';
+    wb.created = new Date();
+
+    const overview = wb.addWorksheet('Overview');
+    overview.addRow(['Metric', 'Value']);
+    overview.addRow(['Process', summary.processCode]);
+    overview.addRow(['Scope', functionId ?? 'process-level']);
+    overview.addRow(['Functions covered', summary.functionsCovered]);
+    overview.addRow(['Total scanned', summary.totalScanned]);
+    overview.addRow(['Total flagged', summary.totalFlagged]);
+    overview.addRow(['Stale functions', summary.perFunction.filter((p) => p.stale).length]);
+    overview.getRow(1).font = { bold: true };
+
+    const fnSheet = wb.addWorksheet('Per Function');
+    fnSheet.addRow(['Function', 'Label', 'Scanned', 'Flagged', 'Last Run', 'Age (days)', 'Stale']);
+    for (const p of summary.perFunction) {
+      fnSheet.addRow([
+        p.functionId,
+        p.label,
+        p.scannedRows,
+        p.flaggedRows,
+        p.completedAt ?? '',
+        p.ageDays ?? '',
+        p.stale ? 'YES' : 'no',
+      ]);
+    }
+    fnSheet.getRow(1).font = { bold: true };
+
+    const mgrSheet = wb.addWorksheet('Top Managers');
+    mgrSheet.addRow(['Manager', 'Issues', 'High-severity']);
+    for (const m of managers) mgrSheet.addRow([m.manager, m.count, m.high]);
+    mgrSheet.getRow(1).font = { bold: true };
+
+    const anomSheet = wb.addWorksheet('Rule Violations');
+    anomSheet.addRow(['Function', 'Rule', 'Project No', 'Project Name', 'Manager', 'Severity', 'Reason']);
+    for (const a of anomalies.ruleViolations) {
+      anomSheet.addRow([
+        a.functionId,
+        a.ruleId ?? '',
+        a.projectNo ?? '',
+        a.projectName ?? '',
+        a.managerName ?? '',
+        a.severity,
+        a.reason ?? '',
+      ]);
+    }
+    anomSheet.getRow(1).font = { bold: true };
+
+    const filename = `analytics_${processCode}_${functionId ?? 'process'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    const buffer = await wb.xlsx.writeBuffer();
+    res.end(Buffer.from(buffer as ArrayBuffer));
+  }
 }

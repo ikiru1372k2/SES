@@ -153,7 +153,19 @@ export function ChatPane({
                       {showSqlFor === m.id && m.generatedSql ? (
                         <pre className="overflow-auto rounded bg-gray-50 p-2 text-[11px] dark:bg-gray-950">{m.generatedSql}</pre>
                       ) : null}
-                      <ChartRenderer spec={m.chartSpec} />
+                      <ChartRenderer
+                        spec={m.chartSpec}
+                        onDatumClick={(datum) => {
+                          const dd = m.chartSpec?.drilldown;
+                          if (!dd) return;
+                          let q = dd.questionTemplate;
+                          for (const [k, v] of Object.entries(dd.bindings)) {
+                            const val = (datum as Record<string, unknown>)[k] ?? (v === 'datum' ? JSON.stringify(datum) : '');
+                            q = q.replaceAll(`{${k}}`, String(val));
+                          }
+                          void ask(q);
+                        }}
+                      />
                     </div>
                   ) : null}
                 </div>

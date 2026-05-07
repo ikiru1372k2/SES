@@ -37,8 +37,22 @@ class DuckCache:
             return self._entries[key]
         con = duckdb.connect(":memory:")
         if rows:
-            con.register("issues_src", rows)
-            con.execute("CREATE VIEW issues AS SELECT * FROM issues_src")
+            try:
+                import pandas as _pd
+                df = _pd.DataFrame(rows)
+                con.register("issues_src", df)
+                con.execute("CREATE VIEW issues AS SELECT * FROM issues_src")
+            except Exception:
+                # Last-ditch: build a minimal table from inferred columns.
+                cols = list(rows[0].keys())
+                quoted = ", ".join(f'"{c}" VARCHAR' for c in cols)
+                con.execute(f"CREATE TABLE issues ({quoted})")
+                placeholders = ", ".join(["?"] * len(cols))
+                for r in rows:
+                    con.execute(
+                        f"INSERT INTO issues VALUES ({placeholders})",
+                        [str(r.get(c)) if r.get(c) is not None else None for c in cols],
+                    )
         else:
             # empty schema fallback so SELECTs don't blow up
             con.execute("CREATE TABLE issues (placeholder INT)")

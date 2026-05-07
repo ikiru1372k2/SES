@@ -31,7 +31,13 @@ function formatVal(v: unknown): string {
   return String(v ?? '');
 }
 
-export function ChartRenderer({ spec }: { spec: ChartSpec }) {
+export function ChartRenderer({
+  spec,
+  onDatumClick,
+}: {
+  spec: ChartSpec;
+  onDatumClick?: (datum: Record<string, unknown>) => void;
+}) {
   if (spec.type === 'kpi') {
     return (
       <div className="flex flex-col rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -79,10 +85,17 @@ export function ChartRenderer({ spec }: { spec: ChartSpec }) {
   if (spec.type === 'bar' || spec.type === 'line' || spec.type === 'area') {
     const ys = Array.isArray(spec.y) ? spec.y : [spec.y];
     const ChartCmp = spec.type === 'bar' ? BarChart : spec.type === 'line' ? LineChart : AreaChart;
+    const handleClick = onDatumClick
+      ? (e: { activePayload?: Array<{ payload?: Record<string, unknown> }> }) => {
+          const datum = e?.activePayload?.[0]?.payload;
+          if (datum) onDatumClick(datum);
+        }
+      : undefined;
+    const clickProp = handleClick ? { onClick: handleClick as unknown as never } : {};
     return (
       <div className="h-72 w-full">
         <ResponsiveContainer>
-          <ChartCmp data={spec.data}>
+          <ChartCmp data={spec.data} {...clickProp}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey={spec.x} />
             <YAxis />

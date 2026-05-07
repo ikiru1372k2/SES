@@ -423,6 +423,9 @@ class MaterializeReq(BaseModel):
     rows: List[Dict[str, Any]] = []
 
 
+_DEFAULT_USE_STUB = os.getenv("AI_AGENT_USE_STUB", "1") not in ("0", "false", "False")
+
+
 class AnalyticsChatReq(BaseModel):
     process_code: str
     function_id: Optional[str] = None
@@ -430,7 +433,7 @@ class AnalyticsChatReq(BaseModel):
     compare_to: Optional[str] = None
     question: str
     rows: List[Dict[str, Any]] = []
-    use_stub: bool = True
+    use_stub: bool = _DEFAULT_USE_STUB
 
 
 class SqlReq(BaseModel):
@@ -482,3 +485,19 @@ async def analytics_sql(req: SqlReq):
         return {"rows": query_sql(req.process_code, req.dataset_version, req.sql)}
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+class AnomalyDetectReq(BaseModel):
+    rows: List[Dict[str, Any]] = []
+    columns: Optional[List[str]] = None
+
+
+@app.post("/analytics/anomalies/ml")
+async def analytics_anomalies_ml(req: AnomalyDetectReq):
+    """ML overlay: returns numeric outliers (IsolationForest + z-score)."""
+    try:
+        from tools.anomaly import detect_numeric_outliers  # local import — avoids loading at boot
+    except Exception as e:
+        raise HTTPException(503, f"anomaly tool unavailable: {e}")
+    found = detect_numeric_outliers(req.rows, req.columns)
+    return {"outliers": found, "count": len(found)}
