@@ -13,9 +13,9 @@ import os
 import time
 from typing import Any, AsyncGenerator
 
-from .tools.sql import DuckCache, canonicalize_rows, safe_query
-from .tools.charts import validate_chart_spec
-from .tools.stats import run_stat
+from tools.sql import DuckCache, canonicalize_rows, safe_query
+from tools.charts import validate_chart_spec  # noqa: F401  (used once real agent wired)
+from tools.stats import run_stat  # noqa: F401  (used once real agent wired)
 
 AGENT_MODEL = os.getenv("AI_AGENT_MODEL", "qwen2.5-coder:7b-instruct")
 AGENT_MAX_ITER = int(os.getenv("AI_AGENT_MAX_ITER", "5"))
