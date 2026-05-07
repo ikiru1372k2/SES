@@ -19,7 +19,7 @@ from tools.charts import validate_chart_spec
 from tools.stats import run_stat  # noqa: F401  (used once real agent wired)
 
 AGENT_MODEL = os.getenv("AI_AGENT_MODEL", "qwen2.5-coder:7b-instruct")
-AGENT_MAX_ITER = int(os.getenv("AI_AGENT_MAX_ITER", "5"))
+AGENT_MAX_ITER = int(os.getenv("AI_AGENT_MAX_ITER", "3"))
 
 _duck_cache = DuckCache()
 
@@ -148,62 +148,89 @@ def _now_iso() -> str:
 
 _SYSTEM_PROMPT = """You are an SES audit data analyst. The user asks questions about an in-memory DuckDB view named `issues`.
 
-Each row has these columns (all may be null):
+Columns on `issues` (all may be null):
   issueKey, ruleCode, projectNo, projectName, projectManager, email,
   severity ('High'|'Medium'|'Low'), reason, effort, rowIndex, sheetName,
-  projectState, engineId (the function: master-data | over-planning |
-  missing-plan | function-rate | internal-cost-rate | opportunities),
-  runCode
+  projectState, engineId, runCode
 
-You MUST always reply with a single JSON object. No prose outside JSON.
+Reply with EXACTLY ONE JSON object. No prose, no markdown, no code fences.
 
-Iterate up to 5 times. On each turn output EITHER:
+Each turn, choose ONE shape:
 
-  (a) Run a SELECT:
-      {"tool": "sql_query", "sql": "SELECT ..."}
+SHAPE A — run a SELECT:
+{"tool":"sql_query","sql":"SELECT ..."}
 
-  (b) Final answer (REQUIRED to include chart_spec whenever the SQL result has rows):
-      {
-        "final": "<one or two sentences citing concrete numbers/names from the SQL result>",
-        "chart_spec": {
-          "type": "<bar|line|area|pie|scatter|heatmap|table|kpi>",
-          "data": <array of objects from the SQL result>,
-          "x": "<column for x-axis>",          // for bar/line/area/scatter
-          "y": "<column>" | ["col1","col2"],   // for bar/line/area
-          "name": "<col>",                     // for pie
-          "value": "<col>",                    // for pie / kpi
-          "source": {"executed_at":"<ISO>","row_count": <n>,"dataset_version":"<copy from question>"}
-        },
-        "alternatives": [<2-3 shape-compatible alt specs you could swap to (optional but encouraged)>],
-        "generated_sql": "<the last SQL you ran>"
-      }
+SHAPE B — final answer (use after you have rows OR you're sure no SQL is needed):
+{"final":"<short answer>","chart_spec":<spec or null>,"generated_sql":"<your last SELECT or empty>"}
 
-Rules:
-- chart_spec MUST be present unless the SQL result is empty.
-- For "top N by X" questions prefer bar with x=<category col>, y=<count col>.
-- For trend questions prefer line.
-- For severity/category breakdowns prefer pie.
-- For "list/show me" prefer table with columns from the SELECT.
-- Bar↔line↔area share {x,y} so include them in alternatives when natural.
-- Keep SQL under 4 KB, read-only, no DDL/DML, no INVENT columns.
-- If the data can't answer the question, set chart_spec to null and explain in `final`.
+chart_spec MUST be EXACTLY this shape (this is OUR schema, not Chart.js):
+
+  bar:    {"type":"bar","data":[{...row...}],"x":"<col>","y":"<col or [cols]>","source":{"executed_at":"2026-01-01T00:00:00Z","row_count":N,"dataset_version":"v"}}
+  line:   {"type":"line","data":[{...}],"x":"<col>","y":"<col>","source":{...}}
+  pie:    {"type":"pie","data":[{...}],"name":"<col>","value":"<col>","source":{...}}
+  table:  {"type":"table","columns":["c1","c2"],"rows":[{...}],"source":{...}}
+
+`data` MUST be a JSON array of objects (one per row from your SELECT). Do NOT wrap it in {labels,datasets} or anything else.
+If the SQL result is empty, set chart_spec to null.
+
+Examples (correct):
+
+User asked "top 3 managers", you ran SELECT projectManager, COUNT(*) c FROM issues GROUP BY projectManager ORDER BY c DESC LIMIT 3, got [{"projectManager":"Alice","c":2},{"projectManager":"Bob","c":1}]. Final:
+{"final":"Alice (2) and Bob (1) lead.","chart_spec":{"type":"bar","data":[{"projectManager":"Alice","c":2},{"projectManager":"Bob","c":1}],"x":"projectManager","y":"c","source":{"executed_at":"2026-01-01T00:00:00Z","row_count":2,"dataset_version":"v"}},"generated_sql":"SELECT projectManager, COUNT(*) c FROM issues GROUP BY projectManager ORDER BY c DESC LIMIT 3"}
+
+For "list missing PSU projects" → use type="table".
+For severity breakdown → type="pie" with name="severity",value="cnt".
 """
 
 
+def _strip_codefence(s: str) -> str:
+    s = s.strip()
+    if s.startswith("```"):
+        s = s.split("```", 2)[1]
+        if s.startswith("json"):
+            s = s[4:]
+        s = s.rsplit("```", 1)[0]
+    return s.strip()
+
+
 async def _ollama_chat(messages: list[dict[str, str]], model: str) -> dict[str, Any]:
-    """Single Ollama chat call returning parsed JSON content."""
+    """Single Ollama chat call returning parsed JSON content.
+
+    Note: we deliberately DO NOT pass format='json' to Ollama. JSON-mode
+    can hang for tens of seconds on multi-turn coder prompts (likely a
+    grammar-sampler bug with this model). We bound generation with
+    num_predict and parse the resulting markdown/JSON loosely.
+    """
     import asyncio
     import ollama
 
     client = ollama.Client(host=os.getenv("OLLAMA_URL", "http://localhost:11434"))
-    # ollama.Client.chat is synchronous; run it in a thread.
+
     def _run() -> dict[str, Any]:
-        resp = client.chat(model=model, messages=messages, format="json", options={"temperature": 0.1})
+        resp = client.chat(
+            model=model,
+            messages=messages,
+            options={"temperature": 0.1, "num_predict": 300, "num_ctx": 4096},
+        )
         content = resp.get("message", {}).get("content", "{}")
+        cleaned = _strip_codefence(content)
+        # Extract first {...} block in case the model added prose
+        depth = 0
+        start = -1
+        for i, ch in enumerate(cleaned):
+            if ch == "{":
+                if start == -1:
+                    start = i
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    cleaned = cleaned[start : i + 1]
+                    break
         try:
-            return json.loads(content)
+            return json.loads(cleaned)
         except Exception:
-            return {"final": content, "chart_spec": None}
+            return {"final": content[:600], "chart_spec": None}
 
     return await asyncio.to_thread(_run)
 

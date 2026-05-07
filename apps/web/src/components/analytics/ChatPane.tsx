@@ -58,6 +58,9 @@ export function ChatPane({
       if (functionId !== undefined) reqBody.functionId = functionId;
       if (versionRef !== undefined) reqBody.versionRef = versionRef;
       if (compareTo !== undefined) reqBody.compareTo = compareTo;
+      let sawFinal = false;
+      const ctrl = new AbortController();
+      const hardTimeout = setTimeout(() => ctrl.abort(), 180_000);
       await streamAnalyticsChat(
         processCode,
         reqBody,
@@ -71,7 +74,10 @@ export function ChatPane({
               m.content = m.content || `…${evt.text}`;
             } else if (evt.type === 'partial_answer') {
               m.content = (m.content === `…${evt.text}` ? '' : m.content) + evt.text;
+            } else if (evt.type === 'tool_call') {
+              m.content = m.content && !m.content.startsWith('…') ? m.content : `running ${evt.name}…`;
             } else if (evt.type === 'final') {
+              sawFinal = true;
               m.content = evt.answer;
               m.chartSpec = evt.chart_spec ?? null;
               m.alternatives = evt.alternatives ?? null;
@@ -85,7 +91,18 @@ export function ChatPane({
             return next;
           });
         },
+        ctrl.signal,
       );
+      clearTimeout(hardTimeout);
+      if (!sawFinal) {
+        setMessages((prev) =>
+          prev.map((mm) =>
+            mm.id === assistantMsg.id
+              ? { ...mm, content: mm.content && !mm.content.startsWith('…') ? mm.content : 'No answer returned (stream ended without final). Try a simpler question or restart the AI sidecar.', pending: false }
+              : mm,
+          ),
+        );
+      }
     } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
