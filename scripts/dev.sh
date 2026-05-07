@@ -233,8 +233,12 @@ start_api_and_web() {
   kill_port "$WEB_PORT"
   kill_port "$API_PORT"
   log "logs → $LOG_DIR/api.log and $LOG_DIR/web.log"
-  ( nohup bash -c 'npm run dev:api' >"$LOG_DIR/api.log" 2>&1 & echo $! >"$LOG_DIR/api.pid" )
-  ( nohup bash -c 'npm run dev:web' >"$LOG_DIR/web.log" 2>&1 & echo $! >"$LOG_DIR/web.pid" )
+  # Bind to 0.0.0.0 so both services are reachable from the LAN, not just
+  # loopback. HOST controls the NestJS listen address; dev:lan passes
+  # --host 0.0.0.0 to Vite. SES_CORS_ORIGINS broadens the CORS allowlist to
+  # include requests from any local machine on the same subnet.
+  ( nohup bash -c 'HOST=0.0.0.0 SES_CORS_ORIGINS="http://localhost:3210,http://127.0.0.1:3210,http://192.168.68.127:3210" npm run dev:api' >"$LOG_DIR/api.log" 2>&1 & echo $! >"$LOG_DIR/api.pid" )
+  ( nohup bash -c 'npm run build --workspace @ses/domain && npm run dev:lan --workspace @ses/web' >"$LOG_DIR/web.log" 2>&1 & echo $! >"$LOG_DIR/web.pid" )
   step "waiting for API health"
   wait_url "http://127.0.0.1:${API_PORT}/api/v1/health" 60 \
     || warn "API did not respond in 60s — check $LOG_DIR/api.log"

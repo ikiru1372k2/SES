@@ -1,25 +1,4 @@
-import { ConflictException } from '@nestjs/common';
 import { EscalationStage } from '../repositories/types';
-import type { EscalationSendChannel } from '../outbound/outbound-delivery.service';
-
-export function assertChannelAllowed(
-  entry: { outlookCount: number; teamsCount: number },
-  channel: EscalationSendChannel,
-): void {
-  const effective: 'outlook' | 'teams' = channel === 'teams' ? 'teams' : 'outlook';
-  if (effective === 'outlook') {
-    if (entry.outlookCount >= 2) {
-      throw new ConflictException('Outlook limit reached for this cycle — escalate via Teams next.');
-    }
-    return;
-  }
-  if (entry.outlookCount < 2) {
-    throw new ConflictException('Send two Outlook reminders before escalating to Teams.');
-  }
-  if (entry.teamsCount >= 1) {
-    throw new ConflictException('Cycle complete — resolve or force re-escalate before sending again.');
-  }
-}
 
 export function isIndividualComposeSources(sources: unknown): boolean {
   if (!Array.isArray(sources)) return false;

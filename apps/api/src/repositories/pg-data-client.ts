@@ -276,9 +276,20 @@ function compileOrderBy(orderBy: unknown, alias: string): string {
   const segs: string[] = [];
   for (const item of items) {
     if (!item || typeof item !== 'object') continue;
-    for (const [k, v] of Object.entries(item as Record<string, string>)) {
-      const dir = String(v).toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-      segs.push(`${alias}.${QC(k)} ${dir}`);
+    for (const [k, v] of Object.entries(item as Record<string, unknown>)) {
+      // v may be a plain string ('asc'|'desc') or a Prisma object
+      // ({ sort: 'asc'|'desc', nulls: 'first'|'last' }).
+      let dir = 'ASC';
+      let nulls = '';
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        const vo = v as Record<string, unknown>;
+        if (String(vo.sort).toLowerCase() === 'desc') dir = 'DESC';
+        if (vo.nulls === 'last') nulls = ' NULLS LAST';
+        else if (vo.nulls === 'first') nulls = ' NULLS FIRST';
+      } else if (String(v).toLowerCase() === 'desc') {
+        dir = 'DESC';
+      }
+      segs.push(`${alias}.${QC(k)} ${dir}${nulls}`);
     }
   }
   return segs.length ? `ORDER BY ${segs.join(', ')}` : '';

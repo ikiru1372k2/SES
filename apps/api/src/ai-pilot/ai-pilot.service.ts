@@ -80,8 +80,20 @@ export class AiPilotService {
         include: { aiMeta: true },
       });
       const specs: AiRuleSpec[] = [];
+      // Dedupe by structural signature (logic + flagMessage). A user can
+      // accidentally save the same rule twice; without this guard the
+      // executor would emit one issue per duplicate, causing visible
+      // duplication on every audit run.
+      const seenSignatures = new Set<string>();
       for (const row of rows) {
         if (!row.aiMeta) continue;
+        const signature = JSON.stringify({
+          functionId: row.functionId,
+          flagMessage: row.aiMeta.flagMessage,
+          logic: row.aiMeta.logic,
+        });
+        if (seenSignatures.has(signature)) continue;
+        seenSignatures.add(signature);
         specs.push({
           ruleCode: row.ruleCode,
           ruleVersion: row.version,
@@ -388,6 +400,30 @@ export class AiPilotService {
     const newRuleCode = spec.ruleCode.startsWith('ai_') ? spec.ruleCode : `ai_${ulid().toLowerCase()}`;
 
     const persisted = await this.prisma.$transaction(async (tx) => {
+      // Deactivate any pre-existing active AI rule on the same function with
+      // identical logic + flagMessage. Without this, repeatedly saving the
+      // same rule produces duplicate findings on every audit run.
+      const existingActive = await tx.auditRule.findMany({
+        where: { functionId: spec.functionId, source: 'ai-pilot', status: 'active' },
+        include: { aiMeta: true },
+      });
+      const incomingSig = JSON.stringify({
+        flagMessage: spec.flagMessage,
+        logic: spec.logic,
+      });
+      for (const existing of existingActive) {
+        if (!existing.aiMeta) continue;
+        const existingSig = JSON.stringify({
+          flagMessage: existing.aiMeta.flagMessage,
+          logic: existing.aiMeta.logic,
+        });
+        if (existingSig === incomingSig) {
+          await tx.auditRule.update({
+            where: { id: existing.id },
+            data: { status: 'archived' },
+          });
+        }
+      }
       const auditRule = await tx.auditRule.create({
         data: {
           id: ulid(),

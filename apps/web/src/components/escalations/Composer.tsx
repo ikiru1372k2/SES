@@ -114,9 +114,6 @@ export function Composer({
 
   const outlookCount = row.outlookCount ?? 0;
   const teamsCount = row.teamsCount ?? 0;
-  const outlookAllowed = outlookCount < 2;
-  const teamsAllowed = outlookCount >= 2 && teamsCount < 1;
-  const cycleComplete = outlookCount >= 2 && teamsCount >= 1;
 
   const statusQ = useQuery({
     queryKey: ['compose-status', trackingRef],
@@ -389,19 +386,6 @@ export function Composer({
     ...(templateId ? { templateId } : {}),
   };
 
-  const outlookGateReason = cycleComplete
-    ? 'Cycle complete — resolve or force re-escalate.'
-    : outlookAllowed
-    ? ''
-    : 'Outlook limit reached — escalate via Teams next.';
-  const teamsGateReason = cycleComplete
-    ? 'Cycle complete — resolve or force re-escalate.'
-    : teamsAllowed
-    ? ''
-    : outlookCount < 2
-    ? `Send ${2 - outlookCount} more Outlook reminder${2 - outlookCount === 1 ? '' : 's'} before Teams.`
-    : 'Teams already used this cycle.';
-
   return (
     <div className="space-y-4">
       {readOnly ? (
@@ -417,19 +401,6 @@ export function Composer({
           </button>
         </div>
       ) : null}
-
-      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-        <span className="font-medium">Ladder:</span>
-        <span className={`rounded-full px-2 py-0.5 ${outlookCount >= 1 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
-          Outlook #1 {outlookCount >= 1 ? '✓' : ''}
-        </span>
-        <span className={`rounded-full px-2 py-0.5 ${outlookCount >= 2 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
-          Outlook #2 {outlookCount >= 2 ? '✓' : ''}
-        </span>
-        <span className={`rounded-full px-2 py-0.5 ${teamsCount >= 1 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
-          Teams {teamsCount >= 1 ? '✓' : ''}
-        </span>
-      </div>
 
       <div>
         <div className="text-xs font-medium text-gray-500">To</div>
@@ -572,8 +543,8 @@ export function Composer({
         draftPending={draftMut.isPending}
         onPreview={() => void openPreviewPopup()}
         previewPending={previewPopupPending}
-        outlookAllowed={outlookAllowed}
-        outlookGateReason={outlookGateReason}
+        outlookAllowed={true}
+        outlookGateReason=""
         outlookCount={outlookCount}
         onOutlook={() => {
           const win = openBlankWindow();
@@ -582,8 +553,8 @@ export function Composer({
           handoffWindowRef.current = win;
           sendMut.mutate('email');
         }}
-        teamsAllowed={teamsAllowed}
-        teamsGateReason={teamsGateReason}
+        teamsAllowed={true}
+        teamsGateReason=""
         teamsCount={teamsCount}
         onTeams={() => {
           const win = openBlankWindow();

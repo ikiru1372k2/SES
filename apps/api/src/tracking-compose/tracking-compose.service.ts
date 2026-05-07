@@ -31,11 +31,9 @@ import { OutboundDeliveryService, type EscalationSendChannel } from '../outbound
 import {
   DEFAULT_BODY_TEMPLATE,
   DEFAULT_SUBJECT_TEMPLATE,
-  assertChannelAllowed,
   escapeHtml,
   firstName,
   formatDueDate,
-  isIndividualComposeSources,
   stageKeyForEntry,
   substituteHtml,
   wrapEmailHtml,
@@ -202,8 +200,6 @@ export class TrackingComposeService {
 
     const { subject, text, html, issueCount, channel, managerEmail } = await this.resolveContent(entry, user, body);
     const sendChannel: EscalationSendChannel = channel ?? 'email';
-    const individualCounts = await this.countIndividualSends(entry.id);
-    assertChannelAllowed(individualCounts, sendChannel);
     if (sendChannel === 'both') {
       throw new BadRequestException('Channel "both" is no longer supported — pick Outlook or Teams.');
     }
@@ -304,28 +300,6 @@ export class TrackingComposeService {
       to: to.toLowerCase(),
       cc: (body.cc ?? []).map((c) => c.trim()).filter(Boolean),
     };
-  }
-
-  private async countIndividualSends(trackingEntryId: string): Promise<{ outlookCount: number; teamsCount: number }> {
-    const latestReset = await this.prisma.trackingEvent.findFirst({
-      where: { trackingId: trackingEntryId, kind: 'cycle_reset' },
-      orderBy: { at: 'desc' },
-      select: { at: true },
-    });
-    const logs = await this.prisma.notificationLog.findMany({
-      where: { trackingEntryId },
-      select: { channel: true, sources: true, sentAt: true },
-    });
-    let outlookCount = 0;
-    let teamsCount = 0;
-    const resetAt = latestReset?.at instanceof Date ? latestReset.at.getTime() : null;
-    for (const log of logs as Array<{ channel: string; sources: unknown; sentAt: Date }>) {
-      if (resetAt !== null && log.sentAt.getTime() <= resetAt) continue;
-      if (!isIndividualComposeSources(log.sources)) continue;
-      if (log.channel === 'teams') teamsCount += 1;
-      else if (log.channel === 'email' || log.channel === 'outlook') outlookCount += 1;
-    }
-    return { outlookCount, teamsCount };
   }
 
   async forceReescalate(idOrCode: string, user: SessionUser) {

@@ -476,12 +476,51 @@ export function AuditResultsTab({
         </EmptyState>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-4">
-            <MetricCard label="Scanned Rows" value={result.scannedRows} />
-            <MetricCard label="Flagged Rows" value={result.flaggedRows} />
-            <MetricCard label="Issues" value={result.issues.length} />
-            <MetricCard label="Sheets Audited" value={result.sheets.length} />
-          </div>
+          {(() => {
+            const isAiCode = (c: string | undefined | null) => !!c && c.startsWith('ai_');
+            const engineIssues = result.issues.filter(
+              (i) => !isAiCode(i.ruleCode ?? i.ruleId),
+            );
+            const aiIssues = result.issues.filter((i) =>
+              isAiCode(i.ruleCode ?? i.ruleId),
+            );
+            const distinctRowKeys = (issues: typeof result.issues) => {
+              const set = new Set<string>();
+              for (const i of issues) {
+                if (i.rowIndex == null) continue;
+                set.add(`${i.sheetName}::${i.rowIndex}`);
+              }
+              return set.size;
+            };
+            const engineFlagged = Math.min(
+              distinctRowKeys(engineIssues),
+              result.scannedRows,
+            );
+            const hasAi = aiIssues.length > 0;
+            return (
+              <div
+                className={`grid gap-3 ${hasAi ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}
+              >
+                <MetricCard label="Scanned Rows" value={result.scannedRows} />
+                <MetricCard label="Flagged Rows" value={engineFlagged} />
+                <MetricCard label="Issues" value={engineIssues.length} />
+                <MetricCard label="Sheets Audited" value={result.sheets.length} />
+                {hasAi ? (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-900 dark:bg-rose-950">
+                    <div className="flex items-center gap-1.5">
+                      <AiBadge />
+                      <div className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-200">
+                        AI Issues
+                      </div>
+                    </div>
+                    <div className="mt-2 text-2xl font-bold text-rose-900 dark:text-rose-100">
+                      {aiIssues.length}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })()}
 
           {result.issues.length > 0 ? (
             <EscalationCenterCta

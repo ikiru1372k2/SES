@@ -70,7 +70,7 @@ export function ComposerActions({
         disabled={readOnly || !outlookAllowed || sendPending}
         onClick={onOutlook}
       >
-        Outlook ({outlookCount}/2)
+        Outlook ({outlookCount})
       </Button>
       <Button
         type="button"
@@ -80,7 +80,7 @@ export function ComposerActions({
         disabled={readOnly || !teamsAllowed || sendPending}
         onClick={onTeams}
       >
-        Teams ({teamsCount}/1)
+        Teams ({teamsCount})
       </Button>
     </div>
   );

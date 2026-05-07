@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { RULE_CATALOG_BY_FUNCTION } from '../../src/auditRules.js';
 import { runAiPilotRules } from '../../src/ai-pilot/executor.js';
 import { mergeAuditResults, mergeSheetSummaries } from '../../src/ai-pilot/merger.js';
-import type { WorkbookFile, AuditResult } from '../../src/types.js';
+import type { AuditIssue, WorkbookFile, AuditResult } from '../../src/types.js';
 
 const blankFile: WorkbookFile = {
   id: 'f1',
@@ -98,21 +98,39 @@ test('mergeAuditResults preserves all issues from both sides (no de-dupe)', () =
   };
   const merged = mergeAuditResults(engine, ai);
   assert.equal(merged.issues.length, 2);
-  assert.equal(merged.flaggedRows, 2);
+  // Both issues point at the same (sheet S1, rowIndex 1) row, so flaggedRows
+  // dedupes to 1 — flaggedRows is a DISTINCT row count, not an issue count.
+  assert.equal(merged.flaggedRows, 1);
   assert.equal(merged.scannedRows, 5);
 });
 
-test('mergeSheetSummaries sums flaggedRows but never doubles scannedRows', () => {
+test('mergeSheetSummaries dedupes flaggedRows by (sheet,rowIndex) across engine+ai issues', () => {
   const engine = [{ sheetName: 'A', rowCount: 100, flaggedCount: 3 }];
   const ai = [
     { sheetName: 'A', rowCount: 0, flaggedCount: 2 },
     { sheetName: 'B', rowCount: 0, flaggedCount: 5 },
   ];
-  const merged = mergeSheetSummaries(engine, ai);
+  const issues: AuditIssue[] = [
+    // sheet A — 3 distinct rows from engine
+    { id: 'e1', projectNo: 'P', projectName: '', sheetName: 'A', severity: 'High', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 1, ruleCode: 'r' },
+    { id: 'e2', projectNo: 'P', projectName: '', sheetName: 'A', severity: 'High', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 2, ruleCode: 'r' },
+    { id: 'e3', projectNo: 'P', projectName: '', sheetName: 'A', severity: 'High', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 3, ruleCode: 'r' },
+    // sheet A — AI flags rowIndex 2 (overlap) + a new rowIndex 4
+    { id: 'a1', projectNo: 'P', projectName: '', sheetName: 'A', severity: 'Medium', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 2, ruleCode: 'ai' },
+    { id: 'a2', projectNo: 'P', projectName: '', sheetName: 'A', severity: 'Medium', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 4, ruleCode: 'ai' },
+    // sheet B — 5 distinct rows from AI
+    { id: 'b1', projectNo: 'P', projectName: '', sheetName: 'B', severity: 'Medium', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 1, ruleCode: 'ai' },
+    { id: 'b2', projectNo: 'P', projectName: '', sheetName: 'B', severity: 'Medium', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 2, ruleCode: 'ai' },
+    { id: 'b3', projectNo: 'P', projectName: '', sheetName: 'B', severity: 'Medium', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 3, ruleCode: 'ai' },
+    { id: 'b4', projectNo: 'P', projectName: '', sheetName: 'B', severity: 'Medium', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 4, ruleCode: 'ai' },
+    { id: 'b5', projectNo: 'P', projectName: '', sheetName: 'B', severity: 'Medium', projectManager: '', projectState: '', effort: 0, auditStatus: '', notes: '', rowIndex: 5, ruleCode: 'ai' },
+  ];
+  const merged = mergeSheetSummaries(engine, ai, issues);
   const sheetA = merged.find((s) => s.sheetName === 'A')!;
   const sheetB = merged.find((s) => s.sheetName === 'B')!;
   assert.equal(sheetA.rowCount, 100);
-  assert.equal(sheetA.flaggedCount, 5);
+  // 3 engine rows (1,2,3) + 1 new AI row (4) = 4 distinct flagged rows on A
+  assert.equal(sheetA.flaggedCount, 4);
   assert.equal(sheetB.rowCount, 0);
   assert.equal(sheetB.flaggedCount, 5);
 });

@@ -89,6 +89,19 @@ export function VersionCompare() {
     return entries;
   }, [process?.files, versionsByFile]);
 
+  // Flat list of all versions across all files, sorted newest-first.
+  // Used as picker options when the weekly workflow uploads a new file each
+  // week — each file ends up with only one version, so per-file grouping
+  // would block comparison entirely.
+  const allVersions = useMemo(() => {
+    const flat = (process?.versions ?? []).slice();
+    flat.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return flat;
+  }, [process?.versions]);
+
+  // Whether any single file has ≥2 versions (same-file mode).
+  const hasSameFileGroup = fileGroups.some((g) => g.versions.length >= 2);
+
   // Sensible defaults: first file group, previous → latest. Respect URL if
   // present so share links survive.
   const urlFileId = searchParams.get('file');
@@ -98,19 +111,19 @@ export function VersionCompare() {
   const [selectedFileId, setSelectedFileId] = useState<string>(initialGroup?.fileId ?? '');
   const activeGroup = fileGroups.find((g) => g.fileId === selectedFileId) ?? initialGroup;
 
+  // Picker options: same-file versions when available, otherwise all versions.
+  const pickerVersions = hasSameFileGroup ? (activeGroup?.versions ?? []) : allVersions;
+
   const [fromId, setFromId] = useState<string>(() => {
-    const versions = activeGroup?.versions ?? [];
-    return urlFromId ?? versions[1]?.versionId ?? versions[0]?.versionId ?? '';
+    return urlFromId ?? pickerVersions[1]?.versionId ?? pickerVersions[0]?.versionId ?? '';
   });
   const [toId, setToId] = useState<string>(() => {
-    const versions = activeGroup?.versions ?? [];
-    return urlToId ?? versions[0]?.versionId ?? '';
+    return urlToId ?? pickerVersions[0]?.versionId ?? '';
   });
 
-  // Re-seed selections when the file group changes so users never end up
-  // comparing versions from different files.
+  // Re-seed selections when the file group changes (same-file mode only).
   useEffect(() => {
-    if (!activeGroup) return;
+    if (!hasSameFileGroup || !activeGroup) return;
     const versions = activeGroup.versions;
     if (!versions.find((v) => v.versionId === fromId)) {
       setFromId(versions[1]?.versionId ?? versions[0]?.versionId ?? '');
@@ -118,7 +131,7 @@ export function VersionCompare() {
     if (!versions.find((v) => v.versionId === toId)) {
       setToId(versions[0]?.versionId ?? '');
     }
-  }, [activeGroup, fromId, toId]);
+  }, [activeGroup, fromId, hasSameFileGroup, toId]);
 
   // Mirror selection into URL so the page is bookmarkable and share-safe.
   useEffect(() => {
@@ -133,8 +146,8 @@ export function VersionCompare() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFileId, fromId, toId]);
 
-  const fromVersion = activeGroup?.versions.find((v) => v.versionId === fromId || v.id === fromId);
-  const toVersion = activeGroup?.versions.find((v) => v.versionId === toId || v.id === toId);
+  const fromVersion = pickerVersions.find((v) => v.versionId === fromId || v.id === fromId);
+  const toVersion = pickerVersions.find((v) => v.versionId === toId || v.id === toId);
 
   const [bucket, setBucket] = useState<BucketKey>('newIssues');
   const [query, setQuery] = useState('');
@@ -249,36 +262,16 @@ export function VersionCompare() {
     );
   }
 
-  if (!activeGroup || activeGroup.versions.length < 2) {
+  if (allVersions.length < 2) {
     return (
       <AppShell process={process}>
         <div className="mx-auto max-w-3xl space-y-4 p-5">
           <Link to={workspacePath(process.id, functionId)} className="inline-flex items-center gap-1 text-sm text-brand hover:underline">
             <ArrowLeft size={14} /> Back to {getFunctionLabel(functionId)}
           </Link>
-          <EmptyState title="Only one saved version for this file">
-            Run another audit on the same file (or save as a new version) to see a comparison. If you have multiple files, switch between them below.
+          <EmptyState title="Only one saved version">
+            Save at least two audit versions (from the same or different files) to compare them.
           </EmptyState>
-          {fileGroups.length > 1 ? (
-            <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-800">
-              <div className="mb-2 font-medium">Files with saved versions</div>
-              <ul className="space-y-1">
-                {fileGroups.map((g) => (
-                  <li key={g.fileId}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFileId(g.fileId)}
-                      className={`rounded-md px-2 py-1 text-left hover:bg-gray-100 dark:hover:bg-gray-700 ${
-                        g.fileId === selectedFileId ? 'text-brand' : 'text-gray-700 dark:text-gray-200'
-                      }`}
-                    >
-                      {g.label} ({g.versions.length} version{g.versions.length === 1 ? '' : 's'})
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
         </div>
       </AppShell>
     );
@@ -289,7 +282,7 @@ export function VersionCompare() {
       <div className="mx-auto w-full max-w-6xl space-y-5 p-5">
         <h1 className="text-xl font-semibold">Version Compare · {getFunctionLabel(functionId)}</h1>
 
-        {fileGroups.length > 1 ? (
+        {hasSameFileGroup && fileGroups.length > 1 ? (
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">File</div>
             <div className="flex flex-wrap gap-2">
@@ -311,11 +304,17 @@ export function VersionCompare() {
           </div>
         ) : null}
 
+        {!hasSameFileGroup ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            Comparing versions from different files — issues are matched by project number and rule, not by file.
+          </div>
+        ) : null}
+
         <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr]">
           <VersionCard
             label="Previous"
             version={fromVersion}
-            options={activeGroup.versions}
+            options={pickerVersions}
             onChange={setFromId}
             onOpenWorkspace={() => openInWorkspace(fromVersion?.versionId ?? fromVersion?.id)}
           />
@@ -333,7 +332,7 @@ export function VersionCompare() {
           <VersionCard
             label="Latest"
             version={toVersion}
-            options={activeGroup.versions}
+            options={pickerVersions}
             onChange={setToId}
             onOpenWorkspace={() => openInWorkspace(toVersion?.versionId ?? toVersion?.id)}
           />

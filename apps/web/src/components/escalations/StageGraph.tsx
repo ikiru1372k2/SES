@@ -36,7 +36,7 @@ import { addStageComment, fetchStageComments } from '../../lib/api/trackingStage
  * no new server fields required.
  */
 
-type StageKey = 'DRAFTED' | 'OUTLOOK_1' | 'OUTLOOK_2' | 'TEAMS' | 'RESPONDED' | 'VERIFIED' | 'RESOLVED';
+type StageKey = string;
 
 interface StageNode {
   key: StageKey;
@@ -47,8 +47,6 @@ interface StageNode {
   owner: string;
   /** Lucide icon for the node. */
   Icon: typeof Mail;
-  /** Optional count badge (Outlook #1 doesn't need one but #2 might). */
-  count?: number;
 }
 
 function buildStages(row: ProcessEscalationManagerRow): StageNode[] {
@@ -65,7 +63,7 @@ function buildStages(row: ProcessEscalationManagerRow): StageNode[] {
     outlook >= 1 ||
     teams >= 1;
 
-  return [
+  const nodes: StageNode[] = [
     {
       key: 'DRAFTED',
       label: 'Drafted',
@@ -74,32 +72,35 @@ function buildStages(row: ProcessEscalationManagerRow): StageNode[] {
       owner: 'Auditor',
       Icon: Sparkles,
     },
-    {
-      key: 'OUTLOOK_1',
-      label: 'Outlook #1',
-      shortLabel: 'Outlook #1',
-      completed: outlook >= 1,
+  ];
+
+  // One node per Outlook send actually made, plus one pending slot
+  const outlookSlots = Math.max(outlook + 1, 1);
+  for (let i = 1; i <= outlookSlots; i += 1) {
+    nodes.push({
+      key: `OUTLOOK_${i}`,
+      label: `Outlook #${i}`,
+      shortLabel: `Outlook #${i}`,
+      completed: outlook >= i,
       owner: 'Auditor',
       Icon: Mail,
-    },
-    {
-      key: 'OUTLOOK_2',
-      label: 'Outlook #2',
-      shortLabel: 'Outlook #2',
-      completed: outlook >= 2,
-      owner: 'Auditor',
-      Icon: Mail,
-      ...(outlook >= 2 ? { count: outlook } : {}),
-    },
-    {
-      key: 'TEAMS',
-      label: 'Teams',
-      shortLabel: 'Teams',
-      completed: teams >= 1,
+    });
+  }
+
+  // One node per Teams send actually made, plus one pending slot
+  const teamsSlots = Math.max(teams + 1, 1);
+  for (let i = 1; i <= teamsSlots; i += 1) {
+    nodes.push({
+      key: `TEAMS_${i}`,
+      label: i === 1 ? 'Teams' : `Teams #${i}`,
+      shortLabel: i === 1 ? 'Teams' : `Teams #${i}`,
+      completed: teams >= i,
       owner: 'Auditor',
       Icon: MessageSquare,
-      ...(teams > 1 ? { count: teams } : {}),
-    },
+    });
+  }
+
+  nodes.push(
     {
       key: 'RESPONDED',
       label: 'Manager responded',
@@ -124,7 +125,9 @@ function buildStages(row: ProcessEscalationManagerRow): StageNode[] {
       owner: 'Auditor',
       Icon: Check,
     },
-  ];
+  );
+
+  return nodes;
 }
 
 function currentNodeIndex(nodes: StageNode[]): number {
@@ -335,11 +338,6 @@ export const StageGraph = memo(function StageGraph({
                 </span>
                 <node.Icon size={12} className="opacity-70" />
                 <span className="font-medium">{node.shortLabel}</span>
-                {node.count != null ? (
-                  <span className="rounded-full bg-white/60 px-1 text-[9px] font-bold text-current dark:bg-black/20">
-                    ×{node.count}
-                  </span>
-                ) : null}
                 <span className="hidden text-[10px] opacity-70 sm:inline">· {node.owner}</span>
               </button>
               {index < nodes.length - 1 ? (
