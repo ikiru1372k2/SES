@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_IDS } from '@ses/domain';
 import toast from 'react-hot-toast';
-import { Mail, MessageSquare } from 'lucide-react';
 import { fetchEscalationTemplates } from '../../lib/api/escalationTemplatesApi';
 import {
   discardComposeDraft,
@@ -13,16 +12,21 @@ import {
   sendCompose,
   type ComposeDraftPayload,
 } from '../../lib/api/trackingComposeApi';
-import { openMailto, openTeamsChat } from '../../lib/outbound/clientHandoff';
+import { fillEmailPreviewWindow, fillEmailWindow, fillLoadingWindow, openBlankWindow } from '../../lib/outbound/clientHandoff';
 import { useAutosaveOnLeave } from '../../hooks/useAutosaveOnLeave';
 import { Button } from '../shared/Button';
 import { useConfirm } from '../shared/ConfirmProvider';
 import { PreviewPane } from './PreviewPane';
 import { effectiveManagerEmail } from './nextAction';
+import { ComposerActions } from './ComposerActions';
+import { FindingsByEngineSection, ProjectLinksSection } from './ComposerSubsections';
 
 type SendChannel = 'email' | 'teams';
 
 function stageKeyForRow(row: ProcessEscalationManagerRow): string {
+  if (row.stage === 'AWAITING_RESPONSE' || row.stage === 'NO_RESPONSE') return 'AWAITING_RESPONSE';
+  if (row.stage === 'ESCALATED_L2') return 'ESCALATED_L2';
+  if (row.stage === 'ESCALATED_L1') return 'ESCALATED_L1';
   const lv = row.escalationLevel ?? 0;
   if (lv >= 2) return 'ESCALATED_L2';
   if (lv >= 1) return 'ESCALATED_L1';
@@ -62,8 +66,6 @@ export function Composer({
   const trackingRef = row.trackingId ?? row.trackingDisplayCode;
   const managerEmail = effectiveManagerEmail(row);
 
-  // Issue #75 — Composer defaults to Preview so the auditor reviews before
-  // sending. Edit is a toggle-back; send actions live in the preview footer.
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [templateId, setTemplateId] = useState<string | undefined>();
   const [subject, setSubject] = useState('');
@@ -85,9 +87,6 @@ export function Composer({
   const [projectLinks, setProjectLinks] = useState<Record<string, string>>({});
   const [projectLinksOpen, setProjectLinksOpen] = useState(false);
 
-  // Unique project IDs across all engine findings — these are the rows the
-  // auditor can attach a project link to. Order matches the engine-iteration
-  // order of `findingsByEngine` so the inputs appear in a stable sequence.
   const uniqueProjectIds = useMemo(() => {
     const seen = new Set<string>();
     const ordered: string[] = [];
@@ -102,9 +101,6 @@ export function Composer({
     return ordered;
   }, [row.findingsByEngine]);
 
-  // Only forward links that look like real URLs. Empty / partial entries
-  // are stripped so the server never sees them and the preview column
-  // stays hidden until at least one valid link has been entered.
   const cleanProjectLinks = useMemo(() => {
     const out: Record<string, string> = {};
     for (const [pid, url] of Object.entries(projectLinks)) {
@@ -118,9 +114,6 @@ export function Composer({
 
   const outlookCount = row.outlookCount ?? 0;
   const teamsCount = row.teamsCount ?? 0;
-  const outlookAllowed = outlookCount < 2;
-  const teamsAllowed = outlookCount >= 2 && teamsCount < 1;
-  const cycleComplete = outlookCount >= 2 && teamsCount >= 1;
 
   const statusQ = useQuery({
     queryKey: ['compose-status', trackingRef],
@@ -138,23 +131,11 @@ export function Composer({
   const locked = statusQ.data?.locked === true;
   const readOnly = locked;
 
-  const defaultCc = useMemo(() => {
-    const lv = row.escalationLevel ?? 0;
-    if (lv >= 2) return ['stakeholder@example.com'];
-    if (lv >= 1) return ['manager-manager@example.com'];
-    return [];
-  }, [row.escalationLevel]);
-
-  // Initialise CC from the escalation level when the selected manager changes
-  // (a different manager often means different stakeholders). Deliberate
-  // derived-state-on-external-change pattern.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setCc(defaultCc);
-  }, [defaultCc, row.managerKey]);
+    setCc([]);
+  }, [row.managerKey]);
 
-  // Preselect the first template once templates finish loading — the
-  // dropdown is initialised from server data, not derivable at mount time.
   useEffect(() => {
     const t = templatesQ.data?.[0];
     if (!t) return;
@@ -165,8 +146,6 @@ export function Composer({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [templatesQ.data]);
 
-  // Refresh the resolved preview whenever we enter preview mode so the
-  // auditor sees the actual substituted copy, not the raw template.
   useEffect(() => {
     if (viewMode !== 'preview' || !trackingRef) return;
     let cancelled = false;
@@ -219,6 +198,8 @@ export function Composer({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const handoffWindowRef = useRef<Window | null>(null);
+
   const sendMut = useMutation({
     mutationFn: (channel: SendChannel) =>
       sendCompose(trackingRef!, {
@@ -236,36 +217,75 @@ export function Composer({
         ...(templateId ? { templateId } : {}),
       }),
     onSuccess: (result) => {
-      // Issue #75: the server only records intent; the user's own app does
-      // the actual send. Try to open it; fall back to a copy-hint when the
-      // browser's popup blocker kills the window.open.
-      const handoffOk =
-        result.channel === 'teams'
-          ? openTeamsChat({ to: result.to, message: `${result.subject}\n\n${result.body}` })
-          : openMailto({ to: result.to, cc: result.cc, subject: result.subject, body: result.body });
-      if (handoffOk) {
-        toast.success(
-          result.channel === 'teams' ? 'Recorded — Teams opening…' : 'Recorded — mail client opening…',
-        );
+      const win = handoffWindowRef.current;
+      handoffWindowRef.current = null;
+      if (result.channel === 'teams') {
+        // Teams: just update the window location to the deep-link.
+        if (win && !win.closed) {
+          const msg = `${result.subject}\n\n${result.body}`;
+          const url =
+            `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(result.to)}` +
+            `&message=${encodeURIComponent(msg.length > 4000 ? msg.slice(0, 4000) : msg)}`;
+          win.location.href = url;
+        }
+        toast.success('Recorded — Teams opening…');
       } else {
-        toast(
-          `Recorded on server. Your browser blocked the ${result.channel === 'teams' ? 'Teams' : 'mail'} window — open it manually.`,
-          { icon: '⚠️' },
-        );
+        if (!win || win.closed) {
+          toast.error('Allow popups before recording an Outlook send.');
+          return;
+        }
+        fillEmailWindow(win, {
+          to: result.to,
+          cc: result.cc,
+          subject: result.subject,
+          body: result.body,
+          bodyHtml: result.bodyHtml,
+        });
+        toast.success('Recorded — use the handoff page to open Outlook with formatted body.');
       }
       void qc.invalidateQueries({ queryKey: ['escalations'] });
       onDone();
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: Error) => {
+      // Close the loading window on error.
+      if (handoffWindowRef.current && !handoffWindowRef.current.closed) {
+        handoffWindowRef.current.close();
+        handoffWindowRef.current = null;
+      }
+      toast.error(e.message);
+    },
   });
 
-  // Autosave-on-leave (Issue #74): silent flush of whatever the auditor has
-  // typed so far when the tab is hidden, the window unloads, or the route
-  // changes. Only fires when something has actually been edited (dirtyRef),
-  // and never when the drawer is read-only / locked by another user.
-  //
-  // Hooks MUST be called unconditionally and before any early return — the
-  // `readOnly` / `trackingRef` guards live inside the callback itself.
+  const [previewPopupPending, setPreviewPopupPending] = useState(false);
+  function openPreviewPopup() {
+    if (!trackingRef) return;
+    const win = openBlankWindow();
+    if (!win) { toast('Allow popups to preview the email.', { icon: '⚠️' }); return; }
+    fillLoadingWindow(win);
+    setPreviewPopupPending(true);
+    void previewCompose(trackingRef, {
+      subject, body, cc,
+      removedEngineIds: [...removedEngines],
+      authorNote,
+      deadlineAt: deadlineAt || null,
+      projectLinks: cleanProjectLinks,
+      ...(templateId ? { templateId } : {}),
+    }).then((data) => {
+      if (!win.closed) {
+        fillEmailPreviewWindow(win, {
+          to: effectiveManagerEmail(row) ?? '',
+          cc,
+          subject: data.subject,
+          body: data.body,
+          bodyHtml: data.bodyHtml,
+        });
+      }
+    }).catch((e: unknown) => {
+      if (!win.closed) win.close();
+      toast.error(e instanceof Error ? e.message : 'Preview failed');
+    }).finally(() => setPreviewPopupPending(false));
+  }
+
   const dirtyRef = useRef(false);
   useEffect(() => {
     dirtyRef.current = true;
@@ -367,19 +387,6 @@ export function Composer({
     ...(templateId ? { templateId } : {}),
   };
 
-  const outlookGateReason = cycleComplete
-    ? 'Cycle complete — resolve or force re-escalate.'
-    : outlookAllowed
-    ? ''
-    : 'Outlook limit reached — escalate via Teams next.';
-  const teamsGateReason = cycleComplete
-    ? 'Cycle complete — resolve or force re-escalate.'
-    : teamsAllowed
-    ? ''
-    : outlookCount < 2
-    ? `Send ${2 - outlookCount} more Outlook reminder${2 - outlookCount === 1 ? '' : 's'} before Teams.`
-    : 'Teams already used this cycle.';
-
   return (
     <div className="space-y-4">
       {readOnly ? (
@@ -395,19 +402,6 @@ export function Composer({
           </button>
         </div>
       ) : null}
-
-      <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-        <span className="font-medium">Ladder:</span>
-        <span className={`rounded-full px-2 py-0.5 ${outlookCount >= 1 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
-          Outlook #1 {outlookCount >= 1 ? '✓' : ''}
-        </span>
-        <span className={`rounded-full px-2 py-0.5 ${outlookCount >= 2 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
-          Outlook #2 {outlookCount >= 2 ? '✓' : ''}
-        </span>
-        <span className={`rounded-full px-2 py-0.5 ${teamsCount >= 1 ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 dark:bg-gray-800'}`}>
-          Teams {teamsCount >= 1 ? '✓' : ''}
-        </span>
-      </div>
 
       <div>
         <div className="text-xs font-medium text-gray-500">To</div>
@@ -473,89 +467,22 @@ export function Composer({
         </div>
       </div>
 
-      {uniqueProjectIds.length > 0 ? (
-        <div className="rounded border border-gray-200 dark:border-gray-700">
-          <button
-            type="button"
-            onClick={() => setProjectLinksOpen((v) => !v)}
-            className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
-            aria-expanded={projectLinksOpen}
-          >
-            <span>
-              Project links
-              <span className="ml-1 text-gray-400">
-                ({Object.keys(cleanProjectLinks).length}/{uniqueProjectIds.length})
-              </span>
-              <span className="ml-2 font-normal text-gray-500">
-                Optional — paste a URL per project to include it in the email.
-              </span>
-            </span>
-            <span className="text-gray-400">{projectLinksOpen ? '▾' : '▸'}</span>
-          </button>
-          {projectLinksOpen ? (
-            <div className="space-y-2 border-t border-gray-100 px-3 py-2 dark:border-gray-800">
-              {uniqueProjectIds.map((pid) => (
-                <div key={pid} className="grid grid-cols-[7rem,1fr] items-center gap-2">
-                  <label
-                    className="truncate text-xs font-medium text-gray-600 dark:text-gray-300"
-                    title={pid}
-                  >
-                    {pid}
-                  </label>
-                  <input
-                    type="url"
-                    disabled={readOnly}
-                    value={projectLinks[pid] ?? ''}
-                    onChange={(e) =>
-                      setProjectLinks((prev) => ({ ...prev, [pid]: e.target.value }))
-                    }
-                    placeholder="https://bcs.example.com/project/…"
-                    className="w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-900"
-                  />
-                </div>
-              ))}
-              <p className="pt-1 text-[11px] text-gray-500">
-                Only valid http(s) URLs render in the preview. Leave blank to skip a project.
-              </p>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      <ProjectLinksSection
+        uniqueProjectIds={uniqueProjectIds}
+        cleanProjectLinks={cleanProjectLinks}
+        projectLinks={projectLinks}
+        projectLinksOpen={projectLinksOpen}
+        readOnly={readOnly}
+        setProjectLinks={setProjectLinks}
+        setProjectLinksOpen={setProjectLinksOpen}
+      />
 
-      <div>
-        <div className="text-xs font-medium text-gray-500">Findings by engine</div>
-        <div className="mt-1 space-y-1">
-          {FUNCTION_IDS.map((fid) => {
-            const n = row.countsByEngine[fid] ?? 0;
-            if (n === 0) return null;
-            const open = !removedEngines.has(fid);
-            return (
-              <details key={fid} open={open} className="rounded border border-gray-200 dark:border-gray-700">
-                <summary className="cursor-pointer px-2 py-1 text-xs font-medium">
-                  {fid} ({n})
-                  {!readOnly ? (
-                    <button
-                      type="button"
-                      className="ml-2 text-red-600 hover:underline"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        void toggleEngineRemove(fid, n);
-                      }}
-                    >
-                      {open ? 'Remove' : 'Restore'}
-                    </button>
-                  ) : null}
-                </summary>
-                <ul className="border-t border-gray-100 px-2 py-1 text-xs dark:border-gray-800">
-                  {(row.findingsByEngine[fid] ?? []).map((f) => (
-                    <li key={f.issueKey}>{f.projectNo ?? f.issueKey}</li>
-                  ))}
-                </ul>
-              </details>
-            );
-          })}
-        </div>
-      </div>
+      <FindingsByEngineSection
+        row={row}
+        readOnly={readOnly}
+        removedEngines={removedEngines}
+        onToggleEngine={(fid, count) => void toggleEngineRemove(fid, count)}
+      />
 
       {viewMode === 'edit' ? (
         <>
@@ -607,42 +534,38 @@ export function Composer({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-t border-gray-200 pt-3 dark:border-gray-800">
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => setViewMode(viewMode === 'preview' ? 'edit' : 'preview')}
-        >
-          {viewMode === 'preview' ? 'Edit' : 'Preview'}
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => discardMut.mutate()} disabled={readOnly || discardMut.isPending}>
-          Discard
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => draftMut.mutate(payload)} disabled={readOnly || draftMut.isPending}>
-          Save draft
-        </Button>
-        <div className="flex-1" />
-        <Button
-          type="button"
-          variant={outlookAllowed ? 'primary' : 'secondary'}
-          leading={<Mail size={14} />}
-          title={outlookGateReason || 'Open Outlook with this message prefilled'}
-          disabled={readOnly || !outlookAllowed || sendMut.isPending}
-          onClick={() => sendMut.mutate('email')}
-        >
-          Outlook ({outlookCount}/2)
-        </Button>
-        <Button
-          type="button"
-          variant={teamsAllowed ? 'primary' : 'secondary'}
-          leading={<MessageSquare size={14} />}
-          title={teamsGateReason || 'Open Teams chat with this message prefilled'}
-          disabled={readOnly || !teamsAllowed || sendMut.isPending}
-          onClick={() => sendMut.mutate('teams')}
-        >
-          Teams ({teamsCount}/1)
-        </Button>
-      </div>
+      <ComposerActions
+        readOnly={readOnly}
+        viewMode={viewMode}
+        onToggleView={() => setViewMode(viewMode === 'preview' ? 'edit' : 'preview')}
+        onDiscard={() => discardMut.mutate()}
+        discardPending={discardMut.isPending}
+        onSave={() => draftMut.mutate(payload)}
+        draftPending={draftMut.isPending}
+        onPreview={() => void openPreviewPopup()}
+        previewPending={previewPopupPending}
+        outlookAllowed={true}
+        outlookGateReason=""
+        outlookCount={outlookCount}
+        onOutlook={() => {
+          const win = openBlankWindow();
+          if (!win) { toast.error('Allow popups before recording an Outlook send.'); return; }
+          fillLoadingWindow(win);
+          handoffWindowRef.current = win;
+          sendMut.mutate('email');
+        }}
+        teamsAllowed={true}
+        teamsGateReason=""
+        teamsCount={teamsCount}
+        onTeams={() => {
+          const win = openBlankWindow();
+          if (!win) { toast.error('Allow popups before recording a Teams send.'); return; }
+          fillLoadingWindow(win);
+          handoffWindowRef.current = win;
+          sendMut.mutate('teams');
+        }}
+        sendPending={sendMut.isPending}
+      />
     </div>
   );
 }

@@ -94,9 +94,11 @@ SES_AUTH_SECRET_DOCKER=${secret}
 SES_BASE_URL=${SES_BASE_URL:-http://localhost:3210}
 SES_CORS_ORIGINS=${SES_CORS_ORIGINS:-http://localhost:3210,http://127.0.0.1:3210}
 SES_COOKIE_SECURE=${SES_COOKIE_SECURE:-false}
+SES_COOKIE_SAMESITE=${SES_COOKIE_SAMESITE:-lax}
 SES_SMTP_URL=${SES_SMTP_URL:-}
 SES_MAIL_FROM=${SES_MAIL_FROM:-}
 SES_TEAMS_INCOMING_WEBHOOK_URL=${SES_TEAMS_INCOMING_WEBHOOK_URL:-}
+CLOUDFLARED_TOKEN=${CLOUDFLARED_TOKEN:-}
 EOF
   chmod 600 "$LOCAL_ENV_FILE"
 }
@@ -167,8 +169,13 @@ cmd_doctor() {
 cmd_local() {
   require_cmd docker "Install Docker (https://docs.docker.com/engine/install/)."
   write_env_file
+  local profile_args=()
+  if [[ -n "${CLOUDFLARED_TOKEN:-}" ]]; then
+    profile_args=(--profile tunnel)
+    log "CLOUDFLARED_TOKEN detected — bringing up the cloudflared tunnel container too."
+  fi
   log "Building and starting the prod stack (docker-compose.prod.yml)…"
-  compose --env-file "$LOCAL_ENV_FILE" -f "$PROD_COMPOSE" up --build -d
+  compose --env-file "$LOCAL_ENV_FILE" "${profile_args[@]}" -f "$PROD_COMPOSE" up --build -d
   log "Waiting for web healthcheck…"
   local attempts=0
   until curl -fsS "http://localhost:3210/healthz" >/dev/null 2>&1; do

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from './repositories/types';
 import type { AuditIssue, AuditResult, SessionUser, WorkbookFile as DomainWorkbookFile } from '@ses/domain';
 import {
   AUDIT_RULE_CATALOG,
@@ -195,8 +195,8 @@ export class AuditsService {
       uploadedAt: file.uploadedAt.toISOString(),
       lastAuditedAt: file.lastAuditedAt?.toISOString() ?? null,
       isAudited: Boolean(file.lastAuditedAt),
-      rawData: Object.fromEntries(file.sheets.map((sheet) => [sheet.sheetName, (sheet.rows as unknown[][]) ?? []])),
-      sheets: file.sheets.map((sheet) => ({
+      rawData: Object.fromEntries(file.sheets.map((sheet: any) => [sheet.sheetName, (sheet.rows as unknown[][]) ?? []])),
+      sheets: file.sheets.map((sheet: any) => ({
         id: sheet.id,
         displayCode: sheet.displayCode,
         name: sheet.sheetName,

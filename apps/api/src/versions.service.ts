@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from './repositories/types';
 import type { AuditIssue, AuditResult, SessionUser } from '@ses/domain';
 import { compareResults, createId } from '@ses/domain';
 import { PrismaService } from './common/prisma.service';
 import { ActivityLogService } from './common/activity-log.service';
 import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
+import { RealtimeGateway } from './realtime/realtime.gateway';
 
 function serializeVersion(version: {
   id: string;
@@ -102,6 +103,7 @@ export class VersionsService {
     private readonly identifiers: IdentifierService,
     private readonly activity: ActivityLogService,
     private readonly processAccess: ProcessAccessService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   private async getVersionWithAccess(idOrCode: string, user: SessionUser) {
@@ -126,7 +128,7 @@ export class VersionsService {
 
   async create(processIdOrCode: string, body: { auditRunIdOrCode?: string; versionName: string; notes?: string }, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'editor');
-    return this.prisma.$transaction(async (tx) => {
+    const version = await this.prisma.$transaction(async (tx) => {
       const auditRun = body.auditRunIdOrCode
         ? await tx.auditRun.findFirst({
             where: {
@@ -174,6 +176,16 @@ export class VersionsService {
       });
       return serializeVersion(version);
     });
+
+    // After-commit realtime emission so the Escalation Center refetches and
+    // reflects any tracking state that was reconciled during the audit run.
+    const actor = { id: user.id, code: user.displayCode, email: user.email, displayName: user.displayName };
+    this.realtime.emitToProcess(process.displayCode, 'version.saved', {
+      versionCode: version.displayCode,
+      versionId: version.id,
+    }, { actor });
+
+    return version;
   }
 
   async list(processIdOrCode: string, user: SessionUser) {

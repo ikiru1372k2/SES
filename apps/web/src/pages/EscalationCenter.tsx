@@ -134,7 +134,7 @@ export function EscalationCenter() {
       if (
         envelope.event === 'tracking.updated' ||
         envelope.event === 'notification.sent' ||
-        envelope.event === 'audit.completed'
+        envelope.event === 'version.saved'
       ) {
         invalidate(['escalations', processId]);
         // Invalidate any open tracking-events queries too so the timeline

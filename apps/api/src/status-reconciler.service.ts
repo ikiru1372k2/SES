@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from './repositories/types';
 import type { FunctionId } from '@ses/domain';
 import {
   createId,

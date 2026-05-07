@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { BadgeCheck, CheckCircle2, Maximize2, MessageCircleReply, Minimize2 } from 'lucide-react';
 import { canTransition, isEscalationStage, type ProcessEscalationManagerRow } from '@ses/domain';
 import { transitionTracking, verifyTracking } from '../../lib/api/trackingStageApi';
+import { onRealtimeEvent } from '../../realtime/socket';
 import { ActivityFeed } from './ActivityFeed';
 import { AttachmentsTab } from './AttachmentsTab';
 import { Composer } from './Composer';
@@ -59,6 +60,34 @@ export function EscalationPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
   const trackingRef = row?.trackingId ?? row?.trackingDisplayCode ?? null;
+
+  // Reset to the Findings tab whenever the user switches to a different manager row
+  // so they don't land on Composer or Activity for a row they just opened.
+  const prevManagerKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = row?.managerKey ?? null;
+    if (key && key !== prevManagerKeyRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTab('findings');
+    }
+    prevManagerKeyRef.current = key;
+  }, [row?.managerKey]);
+
+  // Live-refresh: when the API broadcasts a tracking.updated event for this
+  // process via the Socket.IO gateway, invalidate the relevant query keys so
+  // the Activity feed and escalation list stay current without polling.
+  useEffect(() => {
+    if (!processDisplayCode) return;
+    return onRealtimeEvent((envelope) => {
+      if (
+        envelope.event === 'tracking.updated' &&
+        (envelope.processCode === processDisplayCode || envelope.processCode === processId)
+      ) {
+        void qc.invalidateQueries({ queryKey: ['escalations'] });
+        void qc.invalidateQueries({ queryKey: ['tracking-events', trackingRef] });
+      }
+    });
+  }, [processDisplayCode, processId, trackingRef, qc]);
   const stage = row && isEscalationStage(row.stage) ? row.stage : null;
   const awaitingVerification = Boolean(row && row.stage === 'RESOLVED' && !row.verifiedAt);
   const managerEmail = row ? effectiveManagerEmail(row) : null;

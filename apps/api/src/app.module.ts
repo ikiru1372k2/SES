@@ -7,6 +7,7 @@ import { FunctionAccessGuard } from './common/function-access.guard';
 import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { PrismaService } from './common/prisma.service';
+import { PgService } from './db/pg.service';
 import { ActivityController } from './activity.controller';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
@@ -71,6 +72,8 @@ import { SavedViewsController } from './saved-views.controller';
 import { SavedViewsService } from './saved-views.service';
 import { SlaEngineService } from './sla-engine.service';
 import { AiPilotModule } from './ai-pilot/ai-pilot.module';
+import { ObjectStorageModule } from './object-storage';
+import { PdfProcessingModule } from './pdf-processing/pdf-processing.module';
 
 @Module({
   imports: [
@@ -88,6 +91,8 @@ import { AiPilotModule } from './ai-pilot/ai-pilot.module';
       },
     ]),
     AiPilotModule,
+    ObjectStorageModule,
+    PdfProcessingModule,
   ],
   controllers: [
     HealthController,
@@ -112,16 +117,20 @@ import { AiPilotModule } from './ai-pilot/ai-pilot.module';
     NotificationsController,
     DirectoryController,
     EscalationTemplatesController,
+    // Register bulk controller before the per-entry compose controller so
+    // that POST /tracking/bulk/compose matches the literal `bulk` segment
+    // instead of being captured by `:idOrCode` on the compose controller.
+    TrackingBulkController,
     TrackingComposeController,
     TrackingStageController,
     TrackingAttachmentsController,
-    TrackingBulkController,
     InAppNotificationsController,
     SavedViewsController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     PrismaService,
+    PgService,
     ProcessAccessService,
     AccessScopeService,
     IdentifierService,

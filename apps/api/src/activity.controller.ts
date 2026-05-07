@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from './repositories/types';
 import type { SessionUser } from '@ses/domain';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from './common/current-user';

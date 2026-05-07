@@ -201,7 +201,57 @@ export class ProcessesService {
   }
 
   async get(idOrCode: string, user: SessionUser) {
-    return serializeProcess(await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode));
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode);
+    const versions = await this.prisma.savedVersion.findMany({
+      where: { processId: process.id },
+      orderBy: { versionNumber: 'desc' },
+      include: {
+        auditRun: {
+          select: {
+            id: true,
+            displayCode: true,
+            fileId: true,
+            findingsHash: true,
+            scannedRows: true,
+            flaggedRows: true,
+            startedAt: true,
+            completedAt: true,
+          },
+        },
+      },
+    });
+    // Lightweight version summaries — full hydration with issues comes
+    // from /processes/:id/versions when the workspace opens. We send
+    // just enough so the unsaved-audit detector has an anchor and the
+    // SPA stops blocking navigation with a stale "leave site?" prompt.
+    const versionSummaries = versions.map((v: any) => ({
+      id: v.id,
+      versionId: v.displayCode,
+      versionNumber: v.versionNumber,
+      versionName: v.versionName,
+      notes: v.notes ?? '',
+      createdAt: v.createdAt instanceof Date ? v.createdAt.toISOString() : String(v.createdAt),
+      auditRunCode: v.auditRun?.displayCode ?? null,
+      result: v.auditRun
+        ? {
+            id: v.auditRun.id,
+            displayCode: v.auditRun.displayCode,
+            fileId: v.auditRun.fileId,
+            findingsHash: v.auditRun.findingsHash ?? '',
+            scannedRows: v.auditRun.scannedRows ?? 0,
+            flaggedRows: v.auditRun.flaggedRows ?? 0,
+            runAt:
+              (v.auditRun.completedAt instanceof Date
+                ? v.auditRun.completedAt.toISOString()
+                : v.auditRun.completedAt) ??
+              (v.auditRun.startedAt instanceof Date
+                ? v.auditRun.startedAt.toISOString()
+                : v.auditRun.startedAt) ??
+              null,
+          }
+        : null,
+    }));
+    return { ...serializeProcess(process), versions: versionSummaries };
   }
 
   async delete(idOrCode: string, user: SessionUser) {

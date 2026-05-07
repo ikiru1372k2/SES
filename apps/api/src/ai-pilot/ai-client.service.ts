@@ -1,5 +1,6 @@
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { AiGrpcClient } from './ai-grpc.client';
 import { firstValueFrom } from 'rxjs';
 import { validateSpec } from '@ses/domain';
 import type { AiRuleSpec } from '@ses/domain';
@@ -16,13 +17,30 @@ export interface FastApiUploadResult {
   preview_markdown?: string;
 }
 
+type Transport = 'http' | 'grpc';
+
 @Injectable()
 export class AiClientService {
   private readonly logger = new Logger(AiClientService.name);
+  private readonly transport: Transport =
+    (process.env.AI_PILOT_TRANSPORT ?? 'http').toLowerCase() === 'grpc' ? 'grpc' : 'http';
 
-  constructor(private readonly http: HttpService) {}
+  constructor(
+    private readonly http: HttpService,
+    @Optional() private readonly grpcClient?: AiGrpcClient,
+  ) {
+    this.logger.log(`AI client transport=${this.transport}`);
+  }
 
   async health(): Promise<{ ok: boolean; raw?: unknown; error?: string }> {
+    if (this.transport === 'grpc' && this.grpcClient) {
+      try {
+        const r = await this.grpcClient.health();
+        return { ok: r.ok, raw: r };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
     try {
       const r = await firstValueFrom(this.http.get('/health'));
       return { ok: true, raw: r.data };

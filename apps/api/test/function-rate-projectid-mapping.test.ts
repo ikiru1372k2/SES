@@ -15,6 +15,7 @@ function makeService(): AuditsService {
     null as never,
     null as never,
     null as never,
+    null as never,
   );
 }
 

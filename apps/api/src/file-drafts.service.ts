@@ -22,6 +22,8 @@ export class FileDraftsService {
     const draft = await this.filesRepository.upsertDraft({
       user,
       processId: process.id,
+      processCode: process.displayCode,
+      tenantId: (process as { tenantId?: string }).tenantId ?? null,
       functionId,
       fileName: file.originalname,
       buffer,
@@ -41,18 +43,20 @@ export class FileDraftsService {
   async get(processIdOrCode: string, functionId: FunctionId, user: SessionUser, download: boolean) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'viewer');
     if (download) {
-      const draft = await this.filesRepository.getDraftWithContent(user.id, process.id, functionId);
-      if (!draft || draft.userId !== user.id) throw new NotFoundException('No draft found');
+      const draftRow = await this.filesRepository.getDraftWithContent(user.id, process.id, functionId);
+      if (!draftRow || draftRow.userId !== user.id) throw new NotFoundException('No draft found');
+      const content = await this.filesRepository.getDraftContent(draftRow);
+      if (!content) throw new NotFoundException('Draft has no stored content');
       await this.activity.append(this.prisma, {
         actorId: user.id,
         actorEmail: user.email,
         processId: process.id,
         entityType: 'file_draft',
-        entityId: draft.id,
+        entityId: draftRow.id,
         action: 'draft.downloaded',
-        after: { functionId, fileName: draft.fileName },
+        after: { functionId, fileName: draftRow.fileName },
       });
-      return { fileName: draft.fileName, content: draft.content };
+      return { fileName: draftRow.fileName, content };
     }
     return this.filesRepository.getDraft(user.id, process.id, functionId) ?? { hasDraft: false };
   }
@@ -67,6 +71,7 @@ export class FileDraftsService {
         user,
         processId: process.id,
         processCode: process.displayCode,
+        tenantId: (process as { tenantId?: string }).tenantId ?? null,
         functionId,
         note: body.note,
       });

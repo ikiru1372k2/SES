@@ -4,8 +4,8 @@ services:
       - sh
       - -lc
       - >
-        npm exec --workspace @ses/api prisma migrate deploy --schema apps/api/prisma/schema.prisma
-        && npm run prisma:seed --workspace @ses/api
+        npm run db:migrate --workspace @ses/api
+        && npm run db:seed --workspace @ses/api
 
   api:
     environment:

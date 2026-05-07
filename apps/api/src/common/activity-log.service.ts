@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma, DataClient } from '../repositories/types';
 import { ulid } from 'ulid';
 import { IdentifierService } from './identifier.service';
 import { requestContext } from './request-context';
 
-type TxLike = Prisma.TransactionClient | PrismaClient;
+type TxLike = Prisma.TransactionClient | DataClient;
 
 export interface AppendActivityInput {
   actorId?: string;

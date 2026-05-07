@@ -29,8 +29,8 @@
     "dev:stop": "bash ./scripts/dev-free-ports.sh",
     "dev:web": "npm run build --workspace @ses/domain && npm run dev --workspace @ses/web",
     "dev:api": "npm run build --workspace @ses/domain && npm run start:dev --workspace @ses/api",
-    "prisma:generate": "npm run prisma:generate --workspace @ses/api",
-    "prisma:seed": "npm run prisma:seed --workspace @ses/api",
+    "db:migrate": "npm run db:migrate --workspace @ses/api",
+    "db:seed": "npm run db:seed --workspace @ses/api",
     "format": "prettier --write ."
   },
   "devDependencies": {

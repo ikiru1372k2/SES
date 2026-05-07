@@ -9,6 +9,7 @@ import {
   OPP_CLS_DATE_PAST_ALIASES,
   OPP_COUNTRY_ALIASES,
   OPP_NAME_ALIASES,
+  OPP_OWNER_ALIASES,
   OPP_PRJ_START_PAST_ALIASES,
   OPP_PROBABILITY_ALIASES,
   OPP_PROJECT_NO_ALIASES,
@@ -118,6 +119,10 @@ function pushIssue(
   const opportunityName = readText(row, OPP_NAME_ALIASES) || 'Unnamed opportunity';
   const category = readText(row, OPP_CATEGORY_ALIASES) || 'Unknown';
   const probability = readNumber(readCell(row, OPP_PROBABILITY_ALIASES));
+  // Opportunity Owner is the manager-equivalent for escalation routing.
+  // Empty string => no owner on the row (Escalation Center renders it
+  // as "missing-email" so auditors can fill it in via the Directory).
+  const owner = readText(row, OPP_OWNER_ALIASES);
 
   issues.push({
     id: `${file.id}-${sheetName}-${rowIndex}-${ruleCode}`,
@@ -135,12 +140,21 @@ function pushIssue(
     projectName: opportunityName,
     sheetName,
     severity: rule.defaultSeverity,
-    projectManager: '—',
+    // Owner from the source row when present; em-dash placeholder only
+    // when the cell is genuinely blank, so the aggregator can still
+    // count this issue under "managers without owner" without crashing.
+    projectManager: owner || '—',
     projectState: category,
     effort: probability ?? 0,
     auditStatus: ruleCode,
     notes,
     rowIndex,
+    // Email is intentionally empty here — the post-engine
+    // `resolveIssueEmailsFromDirectory` step (same one master-data
+    // uses) looks the owner up in the tenant's Manager Directory and
+    // fills in the address. If the directory has no entry, the
+    // Escalation Center surfaces the row as "missing email" for the
+    // auditor to add — same UX as master-data.
     email: '',
     ruleId: ruleCode,
     ruleCode,

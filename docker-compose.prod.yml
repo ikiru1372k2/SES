@@ -43,7 +43,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://ses:ses@postgres:5432/ses
       SES_AUTH_SECRET: ${SES_AUTH_SECRET_DOCKER:-change-me-change-me-change-me-change-me-123456}
-    command: ['npm', 'exec', '--workspace', '@ses/api', 'prisma', 'migrate', 'deploy', '--schema', 'apps/api/prisma/schema.prisma']
+    command: ['npm', 'run', 'db:migrate', '--workspace', '@ses/api']
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,6 +66,7 @@ services:
       SES_CORS_ORIGINS: ${SES_CORS_ORIGINS:-http://localhost:3210,http://127.0.0.1:3210}
       SES_BASE_URL: ${SES_BASE_URL:-http://localhost:3210}
       SES_COOKIE_SECURE: ${SES_COOKIE_SECURE:-false}
+      SES_COOKIE_SAMESITE: ${SES_COOKIE_SAMESITE:-lax}
       AI_SERVICE_URL: ${AI_SERVICE_URL_DOCKER:-http://host.docker.internal:8000}
     extra_hosts:
       - 'host.docker.internal:host-gateway'
@@ -95,6 +96,19 @@ services:
       - '3210:3210'
     networks:
       - ses-network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: ses-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TOKEN:-}
+    depends_on:
+      web:
+        condition: service_started
+    networks:
+      - ses-network
+    profiles:
+      - tunnel
 
 volumes:
   ses_pg_data_prod:

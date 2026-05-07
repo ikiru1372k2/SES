@@ -177,6 +177,34 @@ function columnsForEngine(engineKey: string, hasProjectLink: boolean): EngineCol
         { header: 'Severity', width: hasProjectLink ? '7%' : '10%', read: (r) => dash(r.detail?.severity) },
         ...linkCol,
       ];
+    case 'opportunities':
+      // Opportunity records: surface the columns an account owner needs
+      // to fix the row in the source CRM — opportunity ID + name, the
+      // category (sales phase / status), the probability number that
+      // gates several rules, and the rule violations the engine joined
+      // into `reason`. Mirrors the master-data layout: identity columns
+      // first, what's wrong second, severity last.
+      return [
+        { header: '#', width: '4%', read: () => '' },
+        { header: 'Opportunity ID', width: '14%', read: (r) => dash(r.projectNo) },
+        { header: 'Opportunity', width: hasProjectLink ? '22%' : '28%', read: (r) => clamp(dash(r.projectName), 60) },
+        { header: 'Category', width: hasProjectLink ? '12%' : '14%', read: (r) => dash(r.detail?.projectState) },
+        {
+          header: 'Probability',
+          width: '10%',
+          read: (r) =>
+            r.detail?.effort != null && Number.isFinite(r.detail.effort)
+              ? `${r.detail.effort}%`
+              : '—',
+        },
+        {
+          header: 'Issue',
+          width: hasProjectLink ? '24%' : '32%',
+          read: (r) => clamp(dash(r.detail?.reason ?? r.detail?.ruleName), 110),
+        },
+        { header: 'Severity', width: hasProjectLink ? '8%' : '12%', read: (r) => dash(r.detail?.severity) },
+        ...linkCol,
+      ];
     default:
       return [
         { header: '#', width: '5%', read: () => '' },
@@ -202,6 +230,8 @@ function shortDescriptionForEngine(engineKey: string): string {
       return 'External function rates are missing or recorded as zero for the months shown below. Please update the rate sheet.';
     case 'internal-cost-rate':
       return 'Internal cost rates are missing or recorded as zero for the months shown below. Please confirm or update the cost entries.';
+    case 'opportunities':
+      return 'The following opportunities have data quality issues that block forecasting and pipeline reporting. Please review the records in the source CRM and correct the flagged fields.';
     default:
       return 'Open findings for the projects listed below need attention.';
   }
@@ -278,11 +308,6 @@ export function buildFindingsByEngineHtmlTable(lines: EngineFindingLine[]): stri
   return blocks.join('');
 }
 
-/**
- * Plain-text version, used by the mailto / Teams handoff. ASCII pipe
- * tables are unreliable across mail clients (proportional fonts mangle
- * them), so we emit a clean numbered breakdown per finding instead.
- */
 export function buildFindingsByEngineTextTable(lines: EngineFindingLine[]): string {
   if (!lines.length) return 'No open findings.';
   const byEngine = new Map<string, { label: string; rows: EngineFindingLine[] }>();
@@ -294,18 +319,31 @@ export function buildFindingsByEngineTextTable(lines: EngineFindingLine[]): stri
   const blocks: string[] = [];
   for (const [engineKey, { label, rows }] of byEngine) {
     const hasProjectLink = rows.some((r) => Boolean(r.detail?.projectLink?.trim()));
-    const columns = columnsForEngine(engineKey, hasProjectLink).filter((c) => c.header !== '#');
-    blocks.push(`${label} (${rows.length})`);
+    const columns = columnsForEngine(engineKey, hasProjectLink);
+    blocks.push(`${label} (${rows.length} finding${rows.length === 1 ? '' : 's'})`);
     blocks.push(shortDescriptionForEngine(engineKey));
+    const renderedRows = rows.map((row, idx) =>
+      columns.map((column, columnIndex) => (columnIndex === 0 ? String(idx + 1) : column.read(row))),
+    );
+    const widths = columns.map((column, index) =>
+      Math.min(
+        Math.max(
+          column.header.length,
+          ...renderedRows.map((row) => row[index]?.length ?? 0),
+        ),
+        index === 0 ? 3 : 36,
+      ),
+    );
+    const renderRow = (values: string[]) =>
+      values
+        .map((value, index) => clamp(value || '—', widths[index]!).padEnd(widths[index]!))
+        .join('  ');
+    blocks.push(renderRow(columns.map((c) => c.header)));
+    blocks.push(widths.map((width) => '-'.repeat(width)).join('  '));
+    for (const row of renderedRows) {
+      blocks.push(renderRow(row));
+    }
     blocks.push('');
-    rows.forEach((r, idx) => {
-      blocks.push(`${idx + 1}. ${dash(r.projectNo)} — ${dash(r.projectName)}`);
-      for (const c of columns.slice(2)) {
-        const v = c.read(r);
-        if (v && v !== '—') blocks.push(`   ${c.header}: ${v}`);
-      }
-      blocks.push('');
-    });
   }
   return blocks.join('\n').trim();
 }

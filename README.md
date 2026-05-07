@@ -23,6 +23,15 @@ escalation ladder with an SLA timer when owners don't respond.
   - [Audit pipeline end-to-end](#audit-pipeline-end-to-end)
   - [Per-function audit engine](#per-function-audit-engine)
   - [Escalation state machine](#escalation-state-machine)
+- [Local stack lifecycle](#local-stack-lifecycle)
+  - [Commands](#commands)
+  - [Service ports](#service-ports)
+  - [PostgreSQL migration workflow](#postgresql-migration-workflow)
+  - [MinIO local storage workflow](#minio-local-storage-workflow)
+  - [AWS S3 production switch (env-only)](#aws-s3-production-switch-env-only)
+  - [gRPC AI service workflow](#grpc-ai-service-workflow)
+  - [Troubleshooting](#troubleshooting)
+  - [Safety notes (reset & erase)](#safety-notes-reset--erase)
 - [Repository layout](#repository-layout)
 - [Key concepts](#key-concepts)
 - [Development setup (detailed)](#development-setup-detailed)
@@ -44,9 +53,10 @@ escalation ladder with an SLA timer when owners don't respond.
 | Layer           | Technology                                                                     |
 | --------------- | ------------------------------------------------------------------------------ |
 | Frontend        | React 18, Vite, React Router 7, Zustand, TanStack Query, Tailwind CSS          |
-| Backend         | NestJS 11, Prisma 6, Socket.IO, Helmet, JWT-signed session cookies             |
+| Backend         | NestJS 11, hand-written SQL migrations + `pg` repositories, Socket.IO, Helmet, JWT-signed session cookies |
 | Shared logic    | `@ses/domain` — TypeScript workspace package                                   |
-| Database        | PostgreSQL 16 (workbook bytes stored as BYTEA, no S3)                          |
+| Database        | PostgreSQL 16 (SQL migrations are the schema authority)                        |
+| Object storage  | S3-compatible — MinIO locally, AWS S3 in prod (env-only switch)                |
 | Realtime        | Redis 7 adapter for Socket.IO                                                  |
 | Workbook I/O    | ExcelJS (XLSX only; legacy `.xls` rejected)                                    |
 | Delivery        | SMTP for email, Microsoft Teams webhook                                        |
@@ -74,23 +84,26 @@ functions.
 ## Quick start (the one-minute path)
 
 ```bash
-# One-line local bring-up (Docker + containers + seeded demo data):
-./deploy.sh demo
+# One command — brings up Postgres + MinIO + AI sidecar + API + web,
+# applies SQL migrations, creates the MinIO bucket, prints all URLs.
+./scripts/dev.sh start
+
+# Common follow-ups
+./scripts/dev.sh status        # ports + health for every service
+./scripts/dev.sh logs api      # tail one service (api|web|ai|db|minio|redis|all)
+./scripts/dev.sh stop          # clean shutdown
+./scripts/dev.sh reset         # drop local DB + bucket and reapply (typed RESET prompt)
+./scripts/dev.sh erase         # destructive cleanup (typed-phrase confirmation)
+./scripts/dev.sh help
 
 # Open http://127.0.0.1:3210
 # Log in with auditor@ses.local / admin@ses.local (demo login enabled)
 ```
 
-If you don't want Docker and prefer native dev loops:
-
-```bash
-npm install                 # workspace install
-cp .env.example .env        # edit if needed
-docker compose up -d        # just postgres + redis
-npm run prisma:generate
-npm run prisma:seed
-npm run dev                 # api on :3211, web on :3210
-```
+The script copies `.env.example` → `.env` on first run, brings up every
+dependency idempotently, and re-runs SQL migrations + the seed each
+time. See [Local stack lifecycle](#local-stack-lifecycle) for the full
+command reference.
 
 ---
 
@@ -256,16 +269,203 @@ according to this diagram.
 
 ---
 
+## Local stack lifecycle
+
+Everything below is driven by `scripts/dev.sh`. The script owns the
+full local stack: Postgres + MinIO + Redis (in Docker) and the AI
+sidecar, API, and web app (host processes). It is idempotent, safe to
+re-run, and the only entry point you should need for day-to-day work.
+
+### Commands
+
+| Command | Behavior |
+|---|---|
+| `./scripts/dev.sh start` | Up everything: docker services, SQL migrations, seed, AI sidecar, API, web. Prints URLs. |
+| `./scripts/dev.sh stop` | Stop API + web + AI sidecar + docker services. Volumes preserved. |
+| `./scripts/dev.sh restart` | `stop` then `start`. |
+| `./scripts/dev.sh status` | Per-service port + health. |
+| `./scripts/dev.sh logs [target]` | Stream logs. Targets: `api`, `web`, `ai`, `db`, `minio`, `redis`, `all` (default). |
+| `./scripts/dev.sh reset` | Stop + drop the local Postgres and MinIO volumes + reapply migrations + recreate the bucket. Asks for typed `RESET` confirmation. |
+| `./scripts/dev.sh erase` | Remove all project-owned docker containers/networks/volumes + the repo's `.logs/` directory. Requires typed phrase: `I understand this deletes local data`. |
+| `./scripts/dev.sh help` | Full command reference. |
+
+The script:
+- Resolves the repo root regardless of the current directory.
+- Refuses to start without `docker`, `docker compose`, `node`, `npm`, and `curl`.
+- Uses bash strict mode (`set -Eeuo pipefail`).
+- Reads `.env` and (if present) `.env.local`.
+- Never logs access keys.
+- Never touches anything outside `docker-compose.yml` volumes and the
+  repo's own `.logs/`. `.git` is always preserved.
+
+### Service ports
+
+| Service | URL / Port |
+|---|---|
+| Web (Vite dev) | http://127.0.0.1:3210 |
+| API (NestJS) | http://127.0.0.1:3211/api/v1 |
+| AI sidecar (FastAPI / gRPC) | http://127.0.0.1:8000 (gRPC at `localhost:50051` when `AI_PILOT_TRANSPORT=grpc`) |
+| MinIO S3 endpoint | http://127.0.0.1:9000 |
+| MinIO console | http://127.0.0.1:9001 |
+| PostgreSQL | `127.0.0.1:5432` (db `ses`, user `ses`) |
+
+### PostgreSQL migration workflow
+
+**Prisma was removed as a runtime dependency.** Hand-written SQL
+migrations under `apps/api/db/migrations/NNNN_*.sql` are the schema
+authority. Each file is a transactional unit; the runner records
+applied versions in `_schema_migrations` and uses `pg_advisory_xact_lock`
+so concurrent boots can't double-apply.
+
+```bash
+# Apply pending migrations (run automatically by ./scripts/dev.sh start)
+DATABASE_URL=postgresql://ses:ses@127.0.0.1:5432/ses \
+  npm run db:migrate --workspace @ses/api
+
+# Preview without applying
+npm run db:migrate:dryrun --workspace @ses/api
+
+# Mark every on-disk migration as already-applied without running DDL.
+# Mark every on-disk migration as applied without running DDL. Use
+# only when adopting these migrations against a DB that already has a
+# compatible schema applied by other means — never on a fresh DB.
+npm run db:baseline --workspace @ses/api
+
+# Idempotent reference data (system functions, audit rules, default tenant)
+npm run db:seed --workspace @ses/api
+```
+
+Adding a new migration:
+
+1. Create `apps/api/db/migrations/<NNNN>_<short_name>.sql` (next sequential prefix).
+2. Include a header comment block describing intent and a manual rollback recipe.
+3. Run `./scripts/dev.sh start` (or just `npm run db:migrate --workspace @ses/api`).
+
+The migration runner is at `apps/api/db/runner.ts`. Prisma has been
+fully removed: there is no `@prisma/client` runtime, no `schema.prisma`,
+no Prisma migration history. The data-access layer is hand-written
+`pg`-backed code under `apps/api/src/repositories/pg-data-client.ts`
+plus per-feature repositories.
+
+### MinIO local storage workflow
+
+Uploaded files (PDFs, sample workbooks) live in object storage. Postgres
+holds only metadata in the `uploaded_object` table.
+
+The `minio` and `minio-init` services in `docker-compose.yml` come up
+together — `minio-init` runs `mc mb --ignore-existing` against the
+configured bucket on every `./scripts/dev.sh start`, so creation is
+idempotent. The bucket is **private**; reads happen via pre-signed URLs.
+
+```bash
+# MinIO console (browse buckets, inspect objects)
+open http://127.0.0.1:9001         # login: minioadmin / minioadmin
+```
+
+### AWS S3 production switch (env-only)
+
+The same code path targets MinIO and AWS S3. Switching providers is
+purely an environment-variable change.
+
+**Local MinIO:**
+```env
+OBJECT_STORAGE_DRIVER=s3
+OBJECT_STORAGE_ENDPOINT=http://localhost:9000
+OBJECT_STORAGE_REGION=us-east-1
+OBJECT_STORAGE_BUCKET=ses-ai-files
+OBJECT_STORAGE_ACCESS_KEY=minioadmin
+OBJECT_STORAGE_SECRET_KEY=minioadmin
+OBJECT_STORAGE_FORCE_PATH_STYLE=true
+```
+
+**AWS S3 (production):**
+```env
+OBJECT_STORAGE_DRIVER=s3
+OBJECT_STORAGE_ENDPOINT=
+OBJECT_STORAGE_REGION=ap-south-1
+OBJECT_STORAGE_BUCKET=your-production-bucket
+OBJECT_STORAGE_ACCESS_KEY=your-aws-access-key
+OBJECT_STORAGE_SECRET_KEY=your-aws-secret-key
+OBJECT_STORAGE_FORCE_PATH_STYLE=false
+```
+
+Rules:
+- Empty `OBJECT_STORAGE_ENDPOINT` triggers AWS default endpoint resolution.
+- `OBJECT_STORAGE_FORCE_PATH_STYLE=true` is required for MinIO; AWS S3 uses virtual-host addressing (`false`).
+- Buckets must be **private**. Recommended IAM policy is in `docs/object-storage.md`.
+
+### gRPC AI service workflow
+
+The Nest API talks to the AI sidecar over **gRPC** for new code paths
+(PDF processing) and over HTTP for legacy methods (sandbox upload /
+generate / enhance, which still hit the FastAPI `/pilot/*` routes).
+Transport is selected by env:
+
+```env
+AI_PILOT_TRANSPORT=http        # default — current FastAPI routes
+AI_PILOT_TRANSPORT=grpc        # opt-in — uses .proto contracts in apps/api/proto/
+
+AI_SERVICE_URL=http://localhost:8000      # used in http mode
+AI_SERVICE_GRPC_URL=localhost:50051       # used in grpc mode
+```
+
+Proto contracts: `apps/api/proto/ai_pilot/v1/ai_pilot.proto`. Two
+services:
+- `AiPilot` — Health, UploadSample (client streaming), RegisterObject (object-reference based), GenerateRule / EnhancePrompt (server streaming).
+- `PdfProcessing` — StartJob (idempotent), GetJob, StreamProgress (server streaming with sequence cursor).
+
+Generated TS stubs live under `apps/api/src/proto-gen/` and are
+committed. Regenerate after editing the proto:
+
+```bash
+npm run proto:gen --workspace @ses/api
+```
+
+Job state lives in Postgres (`pdf_processing_job` table). Idempotency
+keys are derived from `(tenantId, objectKey, kind, promptHash, optionsHash)`
+so retries dedupe.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `./scripts/dev.sh start` says `MinIO did not become healthy` | Port 9000 is in use. `lsof -i :9000` and free it, or set the host port mapping. |
+| `migration failed: type "EscalationStage" already exists` | The DB carries an older schema state. Either run `./scripts/dev.sh reset` (loses local data) or `npm run db:baseline --workspace @ses/api` to mark all migrations as applied without running DDL. |
+| API health check times out | Check `.logs/api.log`. Most often: `DATABASE_URL` mismatch, or pending migration. |
+| `AI sidecar dir '$AI_DIR' not found` | The FastAPI sidecar lives outside this repo (`~/ses-ai-test/`). Either install it there, set `AI_DIR=/path/to/sidecar`, or use the gRPC transport with a stub server for local testing. |
+| Object uploads return 500 with "credentials" in the log | `OBJECT_STORAGE_ACCESS_KEY` / `OBJECT_STORAGE_SECRET_KEY` mismatch with what's running in MinIO. Run `./scripts/dev.sh reset` to recreate volumes with the values from `.env`. |
+| `./scripts/dev.sh logs all` shows no API log | API hasn't started — `./scripts/dev.sh status` will show port 3211 closed. Inspect `.logs/api.log`. |
+| Need a fully clean slate | `./scripts/dev.sh erase` (destructive, requires typed phrase). Removes containers, volumes, and `.logs/` only — never source files or `.git`. |
+
+### Safety notes (reset & erase)
+
+- `reset` and `erase` both refuse to run without a typed confirmation.
+- Both only touch resources owned by this repo:
+  - docker compose project `ses` (containers, networks, named volumes)
+  - the `.logs/` directory inside the repo
+- Neither command will:
+  - delete source files
+  - touch `.git`
+  - touch `.env` (the file is preserved so you don't lose customizations)
+  - reach outside the repo root
+
+If you need to recover from a broken state, `erase` is the deepest
+safe operation. After it, `./scripts/dev.sh start` rebuilds everything
+from scratch.
+
+---
+
 ## Repository layout
 
 ```text
 SES/
 ├── apps/
 │   ├── api/                         NestJS backend
-│   │   ├── prisma/
-│   │   │   ├── schema.prisma        35 models, PostgreSQL
-│   │   │   ├── migrations/          Ordered, append-only
+│   │   ├── db/                      Schema authority (SQL — Prisma removed)
+│   │   │   ├── migrations/          NNNN_*.sql, ordered, append-only
+│   │   │   ├── runner.ts            Migration runner (advisory-locked txns)
 │   │   │   └── seed.ts              Users, demo process, rule catalog
+│   │   ├── proto/ai_pilot/v1/       gRPC contracts (.proto)
 │   │   ├── src/
 │   │   │   ├── audits.service.ts    Orchestrates runFunctionAudit + directory
 │   │   │   ├── directory/           Manager Directory + email resolver
@@ -372,15 +572,27 @@ npm install
 cp .env.example .env
 # Edit .env if you changed ports / need SMTP / Teams webhook.
 
-# 4. Start Postgres + Redis
-docker compose up -d
+# 4. Start the full local stack (Postgres + Redis + MinIO + AI sidecar + API + web)
+./scripts/dev.sh start
+```
 
-# 5. Generate Prisma client + apply migrations + seed
-npm run prisma:generate
-npm exec --workspace @ses/api prisma migrate deploy --schema apps/api/prisma/schema.prisma
-npm run prisma:seed
+The script handles steps 4–6 in one go: it brings up docker services,
+applies SQL migrations, seeds reference data, creates the MinIO
+bucket, starts the AI sidecar (if installed), and launches API + web.
+Prefer it over the granular commands below for a fresh checkout.
 
-# 6. Start both API and web together
+If you only need partial control:
+
+```bash
+# Just docker dependencies (postgres + redis + minio + bucket)
+docker compose up -d postgres redis minio
+docker compose run --rm minio-init
+
+# Apply SQL migrations and seed
+npm run db:migrate --workspace @ses/api
+npm run db:seed --workspace @ses/api
+
+# Start API + web on the host
 npm run dev
 ```
 
@@ -418,7 +630,7 @@ from a subdirectory).
 
 | Variable            | Example                                                 | Notes                                                    |
 | ------------------- | ------------------------------------------------------- | -------------------------------------------------------- |
-| `DATABASE_URL`      | `postgresql://ses:ses@127.0.0.1:5432/ses`               | Prisma connection                                         |
+| `DATABASE_URL`      | `postgresql://ses:ses@127.0.0.1:5432/ses`               | Postgres connection (used by `pg` repositories + migration runner) |
 | `REDIS_URL`         | `redis://127.0.0.1:6380`                                | Socket.IO adapter fan-out                                 |
 | `SES_AUTH_SECRET`   | ≥ 32 chars in production                                | Signs session cookies; short values rejected in prod      |
 
@@ -448,34 +660,41 @@ from a subdirectory).
 
 ## Database and migrations
 
-Schema: `apps/api/prisma/schema.prisma` (35 models, PostgreSQL provider).
+Hand-written SQL migrations under `apps/api/db/migrations/NNNN_*.sql`
+are the schema authority. **Prisma has been fully removed** — there is
+no `@prisma/client` package, no `schema.prisma` file, no Prisma
+migration history retained. The data-access layer is hand-written `pg`
+code under `apps/api/src/repositories/`.
 
 Helpful commands:
 
 ```bash
-# Apply everything pending
-npm exec --workspace @ses/api prisma migrate deploy --schema apps/api/prisma/schema.prisma
+# Apply everything pending (also runs automatically by ./scripts/dev.sh start)
+DATABASE_URL=postgresql://ses:ses@127.0.0.1:5432/ses \
+  npm run db:migrate --workspace @ses/api
 
-# Create a new migration after changing the schema
-cd apps/api
-npx prisma migrate dev --name <short-description> --schema prisma/schema.prisma
-npx prisma generate --schema prisma/schema.prisma
-cd ../..
+# Preview what would apply
+npm run db:migrate:dryrun --workspace @ses/api
 
-# Reset local DB (destructive) and re-seed
-docker compose down -v
-docker compose up -d
-npm exec --workspace @ses/api prisma migrate deploy --schema apps/api/prisma/schema.prisma
-npm run prisma:seed
+# Mark every migration as already-applied without running DDL
+# (used when adopting these migrations against a DB that already has
+# a compatible schema applied by other means — never on a fresh DB).
+npm run db:baseline --workspace @ses/api
+
+# Idempotent reference data (system functions, audit rules, default tenant)
+npm run db:seed --workspace @ses/api
+
+# Reset local DB (destructive) — handled by the lifecycle script
+./scripts/dev.sh reset
 ```
 
 **Rules of engagement**
 
+- New migrations: pick the next `NNNN` prefix, write a header comment block (intent + manual rollback), keep each file in its own transaction.
+- Migrations are append-only — never edit an applied migration. Add a forward-only follow-up instead.
 - Prefer expand/contract for risky schema work.
-- Commit `schema.prisma`, the migration SQL, and the generated client as one unit.
-- Never rewrite a migration that's been applied anywhere outside your laptop.
-- Workbook byte storage: default limit is 25 MiB per file; size the API
-  memory budget as `max_workbook_size × concurrent_uploads`.
+- Object bytes do not live in Postgres — see [MinIO local storage workflow](#minio-local-storage-workflow). The legacy `WorkbookFile.fileBytes` BYTEA column is being phased out.
+- The runner (`apps/api/db/runner.ts`) records applied versions in `_schema_migrations` and uses `pg_advisory_xact_lock` so concurrent boots cannot double-apply.
 
 ---
 
@@ -591,7 +810,7 @@ docker compose -f docker-compose.prod.yml -f docker-compose.demo.yml up --build 
 
 | Target            | Contents                                                         |
 | ----------------- | ---------------------------------------------------------------- |
-| `workspace-build` | Installs deps, runs `prisma generate`, builds all workspaces.    |
+| `workspace-build` | Installs deps and builds all workspaces (domain, api, web).      |
 | `runtime-deps`    | Prunes dev deps from the workspace build.                        |
 | `api-runtime`     | `node:22-slim` + built JS + pruned deps. `EXPOSE 3211`.          |
 | `web-runtime`     | `nginx:unprivileged` + built SPA + `nginx.conf`. `EXPOSE 3210`.  |
@@ -671,8 +890,11 @@ Root `package.json`:
 | `npm run test`          | Domain + API + web tests                                        |
 | `npm run lint`          | ESLint on web                                                   |
 | `npm run format`        | Prettier across the repo                                        |
-| `npm run prisma:generate` | Regenerates the Prisma client                                 |
-| `npm run prisma:seed`   | Seeds users + demo process + rule catalog                        |
+| `npm run db:migrate --workspace @ses/api` | Applies SQL migrations under `apps/api/db/migrations/`           |
+| `npm run db:migrate:dryrun --workspace @ses/api` | Preview pending migrations without applying       |
+| `npm run db:baseline --workspace @ses/api` | Mark migrations as applied without running DDL (cutover only) |
+| `npm run db:seed --workspace @ses/api` | Seeds users + demo process + rule catalog (idempotent)             |
+| `npm run proto:gen --workspace @ses/api` | Regenerate gRPC TS stubs from `apps/api/proto/`                  |
 | `npm run docker:up`     | `docker compose up -d` for local dev                            |
 | `npm run docker:down`   | Stops local compose                                             |
 | `npm run docker:prod:up`| Prod-style compose stack                                        |
@@ -696,7 +918,7 @@ Quality expectations (enforced by review):
 
 - No `console.log` in committed frontend code.
 - Backend logging via NestJS `Logger`.
-- Prisma JSON casts isolated and commented at the boundary.
+- Repository methods isolate JSON shaping at the DB boundary; services and controllers see typed rows only.
 - Shared domain behavior has tests under `packages/domain/test/`.
 - The invariant **"rules cannot leak across functions"** is covered by
   `packages/domain/test/master-data-audit.test.ts` — do not delete.
@@ -708,7 +930,7 @@ Quality expectations (enforced by review):
 | Symptom                                                          | What to check                                                                                             |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | API refuses to start: "SES_AUTH_SECRET must be ≥ 32 chars"       | Set a longer secret in `.env` (production check).                                                         |
-| `prisma: command not found`                                      | Run `npm install` at repo root; Prisma lives in `apps/api`.                                               |
+| `relation "uploaded_object" does not exist`                      | SQL migrations haven't run. `npm run db:migrate --workspace @ses/api` (or `./scripts/dev.sh start`).     |
 | Audit shows effort-rule findings on a Master Data file           | Rebuild `@ses/domain` (`npm --workspace @ses/domain run build`). The client path must use `runFunctionAudit`. |
 | "Missing email — add to directory" chip on every row             | Upload the manager directory first (Directory page), then re-run audit.                                   |
 | Bulk send errors with 400 "Manager email is required"            | Fixed in this repo: the composer now skips missing-email entries. Redeploy latest.                        |

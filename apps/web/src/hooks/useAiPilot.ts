@@ -99,9 +99,9 @@ export const useSaveRule = () => {
   return useMutation({
     mutationFn: saveRule,
     onSuccess: (rule) => {
-      qc.invalidateQueries({ queryKey: ['ai-pilot', 'rules'] });
-      qc.invalidateQueries({ queryKey: ['ai-pilot', 'all-rules'] });
-      qc.invalidateQueries({ queryKey: RULE_DETAIL_KEY(rule.ruleCode) });
+      void qc.invalidateQueries({ queryKey: ['ai-pilot', 'rules'] });
+      void qc.invalidateQueries({ queryKey: ['ai-pilot', 'all-rules'] });
+      void qc.invalidateQueries({ queryKey: RULE_DETAIL_KEY(rule.ruleCode) });
     },
   });
 };
@@ -112,9 +112,9 @@ export const useSetRuleStatus = () => {
     mutationFn: (input: { ruleCode: string; status: 'active' | 'paused' | 'archived' }) =>
       setRuleStatus(input.ruleCode, input.status),
     onSuccess: (rule) => {
-      qc.invalidateQueries({ queryKey: ['ai-pilot', 'rules'] });
-      qc.invalidateQueries({ queryKey: ['ai-pilot', 'all-rules'] });
-      qc.invalidateQueries({ queryKey: RULE_DETAIL_KEY(rule.ruleCode) });
+      void qc.invalidateQueries({ queryKey: ['ai-pilot', 'rules'] });
+      void qc.invalidateQueries({ queryKey: ['ai-pilot', 'all-rules'] });
+      void qc.invalidateQueries({ queryKey: RULE_DETAIL_KEY(rule.ruleCode) });
     },
   });
 };

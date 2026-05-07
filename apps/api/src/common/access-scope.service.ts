@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../repositories/types';
 import { createId } from '@ses/domain';
 import type { FunctionId, SessionUser } from '@ses/domain';
 import { PrismaService } from './prisma.service';
@@ -71,7 +71,7 @@ export class AccessScopeService {
     }
     return {
       member: { id: member.id, permission: member.permission },
-      scopes: member.scopePermissions.map((s) => ({
+      scopes: member.scopePermissions.map((s: any) => ({
         scopeType: s.scopeType as ScopeKind,
         functionId: s.functionId,
         accessLevel: s.accessLevel as ScopeAccessLevel,

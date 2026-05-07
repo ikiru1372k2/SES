@@ -20,6 +20,13 @@ import type {
   WorkbookFile,
 } from '@ses/domain';
 import { PrismaService } from '../common/prisma.service';
+import { PgService } from '../db/pg.service';
+import {
+  ObjectStorageService,
+  aiPilotObjectKey,
+  sha256Hex,
+} from '../object-storage';
+import { UploadedObjectsRepository } from '../repositories/uploaded-objects.repository';
 import { AiClientService } from './ai-client.service';
 import { projectLiteEscalations, type EscalationLitePreview } from './escalation-projector';
 
@@ -32,7 +39,37 @@ export class AiPilotService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiClient: AiClientService,
+    private readonly storage: ObjectStorageService,
+    private readonly uploadedObjects: UploadedObjectsRepository,
+    private readonly pg: PgService,
   ) {}
+
+  /** Stream a sandbox session's uploaded sample bytes from object storage. */
+  private async readSessionBytes(sessionId: string): Promise<Buffer> {
+    const rows = await this.pg.query<{ uploadedObjectId: string | null; fileBytes: Buffer | null }>(
+      `SELECT "uploadedObjectId", "fileBytes" FROM "AiPilotSandboxSession" WHERE "id" = $1`,
+      [sessionId],
+    );
+    const row = rows[0];
+    if (!row) throw new NotFoundException(`session ${sessionId} not found`);
+    if (row.uploadedObjectId) {
+      const meta = await this.uploadedObjects.findById(row.uploadedObjectId);
+      if (!meta) throw new NotFoundException(`object ${row.uploadedObjectId} missing`);
+      // The bucket name is recorded on the metadata row, so we resolve
+      // by exact name (works whether the object lives in ses-ai-files,
+      // a legacy single bucket, or a future renamed bucket).
+      const stream = await this.storage.getObjectStream(meta.objectKey, {
+        bucketName: meta.bucket,
+      });
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk as Buffer);
+      }
+      return Buffer.concat(chunks);
+    }
+    if (row.fileBytes) return Buffer.from(row.fileBytes);
+    throw new NotFoundException(`session ${sessionId} has no payload`);
+  }
 
   // ---------- Engine integration (Phase 1) ----------
 
@@ -43,8 +80,20 @@ export class AiPilotService {
         include: { aiMeta: true },
       });
       const specs: AiRuleSpec[] = [];
+      // Dedupe by structural signature (logic + flagMessage). A user can
+      // accidentally save the same rule twice; without this guard the
+      // executor would emit one issue per duplicate, causing visible
+      // duplication on every audit run.
+      const seenSignatures = new Set<string>();
       for (const row of rows) {
         if (!row.aiMeta) continue;
+        const signature = JSON.stringify({
+          functionId: row.functionId,
+          flagMessage: row.aiMeta.flagMessage,
+          logic: row.aiMeta.logic,
+        });
+        if (seenSignatures.has(signature)) continue;
+        seenSignatures.add(signature);
         specs.push({
           ruleCode: row.ruleCode,
           ruleVersion: row.version,
@@ -104,6 +153,7 @@ export class AiPilotService {
   async uploadSample(user: SessionUser, functionId: FunctionId, file: Express.Multer.File) {
     if (!file?.buffer) throw new BadRequestException('file required');
     const buffer = file.buffer;
+    const contentType = file.mimetype || 'application/octet-stream';
 
     let parsed: WorkbookFile;
     try {
@@ -116,16 +166,58 @@ export class AiPilotService {
 
     const sessionId = ulid();
     const expiresAt = new Date(Date.now() + SANDBOX_TTL_HOURS * 3600 * 1000);
-    await this.prisma.aiPilotSandboxSession.create({
-      data: {
-        id: sessionId,
-        authoredById: user.id,
-        functionId,
-        fileName: file.originalname,
-        fileBytes: new Uint8Array(buffer),
-        expiresAt,
-      },
+    const checksum = sha256Hex(buffer);
+    const objectKey = aiPilotObjectKey({
+      tenantId: (user as { tenantId?: string }).tenantId ?? 'default',
+      sessionId,
+      fileName: file.originalname,
     });
+
+    // 1. Reserve metadata row (status=pending) before touching storage so a
+    //    crash mid-upload leaves a forensic trail.
+    const aiPilotBucket = this.storage.bucketFor('ai-pilot');
+    const metadataId = ulid();
+    await this.uploadedObjects.createPending({
+      id: metadataId,
+      tenantId: (user as { tenantId?: string }).tenantId ?? null,
+      ownerId: user.id,
+      bucket: aiPilotBucket,
+      objectKey,
+      originalFileName: file.originalname,
+      contentType,
+      sizeBytes: buffer.length,
+      checksumSha256: checksum,
+      storageProvider: this.storage.storageProvider,
+      storageEndpoint: this.storage.storageEndpoint,
+    });
+
+    // 2. Upload bytes to S3-compatible storage. On failure, mark the row.
+    try {
+      await this.storage.putObject({
+        objectKey,
+        body: buffer,
+        contentType,
+        contentLength: buffer.length,
+        checksumSha256: checksum,
+        bucket: 'ai-pilot',
+      });
+      await this.uploadedObjects.markUploaded(metadataId);
+    } catch (err) {
+      await this.uploadedObjects.markFailed(metadataId).catch(() => {});
+      this.logger.error(
+        `object upload failed sessionId=${sessionId} key=${objectKey} err=${err instanceof Error ? err.message : 'unknown'}`,
+      );
+      throw new BadRequestException('upload failed');
+    }
+
+    // 3. Persist sandbox session pointing at the uploaded object. Bytes are
+    //    NOT stored in Postgres — readSessionBytes() streams from storage.
+    await this.pg.query(
+      `INSERT INTO "AiPilotSandboxSession"
+        ("id","authoredById","functionId","fileName","fileBytes","sheetName","expiresAt","uploadedObjectId")
+       VALUES ($1,$2,$3,$4,NULL,NULL,$5,$6)`,
+      [sessionId, user.id, functionId, file.originalname, expiresAt, metadataId],
+    );
 
     // Best-effort: ask FastAPI for Docling preview markdown. Failure must not block.
     let previewMarkdown: string | undefined;
@@ -177,10 +269,8 @@ export class AiPilotService {
 
   async generate(user: SessionUser, sessionId: string, prompt: string) {
     const session = await this.requireOwnedSession(user, sessionId);
-    const parsed = await parseWorkbookBuffer(
-      Buffer.from(session.fileBytes),
-      session.fileName,
-    );
+    const bytes = await this.readSessionBytes(session.id);
+    const parsed = await parseWorkbookBuffer(bytes, session.fileName);
     const sheet = session.sheetName
       ? parsed.sheets.find((s) => s.name === session.sheetName)
       : parsed.sheets.find((s) => s.status === 'valid' && s.isSelected);
@@ -256,10 +346,8 @@ export class AiPilotService {
         `Spec functionId (${spec.functionId}) doesn't match session functionId (${session.functionId})`,
       );
     }
-    const file = await parseWorkbookBuffer(
-      Buffer.from(session.fileBytes),
-      session.fileName,
-    );
+    const bytes = await this.readSessionBytes(session.id);
+    const file = await parseWorkbookBuffer(bytes, session.fileName);
     if (session.sheetName) {
       for (const s of file.sheets) {
         s.isSelected = s.name === session.sheetName && s.status === 'valid';
@@ -312,6 +400,30 @@ export class AiPilotService {
     const newRuleCode = spec.ruleCode.startsWith('ai_') ? spec.ruleCode : `ai_${ulid().toLowerCase()}`;
 
     const persisted = await this.prisma.$transaction(async (tx) => {
+      // Deactivate any pre-existing active AI rule on the same function with
+      // identical logic + flagMessage. Without this, repeatedly saving the
+      // same rule produces duplicate findings on every audit run.
+      const existingActive = await tx.auditRule.findMany({
+        where: { functionId: spec.functionId, source: 'ai-pilot', status: 'active' },
+        include: { aiMeta: true },
+      });
+      const incomingSig = JSON.stringify({
+        flagMessage: spec.flagMessage,
+        logic: spec.logic,
+      });
+      for (const existing of existingActive) {
+        if (!existing.aiMeta) continue;
+        const existingSig = JSON.stringify({
+          flagMessage: existing.aiMeta.flagMessage,
+          logic: existing.aiMeta.logic,
+        });
+        if (existingSig === incomingSig) {
+          await tx.auditRule.update({
+            where: { id: existing.id },
+            data: { status: 'archived' },
+          });
+        }
+      }
       const auditRule = await tx.auditRule.create({
         data: {
           id: ulid(),
