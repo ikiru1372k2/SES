@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { Send, Sparkles, Database } from 'lucide-react';
+import { Database, Loader2, Send, Sparkles } from 'lucide-react';
 import type { ChartSpec, ChatEvent, FunctionId } from '@ses/domain';
 import { streamAnalyticsChat } from '../../lib/api/analyticsApi';
 import { ChartRenderer } from './ChartRenderer';
@@ -9,7 +9,10 @@ import { SuggestedChips } from './SuggestedChips';
 interface Message {
   id: string;
   role: 'user' | 'assistant';
+  /** Final answer text. Empty while pending. */
   content: string;
+  /** Short status line shown during streaming ("Thinking…", "Running SQL…"). */
+  progress: string;
   events: ChatEvent[];
   chartSpec?: ChartSpec | null;
   alternatives?: ChartSpec[] | null;
@@ -41,11 +44,12 @@ export function ChatPane({
   async function ask(question: string) {
     const q = question.trim();
     if (!q || pending) return;
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: q, events: [] };
+    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: q, progress: '', events: [] };
     const assistantMsg: Message = {
       id: `a-${Date.now()}`,
       role: 'assistant',
       content: '',
+      progress: 'Thinking…',
       events: [],
       pending: true,
     };
@@ -53,7 +57,6 @@ export function ChatPane({
     setInput('');
     setPending(true);
     try {
-      // Real agent by default. Pass useStub=true explicitly only for offline demos.
       const reqBody: import('../../lib/api/analyticsApi').ChatRequestBody = { question: q, useStub: false };
       if (functionId !== undefined) reqBody.functionId = functionId;
       if (versionRef !== undefined) reqBody.versionRef = versionRef;
@@ -71,20 +74,34 @@ export function ChatPane({
             if (idx === -1) return prev;
             const m = { ...next[idx]!, events: [...next[idx]!.events, evt] };
             if (evt.type === 'thinking') {
-              m.content = m.content || `…${evt.text}`;
-            } else if (evt.type === 'partial_answer') {
-              m.content = (m.content === `…${evt.text}` ? '' : m.content) + evt.text;
+              const t = evt.text.toLowerCase();
+              if (t.startsWith('iteration')) {
+                m.progress = `Reasoning… (${evt.text})`;
+              } else if (!m.progress || m.progress === 'Thinking…') {
+                m.progress = 'Loading data…';
+              }
             } else if (evt.type === 'tool_call') {
-              m.content = m.content && !m.content.startsWith('…') ? m.content : `running ${evt.name}…`;
+              if (evt.name === 'sql_query') {
+                m.progress = 'Querying data…';
+              } else {
+                m.progress = `Running ${evt.name}…`;
+              }
+            } else if (evt.type === 'tool_result') {
+              m.progress = evt.ok ? 'Analysing results…' : 'Retrying…';
+            } else if (evt.type === 'partial_answer') {
+              m.content = m.content + evt.text;
+              m.progress = '';
             } else if (evt.type === 'final') {
               sawFinal = true;
               m.content = evt.answer;
+              m.progress = '';
               m.chartSpec = evt.chart_spec ?? null;
               m.alternatives = evt.alternatives ?? null;
               m.generatedSql = evt.generated_sql ?? null;
               m.pending = false;
             } else if (evt.type === 'error') {
-              m.content = `Error: ${evt.message}`;
+              m.content = `Couldn't generate an answer: ${evt.message}`;
+              m.progress = '';
               m.pending = false;
             }
             next[idx] = m;
@@ -98,7 +115,7 @@ export function ChatPane({
         setMessages((prev) =>
           prev.map((mm) =>
             mm.id === assistantMsg.id
-              ? { ...mm, content: mm.content && !mm.content.startsWith('…') ? mm.content : 'No answer returned (stream ended without final). Try a simpler question or restart the AI sidecar.', pending: false }
+              ? { ...mm, content: 'No answer returned (the model timed out). Try a simpler question.', progress: '', pending: false }
               : mm,
           ),
         );
@@ -106,7 +123,7 @@ export function ChatPane({
     } catch (err) {
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantMsg.id ? { ...m, content: `Error: ${(err as Error).message}`, pending: false } : m,
+          m.id === assistantMsg.id ? { ...m, content: `Error: ${(err as Error).message}`, progress: '', pending: false } : m,
         ),
       );
     } finally {
@@ -145,7 +162,14 @@ export function ChatPane({
                       <Sparkles size={10} /> Analyst
                     </div>
                   ) : null}
-                  <div className="whitespace-pre-wrap">{m.content || (m.pending ? '…' : '')}</div>
+                  {m.pending && !m.content ? (
+                    <div className="flex items-center gap-2 py-1 text-gray-600 dark:text-gray-300">
+                      <Loader2 size={14} className="animate-spin text-rose-600" />
+                      <span className="text-xs italic">{m.progress || 'Working…'}</span>
+                    </div>
+                  ) : (
+                    <div className="whitespace-pre-wrap">{m.content}</div>
+                  )}
                   {m.chartSpec ? (
                     <div className="mt-2 space-y-2 rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
                       <div className="flex items-center justify-between">
