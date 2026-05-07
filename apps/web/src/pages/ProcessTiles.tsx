@@ -69,6 +69,12 @@ export function ProcessTiles() {
               icon: AlertTriangle,
               onClick: () => navigate(escalationCenterPath(processKey)),
             },
+            {
+              id: 'analytics',
+              label: 'Open analytics',
+              icon: AlertTriangle,
+              onClick: () => navigate(`/processes/${encodeURIComponent(processKey)}/analytics`),
+            },
           ]
         : [],
     }),

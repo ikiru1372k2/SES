@@ -7,6 +7,7 @@ import { ActivityLogService } from './common/activity-log.service';
 import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
 import { RealtimeGateway } from './realtime/realtime.gateway';
+import { ChatCacheService } from './analytics/chat-cache.service';
 
 function serializeVersion(version: {
   id: string;
@@ -104,6 +105,7 @@ export class VersionsService {
     private readonly activity: ActivityLogService,
     private readonly processAccess: ProcessAccessService,
     private readonly realtime: RealtimeGateway,
+    private readonly chatCache: ChatCacheService,
   ) {}
 
   private async getVersionWithAccess(idOrCode: string, user: SessionUser) {
@@ -184,6 +186,11 @@ export class VersionsService {
       versionCode: version.displayCode,
       versionId: version.id,
     }, { actor });
+
+    // Event-driven analytics chat-cache eviction. Without this, a user who
+    // saves v4 and immediately re-asks "what changed in v4?" could get a
+    // cached v3 answer for up to ANALYTICS_CACHE_TTL_SECONDS.
+    this.chatCache.evictMatching({ processCode: process.displayCode, functionId: null });
 
     return version;
   }

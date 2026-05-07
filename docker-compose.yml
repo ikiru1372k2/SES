@@ -81,6 +81,29 @@ services:
       "
     restart: 'no'
 
+  # AI sidecar (FastAPI + Ollama client). Runs the rule-generation flow AND
+  # the new analytics chat agent. Talks to a host-installed Ollama at the
+  # default 11434 — pass `--add-host=host.docker.internal:host-gateway` on
+  # Linux if your daemon doesn't already wire that for you.
+  #
+  # Note for nginx fronting: set `proxy_buffering off` for /api/v1/analytics/chat
+  # so SSE streams reach the browser without buffering.
+  ai-sidecar:
+    profiles: ['ai']
+    build:
+      context: ./services/ai-sidecar
+    container_name: ses-ai-sidecar
+    ports:
+      - '8000:8000'
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      AI_AGENT_MODEL: ${AI_AGENT_MODEL:-qwen2.5-coder:7b-instruct}
+      AI_ROUTER_MODEL: ${AI_ROUTER_MODEL:-llama3.2:3b-instruct}
+      AI_EMBED_MODEL: ${AI_EMBED_MODEL:-nomic-embed-text}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+
 volumes:
   ses_pg_data:
   ses_redis_data:

@@ -71,7 +71,12 @@ import { InAppNotificationsService } from './in-app-notifications.service';
 import { SavedViewsController } from './saved-views.controller';
 import { SavedViewsService } from './saved-views.service';
 import { SlaEngineService } from './sla-engine.service';
+import { HttpModule } from '@nestjs/axios';
 import { AiPilotModule } from './ai-pilot/ai-pilot.module';
+import { AnalyticsController } from './analytics/analytics.controller';
+import { AnalyticsService } from './analytics/analytics.service';
+import { ChatCacheService } from './analytics/chat-cache.service';
+import { ChatAuditService } from './analytics/chat-audit.service';
 import { ObjectStorageModule } from './object-storage';
 import { PdfProcessingModule } from './pdf-processing/pdf-processing.module';
 
@@ -93,6 +98,7 @@ import { PdfProcessingModule } from './pdf-processing/pdf-processing.module';
     AiPilotModule,
     ObjectStorageModule,
     PdfProcessingModule,
+    HttpModule.register({ timeout: 120_000, maxRedirects: 0 }),
   ],
   controllers: [
     HealthController,
@@ -126,6 +132,7 @@ import { PdfProcessingModule } from './pdf-processing/pdf-processing.module';
     TrackingAttachmentsController,
     InAppNotificationsController,
     SavedViewsController,
+    AnalyticsController,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
@@ -171,6 +178,9 @@ import { PdfProcessingModule } from './pdf-processing/pdf-processing.module';
     InAppNotificationsService,
     SavedViewsService,
     SlaEngineService,
+    AnalyticsService,
+    ChatCacheService,
+    ChatAuditService,
   ],
   exports: [
     PrismaService,
