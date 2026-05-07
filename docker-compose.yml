@@ -98,7 +98,7 @@ services:
     environment:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       AI_AGENT_MODEL: ${AI_AGENT_MODEL:-qwen2.5-coder:7b-instruct}
-      AI_ROUTER_MODEL: ${AI_ROUTER_MODEL:-llama3.2:3b-instruct}
+      AI_ROUTER_MODEL: ${AI_ROUTER_MODEL:-llama3.2:3b}
       AI_EMBED_MODEL: ${AI_EMBED_MODEL:-nomic-embed-text}
     extra_hosts:
       - host.docker.internal:host-gateway

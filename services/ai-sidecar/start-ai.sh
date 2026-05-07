@@ -6,7 +6,7 @@
 # after the first pull to lock the binary against `latest` rebases.
 #
 #   ollama show --modelfile qwen2.5-coder:7b-instruct | grep digest
-#   ollama show --modelfile llama3.2:3b-instruct       | grep digest
+#   ollama show --modelfile llama3.2:3b       | grep digest
 #   ollama show --modelfile nomic-embed-text           | grep digest
 #
 # Then put the resulting digests in start-ai.sh so re-pulls are deterministic.
@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 
 # Models the sidecar uses
 RULE_GEN_MODEL="${AI_MODEL:-qwen2.5:7b}"
-ENHANCE_MODEL="${AI_ENHANCE_MODEL:-llama3.2:3b-instruct}"
+ENHANCE_MODEL="${AI_ENHANCE_MODEL:-llama3.2:3b}"
 AGENT_MODEL="${AI_AGENT_MODEL:-qwen2.5-coder:7b-instruct}"
 EMBED_MODEL="${AI_EMBED_MODEL:-nomic-embed-text}"
 
