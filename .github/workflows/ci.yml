@@ -23,6 +23,14 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://ses:ses@127.0.0.1:5432/ses
+      SES_AUTH_SECRET: ses-ci-secret
+      SES_ALLOW_DEV_LOGIN: 'true'
+      OBJECT_STORAGE_DRIVER: s3
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_ACCESS_KEY: ci-access-key
+      OBJECT_STORAGE_SECRET_KEY: ci-secret-key
+      OBJECT_STORAGE_BUCKET: ses-ci
+      OBJECT_STORAGE_ENDPOINT: http://127.0.0.1:9000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
