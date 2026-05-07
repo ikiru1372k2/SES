@@ -10,7 +10,7 @@ import {
 } from '../../lib/api/analyticsApi';
 import { MetricCard } from '../shared/MetricCard';
 import { ChatPane } from './ChatPane';
-import { ChartRenderer } from './ChartRenderer';
+import { DashboardChartCard } from './DashboardChartCard';
 import { OllamaHealthPill } from './OllamaHealthPill';
 
 interface Props {
@@ -59,13 +59,17 @@ export function AnalyticsWorkbench({ processCode, functionId }: Props) {
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-      <div className="lg:col-span-4 lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
-        <ChatPane
-          processCode={processCode}
-          {...(functionId !== undefined ? { functionId } : {})}
-          {...(versionRef !== undefined ? { versionRef } : {})}
-          {...(compareTo !== undefined ? { compareTo } : {})}
-        />
+      <div className="lg:col-span-4">
+        {/* Sticky shell. Inner ChatPane has its own scroll container so the
+            chat history scrolls independently of the dashboard column. */}
+        <div className="lg:sticky lg:top-4 h-[calc(100vh-3rem)] min-h-[520px]">
+          <ChatPane
+            processCode={processCode}
+            {...(functionId !== undefined ? { functionId } : {})}
+            {...(versionRef !== undefined ? { versionRef } : {})}
+            {...(compareTo !== undefined ? { compareTo } : {})}
+          />
+        </div>
       </div>
 
       <div className="space-y-4 lg:col-span-8">
@@ -138,35 +142,33 @@ export function AnalyticsWorkbench({ processCode, functionId }: Props) {
         ) : null}
 
         {trendData.length ? (
-          <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <h3 className="mb-3 font-semibold">{functionId ? 'Issues over versions' : 'Flagged rows over versions (per function)'}</h3>
-            <ChartRenderer
-              spec={{
-                type: 'line',
-                data: trendData,
-                x: 'version',
-                y: functionId
-                  ? ['flagged', 'scanned']
-                  : Array.from(new Set((timeseries.data ?? []).map((p) => String(p.functionId)))),
-                source: { executed_at: new Date().toISOString(), row_count: trendData.length, dataset_version: 'live' },
-              }}
-            />
-          </section>
+          <DashboardChartCard
+            title={functionId ? 'Issues over versions' : 'Flagged rows over versions (per function)'}
+            description="Pick bar / line / area / table from the dropdown."
+            data={trendData}
+            x="version"
+            y={
+              functionId
+                ? ['flagged', 'scanned']
+                : Array.from(new Set((timeseries.data ?? []).map((p) => String(p.functionId))))
+            }
+            defaultType="line"
+            source={{ row_count: trendData.length, dataset_version: 'live' }}
+          />
         ) : null}
 
         {managers.data && managers.data.length ? (
-          <section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-            <h3 className="mb-3 font-semibold">Top managers by issue count</h3>
-            <ChartRenderer
-              spec={{
-                type: 'bar',
-                data: managers.data.slice(0, 10).map((m) => ({ manager: m.manager, count: m.count, high: m.high })),
-                x: 'manager',
-                y: ['count', 'high'],
-                source: { executed_at: new Date().toISOString(), row_count: managers.data.length, dataset_version: 'live' },
-              }}
-            />
-          </section>
+          <DashboardChartCard
+            title="Top managers by issue count"
+            description="Switch between bar, pie, and table to see the same data differently."
+            data={managers.data.slice(0, 10).map((m) => ({ manager: m.manager, count: m.count, high: m.high }))}
+            x="manager"
+            y={['count', 'high']}
+            pieKey="manager"
+            pieValue="count"
+            defaultType="bar"
+            source={{ row_count: managers.data.length, dataset_version: 'live' }}
+          />
         ) : null}
 
         {anomalies.data && anomalies.data.ruleViolations.length ? (

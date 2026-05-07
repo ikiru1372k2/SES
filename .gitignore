@@ -35,3 +35,5 @@ Thumbs.db
 .idea/
 *.suo
 *.user
+services/ai-sidecar/tools/__pycache__/
+services/ai-sidecar/__pycache__/

@@ -102,8 +102,8 @@ export function ChatPane({
   }
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
+    <div className="flex h-full min-h-0 flex-col rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-4">
         {messages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-gray-600 dark:text-gray-300">
