@@ -18,7 +18,7 @@ from tools.sql import DuckCache, canonicalize_rows, safe_query
 from tools.charts import validate_chart_spec
 from tools.stats import run_stat  # noqa: F401  (used once real agent wired)
 
-AGENT_MODEL = os.getenv("AI_AGENT_MODEL", "qwen2.5-coder:7b-instruct")
+AGENT_MODEL = os.getenv("AI_AGENT_MODEL", "claude-opus-4-7")
 AGENT_MAX_ITER = int(os.getenv("AI_AGENT_MAX_ITER", "3"))
 
 _duck_cache = DuckCache()
@@ -193,46 +193,48 @@ def _strip_codefence(s: str) -> str:
     return s.strip()
 
 
-async def _ollama_chat(messages: list[dict[str, str]], model: str) -> dict[str, Any]:
-    """Single Ollama chat call returning parsed JSON content.
+async def _claude_chat(messages: list[dict[str, str]], model: str) -> dict[str, Any]:
+    """Single Anthropic Claude API call returning parsed JSON content."""
+    import anthropic
 
-    Note: we deliberately DO NOT pass format='json' to Ollama. JSON-mode
-    can hang for tens of seconds on multi-turn coder prompts (likely a
-    grammar-sampler bug with this model). We bound generation with
-    num_predict and parse the resulting markdown/JSON loosely.
-    """
-    import asyncio
-    import ollama
+    # Separate system prompt from conversation messages (Anthropic API style)
+    system_prompt = ""
+    conv_messages = []
+    for msg in messages:
+        if msg["role"] == "system":
+            system_prompt = msg["content"]
+        else:
+            conv_messages.append({"role": msg["role"], "content": msg["content"]})
 
-    client = ollama.Client(host=os.getenv("OLLAMA_URL", "http://localhost:11434"))
+    client = anthropic.AsyncAnthropic()
 
-    def _run() -> dict[str, Any]:
-        resp = client.chat(
-            model=model,
-            messages=messages,
-            options={"temperature": 0.1, "num_predict": 300, "num_ctx": 4096},
-        )
-        content = resp.get("message", {}).get("content", "{}")
-        cleaned = _strip_codefence(content)
-        # Extract first {...} block in case the model added prose
-        depth = 0
-        start = -1
-        for i, ch in enumerate(cleaned):
-            if ch == "{":
-                if start == -1:
-                    start = i
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0 and start >= 0:
-                    cleaned = cleaned[start : i + 1]
-                    break
-        try:
-            return json.loads(cleaned)
-        except Exception:
-            return {"final": content[:600], "chart_spec": None}
+    response = await client.messages.create(
+        model=model,
+        max_tokens=1024,
+        # Cache the stable system prompt to reduce cost on multi-turn retries
+        system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
+        messages=conv_messages,
+    )
 
-    return await asyncio.to_thread(_run)
+    content = response.content[0].text if response.content else "{}"
+    cleaned = _strip_codefence(content)
+    # Extract first {...} block in case the model added prose
+    depth = 0
+    start = -1
+    for i, ch in enumerate(cleaned):
+        if ch == "{":
+            if start == -1:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                cleaned = cleaned[start : i + 1]
+                break
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        return {"final": content[:600], "chart_spec": None}
 
 
 async def _real_agent_loop(
@@ -241,7 +243,7 @@ async def _real_agent_loop(
     process_code: str,
     dataset_version: str,
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """qwen2.5-coder JSON-mode agent loop. Yields ChatEvents."""
+    """Claude JSON-mode agent loop. Yields ChatEvents."""
     if not rows:
         yield {
             "type": "final",
@@ -321,9 +323,9 @@ async def _real_agent_loop(
     for iteration in range(1, AGENT_MAX_ITER + 1):
         yield {"type": "thinking", "text": f"iteration {iteration} (model={AGENT_MODEL})"}
         try:
-            result = await _ollama_chat(messages, AGENT_MODEL)
+            result = await _claude_chat(messages, AGENT_MODEL)
         except Exception as e:
-            yield {"type": "error", "code": "OLLAMA_FAIL", "message": str(e)}
+            yield {"type": "error", "code": "LLM_FAIL", "message": str(e)}
             return
 
         if isinstance(result.get("final"), str):
