@@ -57,6 +57,11 @@ export function AnalyticsWorkbench({ processCode, functionId }: Props) {
 
   const versionOptions = useMemo(() => (timeseries.data ?? []).map((v) => v.displayCode), [timeseries.data]);
 
+  const managersChartData = useMemo(
+    () => (managers.data ?? []).slice(0, 10).map((m) => ({ manager: m.manager, count: m.count, high: m.high })),
+    [managers.data],
+  );
+
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
       <div className="lg:col-span-4">
@@ -172,17 +177,17 @@ export function AnalyticsWorkbench({ processCode, functionId }: Props) {
           />
         ) : null}
 
-        {managers.data && managers.data.length ? (
+        {managersChartData.length ? (
           <DashboardChartCard
             title="Top managers by issue count"
             description="Switch between bar, pie, and table to see the same data differently."
-            data={managers.data.slice(0, 10).map((m) => ({ manager: m.manager, count: m.count, high: m.high }))}
+            data={managersChartData}
             x="manager"
             y={['count', 'high']}
             pieKey="manager"
             pieValue="count"
             defaultType="bar"
-            source={{ row_count: managers.data.length, dataset_version: 'live' }}
+            source={{ row_count: managersChartData.length, dataset_version: 'live' }}
           />
         ) : null}
 

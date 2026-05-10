@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { Fragment } from 'react';
 import {
   Area,
   AreaChart,
@@ -187,8 +188,8 @@ function HeatmapView({ spec }: { spec: Extract<ChartSpec, { type: 'heatmap' }> }
           <div key={x} className="px-2 text-xs font-medium text-gray-600">{x}</div>
         ))}
         {ys.map((y, yi) => (
-          <>
-            <div key={y} className="px-2 text-xs font-medium text-gray-600">{y}</div>
+          <Fragment key={y}>
+            <div className="px-2 text-xs font-medium text-gray-600">{y}</div>
             {xs.map((x, xi) => {
               const v = grid[yi]![xi]!;
               const intensity = max ? v / max : 0;
@@ -203,7 +204,7 @@ function HeatmapView({ spec }: { spec: Extract<ChartSpec, { type: 'heatmap' }> }
                 </div>
               );
             })}
-          </>
+          </Fragment>
         ))}
       </div>
     </div>

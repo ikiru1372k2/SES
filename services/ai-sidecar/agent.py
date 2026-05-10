@@ -331,8 +331,16 @@ async def _real_agent_loop(
             if spec:
                 try:
                     validate_chart_spec(spec)
-                except Exception as e:
-                    yield {"type": "tool_result", "name": "validate", "ok": False, "preview": {"error": str(e)}}
+                except Exception as ve:
+                    if iteration < AGENT_MAX_ITER:
+                        # Feed the validation error back so the model can fix the chart_spec.
+                        messages.append(
+                            {"role": "assistant", "content": json.dumps(result)}
+                        )
+                        messages.append(
+                            {"role": "user", "content": f"chart_spec_error: {ve}. Fix chart_spec and reply again with corrected SHAPE B."}
+                        )
+                        continue
                     spec = None
             yield {
                 "type": "final",
