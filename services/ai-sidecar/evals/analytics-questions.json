@@ -1,0 +1,107 @@
+[
+  {
+    "scope": "process",
+    "question": "Which function is in worst shape this week?",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "table"],
+    "answer_must_contain_one_of": ["function", "issues", "flagged"]
+  },
+  {
+    "scope": "process",
+    "question": "Top 5 managers blocking sign-off",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "table"],
+    "answer_must_contain_one_of": ["manager", "open"]
+  },
+  {
+    "scope": "process",
+    "question": "Compare this week to last week",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["line", "bar"],
+    "answer_must_contain_one_of": ["change", "delta", "vs"]
+  },
+  {
+    "scope": "master-data",
+    "question": "Which projects have missing PSU Relevant?",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["table", "bar"],
+    "answer_must_contain_one_of": ["psu", "project"]
+  },
+  {
+    "scope": "master-data",
+    "question": "Where do we have unmapped managers?",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["table"],
+    "answer_must_contain_one_of": ["unmapped", "directory"]
+  },
+  {
+    "scope": "over-planning",
+    "question": "Show chronic slow responders",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "table"],
+    "answer_must_contain_one_of": ["slow", "manager"]
+  },
+  {
+    "scope": "over-planning",
+    "question": "Effort spikes greater than 200 hours since last version",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "table", "scatter"],
+    "answer_must_contain_one_of": ["effort", "spike"]
+  },
+  {
+    "scope": "missing-plan",
+    "question": "Which managers have the most missing plans this cycle?",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "table"],
+    "answer_must_contain_one_of": ["manager", "missing"]
+  },
+  {
+    "scope": "missing-plan",
+    "question": "Plans missing more than two weeks",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["table", "bar"],
+    "answer_must_contain_one_of": ["weeks", "missing"]
+  },
+  {
+    "scope": "function-rate",
+    "question": "Cost-rate outliers by department",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "scatter"],
+    "answer_must_contain_one_of": ["rate", "department"]
+  },
+  {
+    "scope": "function-rate",
+    "question": "Month-over-month rate changes",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["line", "bar"],
+    "answer_must_contain_one_of": ["month", "change"]
+  },
+  {
+    "scope": "internal-cost-rate",
+    "question": "ICR variance vs function-rate by project",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "table", "scatter"],
+    "answer_must_contain_one_of": ["icr", "variance", "rate"]
+  },
+  {
+    "scope": "internal-cost-rate",
+    "question": "Top 5 ICR overruns",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "table"],
+    "answer_must_contain_one_of": ["overrun", "icr"]
+  },
+  {
+    "scope": "opportunities",
+    "question": "Opportunities at risk this quarter",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["bar", "table"],
+    "answer_must_contain_one_of": ["risk", "opportunity"]
+  },
+  {
+    "scope": "opportunities",
+    "question": "Stale opportunities not contacted in 30 days",
+    "expected_tool": "sql_query",
+    "expected_chart_type": ["table", "bar"],
+    "answer_must_contain_one_of": ["stale", "opportunity"]
+  }
+]

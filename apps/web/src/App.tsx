@@ -26,6 +26,7 @@ import { AiPilotShell } from './pages/ai-pilot/AiPilotShell';
 import { EscalationCenter } from './pages/EscalationCenter';
 import { EscalationTemplateAdmin } from './pages/EscalationTemplateAdmin';
 import { ProcessTiles } from './pages/ProcessTiles';
+import ProcessAnalytics from './pages/ProcessAnalytics';
 import { VersionCompare } from './pages/VersionCompare';
 import { Workspace } from './pages/Workspace';
 import { isTilesDashboardEnabled } from './lib/processRoutes';
@@ -109,6 +110,7 @@ function ProcessesCompareRedirect() {
 const tilesDashboardRoutes: ProtectedRouteDefinition[] = [
   { path: '/processes/:processId', element: <ProcessTiles /> },
   { path: '/processes/:processId/escalations', element: <ScopedErrorBoundary label="Escalation Center"><EscalationCenter /></ScopedErrorBoundary> },
+  { path: '/processes/:processId/analytics', element: <ScopedErrorBoundary label="Analytics"><ProcessAnalytics /></ScopedErrorBoundary> },
   { path: '/processes/:processId/:functionId', element: <Workspace /> },
   { path: '/processes/:processId/:functionId/compare', element: <VersionCompare /> },
   { path: '/workspace/:processId', element: <LegacyWorkspaceRedirect /> },
@@ -118,6 +120,7 @@ const tilesDashboardRoutes: ProtectedRouteDefinition[] = [
 const legacyWorkspaceRoutes: ProtectedRouteDefinition[] = [
   { path: '/workspace/:processId', element: <ProcessTiles /> },
   { path: '/workspace/:processId/escalations', element: <EscalationCenter /> },
+  { path: '/workspace/:processId/analytics', element: <ProcessAnalytics /> },
   { path: '/workspace/:processId/:functionId', element: <Workspace /> },
   { path: '/workspace/:processId/:functionId/compare', element: <VersionCompare /> },
   { path: '/workspace/:processId/compare', element: <WorkspaceShallowCompareRedirect /> },

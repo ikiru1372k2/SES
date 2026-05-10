@@ -87,7 +87,15 @@ load_env() {
   : "${OBJECT_STORAGE_ACCESS_KEY:=minioadmin}"
   : "${OBJECT_STORAGE_SECRET_KEY:=minioadmin}"
   : "${AI_SERVICE_URL:=http://localhost:${AI_PORT}}"
-  : "${AI_DIR:=$HOME/ses-ai-test}"
+  # The AI sidecar now lives in-repo at services/ai-sidecar/. Falls back to
+  # the legacy ~/ses-ai-test/ location if the new one isn't there yet.
+  if [[ -z "${AI_DIR:-}" ]]; then
+    if [[ -d "$REPO_ROOT/services/ai-sidecar" ]]; then
+      AI_DIR="$REPO_ROOT/services/ai-sidecar"
+    else
+      AI_DIR="$HOME/ses-ai-test"
+    fi
+  fi
   : "${AI_PILOT_TRANSPORT:=http}"
   export DATABASE_URL OBJECT_STORAGE_ENDPOINT OBJECT_STORAGE_BUCKET
   export OBJECT_STORAGE_ACCESS_KEY OBJECT_STORAGE_SECRET_KEY
@@ -194,14 +202,30 @@ start_ai() {
     warn "  start manually: cd \$AI_DIR && uvicorn main:app --host 0.0.0.0 --port ${AI_PORT}"
     return 0
   fi
-  if [ ! -x "$AI_DIR/start.sh" ] && [ ! -f "$AI_DIR/main.py" ]; then
-    warn "no start.sh or main.py in $AI_DIR — skipping AI sidecar"
+  if [ ! -x "$AI_DIR/start.sh" ] && [ ! -x "$AI_DIR/start-ai.sh" ] && [ ! -f "$AI_DIR/main.py" ]; then
+    warn "no start.sh / start-ai.sh / main.py in $AI_DIR — skipping AI sidecar"
     return 0
+  fi
+  # First-time bootstrap: in-repo sidecar ships without a venv.
+  # If the legacy ~/ses-ai-test/venv exists (from prior sidecar), reuse it via
+  # symlink — saves 5GB+ of duplicated wheels (docling alone is huge).
+  if [ ! -d "$AI_DIR/venv" ]; then
+    if [ -d "$HOME/ses-ai-test/venv" ]; then
+      log "reusing existing venv from ~/ses-ai-test (symlink)"
+      ln -s "$HOME/ses-ai-test/venv" "$AI_DIR/venv"
+    elif command -v python3 >/dev/null 2>&1; then
+      log "creating fresh venv at $AI_DIR/venv (first-run bootstrap, may take a few minutes)"
+      ( cd "$AI_DIR" && python3 -m venv venv && \
+          ./venv/bin/pip install -q -U pip && \
+          ./venv/bin/pip install -q fastapi uvicorn python-multipart duckdb pandas openpyxl ollama pydantic docling ) \
+        >>"$LOG_DIR/ai.log" 2>&1 || warn "venv bootstrap failed; check $LOG_DIR/ai.log"
+    fi
   fi
   log "starting from $AI_DIR (logs → $LOG_DIR/ai.log)"
   ( cd "$AI_DIR" && nohup bash -c '
       set -a; [ -f .env ] && . .env; set +a
-      if [ -x ./start.sh ]; then ./start.sh
+      if [ -x ./start-ai.sh ]; then ./start-ai.sh
+      elif [ -x ./start.sh ]; then ./start.sh
       elif [ -d venv ]; then . venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port '"$AI_PORT"'
       else uvicorn main:app --host 0.0.0.0 --port '"$AI_PORT"'
       fi

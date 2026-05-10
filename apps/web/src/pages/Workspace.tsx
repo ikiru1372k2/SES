@@ -494,7 +494,7 @@ export function Workspace() {
         {tab === 'analytics' ? (
           <TabPanel>
             <Suspense fallback={<div className="p-5 text-sm text-gray-500">Loading analytics...</div>}>
-              <AnalyticsTab process={scopedProcess} />
+              <AnalyticsTab process={scopedProcess} functionId={functionId} />
             </Suspense>
           </TabPanel>
         ) : null}
