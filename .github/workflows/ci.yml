@@ -21,19 +21,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      minio:
-        image: bitnami/minio:latest
-        ports:
-          - 9000:9000
-        env:
-          MINIO_ROOT_USER: ci-access-key
-          MINIO_ROOT_PASSWORD: ci-secret-key-32chars-min-length-ok
-          MINIO_DEFAULT_BUCKETS: ses-ci
-        options: >-
-          --health-cmd "curl -sf http://localhost:9000/minio/health/live"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
       DATABASE_URL: postgresql://ses:ses@127.0.0.1:5432/ses
       SES_AUTH_SECRET: ses-ci-secret-0123456789abcdef0123456789abcdef
@@ -51,6 +38,27 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Start MinIO
+        run: |
+          docker run -d --name ses-ci-minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER="$OBJECT_STORAGE_ACCESS_KEY" \
+            -e MINIO_ROOT_PASSWORD="$OBJECT_STORAGE_SECRET_KEY" \
+            minio/minio:RELEASE.2025-01-20T14-49-07Z server /data
+          for attempt in {1..30}; do
+            if curl -sf "$OBJECT_STORAGE_ENDPOINT/minio/health/live" >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs ses-ci-minio
+          exit 1
+      - name: Create object storage bucket
+        run: |
+          docker run --rm --network host \
+            -e MC_HOST_local="http://${OBJECT_STORAGE_ACCESS_KEY}:${OBJECT_STORAGE_SECRET_KEY}@127.0.0.1:9000" \
+            minio/mc:RELEASE.2025-01-17T23-25-50Z \
+            mb --ignore-existing "local/${OBJECT_STORAGE_BUCKET}"
       - name: Verify lockfile is in sync
         run: |
           npm install --package-lock-only --ignore-scripts
