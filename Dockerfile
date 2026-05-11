@@ -21,7 +21,6 @@ COPY apps/api apps/api
 COPY apps/web apps/web
 COPY packages/domain packages/domain
 COPY nginx.conf nginx.conf
-RUN npm run prisma:generate --workspace @ses/api
 RUN npm run build
 
 FROM workspace-build AS api-build
@@ -41,7 +40,6 @@ COPY --from=runtime-deps /app/package*.json ./
 COPY --from=runtime-deps /app/node_modules ./node_modules
 COPY --from=workspace-build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=workspace-build /app/apps/api/dist ./apps/api/dist
-COPY --from=workspace-build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=workspace-build /app/packages/domain/package.json ./packages/domain/package.json
 COPY --from=workspace-build /app/packages/domain/dist ./packages/domain/dist
 

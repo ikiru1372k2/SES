@@ -72,10 +72,11 @@ jobs:
           port="${DEPLOY_SSH_PORT:-22}"
           remote_dir="${DEPLOY_DIR:-\$HOME/ses}"
           ssh -i ~/.ssh/id_deploy -p "$port" -o BatchMode=yes \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$GIT_REF" <<'REMOTE'
+            "${DEPLOY_USER}@${DEPLOY_HOST}" bash -s -- "$GIT_REF" "$remote_dir" <<'REMOTE'
             set -Eeuo pipefail
             target_sha="$1"
-            cd "${DEPLOY_DIR:-$HOME/ses}"
+            remote_dir="$2"
+            cd "$remote_dir"
             echo "[cd] Pulling $target_sha into $(pwd)"
             git fetch --prune --tags origin
             # Reset to the exact SHA the workflow was triggered for — resilient

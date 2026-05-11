@@ -14,7 +14,7 @@ import {
   type IssueFieldDiff,
 } from '@ses/domain';
 import { buildIssuesCsv, compareResults, exportIssuesCsv } from '../lib/auditEngine';
-import { workspacePath } from '../lib/processRoutes';
+import { processDashboardPath, workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 import { AppShell } from '../components/layout/AppShell';
 import { usePageHeader } from '../components/layout/usePageHeader';
@@ -212,7 +212,7 @@ export function VersionCompare() {
       breadcrumbs: process
         ? [
             { label: 'Dashboard', to: '/' },
-            { label: process.name, to: `/processes/${encodeURIComponent(process.displayCode ?? process.id)}` },
+            { label: process.name, to: processDashboardPath(process.displayCode ?? process.id) },
             { label: getFunctionLabel(functionId), to: workspacePath(process.displayCode ?? process.id, functionId) },
             { label: 'Compare' },
           ]

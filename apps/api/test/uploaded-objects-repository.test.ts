@@ -15,7 +15,7 @@ describe('UploadedObjectsRepository', { skip: !hasDb }, () => {
   before(async () => {
     // Ensure migrations are applied — db-runner.test.ts may have wiped the schema
     // and is racing against us under parallel test execution.
-    await runMigrations({ dryRun: false, baseline: false });
+    await runMigrations({ dryRun: false, baseline: false, confirmBaseline: false });
     pg = new PgService();
     await pg.onModuleInit();
     repo = new UploadedObjectsRepository(pg);

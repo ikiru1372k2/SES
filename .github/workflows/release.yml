@@ -25,6 +25,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: web-runtime
           load: true
           tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
       - name: Scan image
@@ -47,10 +48,8 @@ jobs:
           format: spdx-json
           output-file: sbom.spdx.json
       - name: Push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:latest
+        run: |
+          image="ghcr.io/${{ github.repository }}:${{ github.ref_name }}"
+          docker tag "$image" "ghcr.io/${{ github.repository }}:latest"
+          docker push "$image"
+          docker push "ghcr.io/${{ github.repository }}:latest"

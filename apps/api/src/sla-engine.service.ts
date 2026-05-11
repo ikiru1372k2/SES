@@ -59,7 +59,11 @@ export class SlaEngineService implements OnModuleInit, OnModuleDestroy {
     });
 
     for (const entry of entries) {
-      await this.handleEntry(entry.id, now);
+      try {
+        await this.handleEntry(entry.id, now);
+      } catch (error) {
+        this.logger.error(`SLA entry failed entryId=${entry.id}: ${(error as Error).message}`);
+      }
     }
   }
 

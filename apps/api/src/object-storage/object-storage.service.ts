@@ -16,7 +16,6 @@ import {
   ObjectStorageConfig,
   bucketFor,
   loadObjectStorageConfig,
-  redactedConfig,
 } from './object-storage.config';
 
 export interface PutObjectInput {
@@ -83,17 +82,14 @@ const BASE_BACKOFF_MS = 200;
 @Injectable()
 export class ObjectStorageService implements OnModuleInit {
   private readonly logger = new Logger(ObjectStorageService.name);
-  private readonly cfg: ObjectStorageConfig;
-  private readonly client: S3Client;
+  private cfg: ObjectStorageConfig | undefined;
+  private client: S3Client | undefined;
 
   // Decorator-free zero-arg constructor: keeps Nest DI happy without
   // needing a parameter decorator (which `tsx` chokes on under
   // experimentalDecorators=false in test mode). Tests that need a
   // custom config call `ObjectStorageService.fromConfig(cfg, client)`.
-  constructor() {
-    this.cfg = loadObjectStorageConfig();
-    this.client = buildS3Client(this.cfg);
-  }
+  constructor() {}
 
   static fromConfig(cfg: ObjectStorageConfig, client?: S3Client): ObjectStorageService {
     const instance = Object.create(ObjectStorageService.prototype) as ObjectStorageService;
@@ -106,7 +102,17 @@ export class ObjectStorageService implements OnModuleInit {
   }
 
   onModuleInit(): void {
-    this.logger.log(`object-storage ready ${JSON.stringify(redactedConfig(this.cfg))}`);
+    this.logger.log('object-storage config will be loaded on first use');
+  }
+
+  private config(): ObjectStorageConfig {
+    this.cfg ??= loadObjectStorageConfig();
+    return this.cfg;
+  }
+
+  private s3(): S3Client {
+    this.client ??= buildS3Client(this.config());
+    return this.client;
   }
 
   /**
@@ -114,15 +120,15 @@ export class ObjectStorageService implements OnModuleInit {
    * a `bucket` purpose explicitly to `putObject`/`presign` etc.
    */
   get bucket(): string {
-    return this.cfg.bucket;
+    return this.config().bucket;
   }
 
   bucketFor(purpose: BucketPurpose): string {
-    return bucketFor(this.cfg, purpose);
+    return bucketFor(this.config(), purpose);
   }
 
   get storageEndpoint(): string | null {
-    return this.cfg.endpoint ?? null;
+    return this.config().endpoint ?? null;
   }
 
   get storageProvider(): 's3' {
@@ -135,8 +141,9 @@ export class ObjectStorageService implements OnModuleInit {
    */
   private resolveBucketName(input: { bucket?: BucketPurpose; bucketName?: string }): string {
     if (input.bucketName) return input.bucketName;
-    if (input.bucket) return bucketFor(this.cfg, input.bucket);
-    return this.cfg.bucket;
+    const cfg = this.config();
+    if (input.bucket) return bucketFor(cfg, input.bucket);
+    return cfg.bucket;
   }
 
   /**
@@ -152,7 +159,7 @@ export class ObjectStorageService implements OnModuleInit {
 
     return this.withRetry('putObject', async () => {
       const upload = new Upload({
-        client: this.client,
+        client: this.s3(),
         params: {
           Bucket: bucketName,
           Key: input.objectKey,
@@ -169,7 +176,7 @@ export class ObjectStorageService implements OnModuleInit {
         sizeBytes,
         checksumSha256: checksum,
         storageProvider: 's3',
-        storageEndpoint: this.cfg.endpoint ?? null,
+        storageEndpoint: this.config().endpoint ?? null,
       } satisfies PutObjectResult;
     });
   }
@@ -180,7 +187,7 @@ export class ObjectStorageService implements OnModuleInit {
   ): Promise<{ exists: boolean; sizeBytes?: number; contentType?: string }> {
     const bucketName = this.resolveBucketName(opts);
     try {
-      const r = await this.client.send(
+      const r = await this.s3().send(
         new HeadObjectCommand({ Bucket: bucketName, Key: objectKey }),
       );
       return {
@@ -201,7 +208,7 @@ export class ObjectStorageService implements OnModuleInit {
     opts: { bucket?: BucketPurpose; bucketName?: string } = {},
   ): Promise<Readable> {
     const bucketName = this.resolveBucketName(opts);
-    const r = await this.client.send(
+    const r = await this.s3().send(
       new GetObjectCommand({ Bucket: bucketName, Key: objectKey }),
     );
     if (!r.Body) throw new Error(`empty body for ${bucketName}/${objectKey}`);
@@ -233,7 +240,7 @@ export class ObjectStorageService implements OnModuleInit {
   ): Promise<void> {
     const bucketName = this.resolveBucketName(opts);
     await this.withRetry('deleteObject', () =>
-      this.client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: objectKey })),
+      this.s3().send(new DeleteObjectCommand({ Bucket: bucketName, Key: objectKey })),
     );
   }
 
@@ -242,10 +249,10 @@ export class ObjectStorageService implements OnModuleInit {
    * directly without seeing our credentials.
    */
   async presignDownloadUrl(input: PresignDownloadInput): Promise<string> {
-    const ttl = clampTtl(input.ttlSeconds ?? this.cfg.presignTtlSeconds);
+    const ttl = clampTtl(input.ttlSeconds ?? this.config().presignTtlSeconds);
     const bucketName = this.resolveBucketName(input);
     return getSignedUrl(
-      this.client,
+      this.s3(),
       new GetObjectCommand({ Bucket: bucketName, Key: input.objectKey }),
       { expiresIn: ttl },
     );

@@ -8,7 +8,10 @@ import { getConnectionState, onConnectionState, type RealtimeConnectionState } f
 export function RealtimeStatusPill() {
   const [state, setState] = useState<RealtimeConnectionState>(() => getConnectionState());
 
-  useEffect(() => onConnectionState(setState), []);
+  useEffect(() => {
+    const unsubscribe = onConnectionState(setState);
+    return unsubscribe;
+  }, []);
 
   if (state === 'connected') return null;
 

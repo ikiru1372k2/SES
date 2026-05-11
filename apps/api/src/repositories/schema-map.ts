@@ -65,7 +65,8 @@ export const MODELS: Record<string, ModelMeta> = {
   Tenant: def({
     model: 'Tenant',
     table: 'Tenant',
-    columns: ['id', 'name', 'createdAt', 'updatedAt'],
+    columns: ['id', 'name', 'settings', 'createdAt', 'updatedAt'],
+    jsonCols: ['settings'],
     id: ['id'],
   }),
   User: def({

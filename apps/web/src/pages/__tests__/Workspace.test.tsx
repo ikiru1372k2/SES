@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -229,5 +229,28 @@ describe('Workspace', () => {
     renderWorkspaceAt('/processes/p-ws/over-planning');
     expect(screen.getByText(/Unsaved draft available/i)).toBeInTheDocument();
     expect(screen.getByText(/draft\.xlsx/i)).toBeInTheDocument();
+  });
+
+  it('hydrates when route changes from a loaded process to a missing process', async () => {
+    const hydrateProcesses = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(useAppStore).mockImplementation((selector) =>
+      selector({
+        ...baseStore,
+        processes: [mockProcess],
+        hydrateProcesses,
+      } as never),
+    );
+    const router = createMemoryRouter(
+      [{ path: '/processes/:processId/:functionId', element: <Workspace /> }],
+      { initialEntries: ['/processes/p-ws/over-planning'] },
+    );
+
+    render(withQueryClient(<RouterProvider router={router} />));
+    expect(hydrateProcesses).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await router.navigate('/processes/missing-b/over-planning');
+    });
+    await waitFor(() => expect(hydrateProcesses).toHaveBeenCalledTimes(1));
   });
 });

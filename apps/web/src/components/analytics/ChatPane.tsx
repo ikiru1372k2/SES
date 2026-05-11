@@ -64,53 +64,56 @@ export function ChatPane({
       let sawFinal = false;
       const ctrl = new AbortController();
       const hardTimeout = setTimeout(() => ctrl.abort(), 180_000);
-      await streamAnalyticsChat(
-        processCode,
-        reqBody,
-        (evt) => {
-          setMessages((prev) => {
-            const next = [...prev];
-            const idx = next.findIndex((m) => m.id === assistantMsg.id);
-            if (idx === -1) return prev;
-            const m = { ...next[idx]!, events: [...next[idx]!.events, evt] };
-            if (evt.type === 'thinking') {
-              const t = evt.text.toLowerCase();
-              if (t.startsWith('iteration')) {
-                m.progress = `Reasoning… (${evt.text})`;
-              } else if (!m.progress || m.progress === 'Thinking…') {
-                m.progress = 'Loading data…';
+      try {
+        await streamAnalyticsChat(
+          processCode,
+          reqBody,
+          (evt) => {
+            setMessages((prev) => {
+              const next = [...prev];
+              const idx = next.findIndex((m) => m.id === assistantMsg.id);
+              if (idx === -1) return prev;
+              const m = { ...next[idx]!, events: [...next[idx]!.events, evt] };
+              if (evt.type === 'thinking') {
+                const t = evt.text.toLowerCase();
+                if (t.startsWith('iteration')) {
+                  m.progress = `Reasoning… (${evt.text})`;
+                } else if (!m.progress || m.progress === 'Thinking…') {
+                  m.progress = 'Loading data…';
+                }
+              } else if (evt.type === 'tool_call') {
+                if (evt.name === 'sql_query') {
+                  m.progress = 'Querying data…';
+                } else {
+                  m.progress = `Running ${evt.name}…`;
+                }
+              } else if (evt.type === 'tool_result') {
+                m.progress = evt.ok ? 'Analysing results…' : 'Retrying…';
+              } else if (evt.type === 'partial_answer') {
+                m.content = m.content + evt.text;
+                m.progress = '';
+              } else if (evt.type === 'final') {
+                sawFinal = true;
+                m.content = evt.answer;
+                m.progress = '';
+                m.chartSpec = evt.chart_spec ?? null;
+                m.alternatives = evt.alternatives ?? null;
+                m.generatedSql = evt.generated_sql ?? null;
+                m.pending = false;
+              } else if (evt.type === 'error') {
+                m.content = `Couldn't generate an answer: ${evt.message}`;
+                m.progress = '';
+                m.pending = false;
               }
-            } else if (evt.type === 'tool_call') {
-              if (evt.name === 'sql_query') {
-                m.progress = 'Querying data…';
-              } else {
-                m.progress = `Running ${evt.name}…`;
-              }
-            } else if (evt.type === 'tool_result') {
-              m.progress = evt.ok ? 'Analysing results…' : 'Retrying…';
-            } else if (evt.type === 'partial_answer') {
-              m.content = m.content + evt.text;
-              m.progress = '';
-            } else if (evt.type === 'final') {
-              sawFinal = true;
-              m.content = evt.answer;
-              m.progress = '';
-              m.chartSpec = evt.chart_spec ?? null;
-              m.alternatives = evt.alternatives ?? null;
-              m.generatedSql = evt.generated_sql ?? null;
-              m.pending = false;
-            } else if (evt.type === 'error') {
-              m.content = `Couldn't generate an answer: ${evt.message}`;
-              m.progress = '';
-              m.pending = false;
-            }
-            next[idx] = m;
-            return next;
-          });
-        },
-        ctrl.signal,
-      );
-      clearTimeout(hardTimeout);
+              next[idx] = m;
+              return next;
+            });
+          },
+          ctrl.signal,
+        );
+      } finally {
+        clearTimeout(hardTimeout);
+      }
       if (!sawFinal) {
         setMessages((prev) =>
           prev.map((mm) =>

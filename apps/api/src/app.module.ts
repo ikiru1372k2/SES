@@ -6,8 +6,7 @@ import { ActivityLogService } from './common/activity-log.service';
 import { FunctionAccessGuard } from './common/function-access.guard';
 import { IdentifierService } from './common/identifier.service';
 import { ProcessAccessService } from './common/process-access.service';
-import { PrismaService } from './common/prisma.service';
-import { PgService } from './db/pg.service';
+import { DatabaseModule } from './db/database.module';
 import { ActivityController } from './activity.controller';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
@@ -96,6 +95,7 @@ import { PdfProcessingModule } from './pdf-processing/pdf-processing.module';
       },
     ]),
     AiPilotModule,
+    DatabaseModule,
     ObjectStorageModule,
     PdfProcessingModule,
     HttpModule.register({ timeout: 120_000, maxRedirects: 0 }),
@@ -136,8 +136,6 @@ import { PdfProcessingModule } from './pdf-processing/pdf-processing.module';
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    PrismaService,
-    PgService,
     ProcessAccessService,
     AccessScopeService,
     IdentifierService,
@@ -183,7 +181,7 @@ import { PdfProcessingModule } from './pdf-processing/pdf-processing.module';
     ChatAuditService,
   ],
   exports: [
-    PrismaService,
+    DatabaseModule,
     ProcessAccessService,
     AccessScopeService,
     IdentifierService,

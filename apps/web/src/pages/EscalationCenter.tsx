@@ -28,6 +28,7 @@ import { ResolutionDrawer } from '../components/directory/ResolutionDrawer';
 import { useCurrentUser } from '../components/auth/authContext';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
 import { bulkAcknowledge, bulkReescalate, bulkResolve, bulkSnooze } from '../lib/api/bulkTrackingApi';
+import { processDashboardPath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 
 function parseStagesParam(raw: string | null): Set<string> {
@@ -101,7 +102,7 @@ export function EscalationCenter() {
     () => ({
       breadcrumbs: [
         { label: 'Dashboard', to: '/' },
-        { label: process?.name ?? 'Process', to: process ? `/processes/${encodeURIComponent(process.displayCode ?? process.id)}` : undefined },
+        { label: process?.name ?? 'Process', to: process ? processDashboardPath(process.displayCode ?? process.id) : undefined },
         { label: 'Escalations' },
       ],
     }),

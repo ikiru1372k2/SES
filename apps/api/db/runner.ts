@@ -18,12 +18,14 @@ for (const envPath of [resolve(cwd, '.env'), resolve(cwd, '..', '..', '.env')]) 
 interface RunnerOptions {
   dryRun: boolean;
   baseline: boolean;
+  confirmBaseline: boolean;
 }
 
 function parseArgs(argv: string[]): RunnerOptions {
   return {
     dryRun: argv.includes('--dry-run'),
     baseline: argv.includes('--baseline'),
+    confirmBaseline: argv.includes('--confirm-baseline') || process.env.SES_CONFIRM_DB_BASELINE === 'true',
   };
 }
 
@@ -102,6 +104,11 @@ export async function runMigrations(options: RunnerOptions): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error('DATABASE_URL is not set');
+  }
+  if (options.baseline && !options.confirmBaseline) {
+    throw new Error(
+      'Refusing --baseline without --confirm-baseline or SES_CONFIRM_DB_BASELINE=true. Baseline marks migrations applied without running SQL.',
+    );
   }
 
   const pool = new Pool({ connectionString: databaseUrl, max: 2 });
