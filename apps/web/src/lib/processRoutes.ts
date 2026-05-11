@@ -40,3 +40,8 @@ export function escalationCenterPath(processIdOrCode: string, search?: URLSearch
   const s = q.toString();
   return s ? `${base}?${s}` : base;
 }
+
+export function processAnalyticsPath(processIdOrCode: string): string {
+  const pid = encodeURIComponent(processIdOrCode);
+  return isTilesDashboardEnabled() ? `/processes/${pid}/analytics` : `/workspace/${pid}/analytics`;
+}

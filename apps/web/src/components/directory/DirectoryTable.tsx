@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { AddManagerForm } from './AddManagerForm';
 import { DeleteManagerButton } from './DeleteManagerButton';
@@ -19,15 +19,15 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  async function load() {
+  const load = useCallback(async (currentFilter: typeof filter, currentSearch: string) => {
     setLoading(true);
     try {
       const q: { filter: 'active' | 'archived' | 'all'; limit: number; offset: number; search?: string } = {
-        filter,
+        filter: currentFilter,
         limit: 100,
         offset: 0,
       };
-      const needle = search.trim();
+      const needle = currentSearch.trim();
       if (needle) q.search = needle;
       const r = await directoryList(q);
       setItems(r.items);
@@ -36,7 +36,7 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   function matchesFilters(row: DirectoryEntry, currentFilter: 'active' | 'archived' | 'all', currentSearch: string) {
     const activeMatch =
@@ -73,15 +73,10 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
   }
 
   useEffect(() => {
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshKey, filter]);
-
-  useEffect(() => {
-    const t = window.setTimeout(() => void load(), 300);
+    const delay = search.trim() ? 300 : 0;
+    const t = window.setTimeout(() => void load(filter, search), delay);
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [filter, load, refreshKey, search]);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -98,7 +93,7 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
       await directoryArchiveBulk([...selected]);
       toast.success('Archived');
       setSelected(new Set());
-      await load();
+      await load(filter, search);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Archive failed');
     }
@@ -123,7 +118,7 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
       await directoryMerge(sourceId, targetId);
       toast.success('Merged');
       setSelected(new Set());
-      await load();
+      await load(filter, search);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Merge failed');
     }
@@ -147,7 +142,7 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
           <option value="archived">Archived</option>
           <option value="all">All</option>
         </select>
-        <button type="button" onClick={() => void load()} className="rounded-lg border px-3 py-2 text-sm">
+        <button type="button" onClick={() => void load(filter, search)} className="rounded-lg border px-3 py-2 text-sm">
           Refresh
         </button>
         <button type="button" onClick={() => void archiveSelected()} className="rounded-lg border px-3 py-2 text-sm">

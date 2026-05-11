@@ -406,7 +406,12 @@ export class AnalyticsService {
         }
       });
       stream.on('end', () => {
-        if (lastFinal) this.cache.set(cacheKey, lastFinal);
+        if (lastFinal) {
+          this.cache.set(cacheKey, lastFinal, {
+            processCode,
+            functionId: body.functionId ?? null,
+          });
+        }
         res.end();
         void this.audit.append({
           userId: user.id,

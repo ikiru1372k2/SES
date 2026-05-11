@@ -35,7 +35,7 @@ describe('PdfProcessingJobsRepository', { skip: !hasDb }, () => {
   let jobs: PdfProcessingJobsRepository;
 
   before(async () => {
-    await runMigrations({ dryRun: false, baseline: false });
+    await runMigrations({ dryRun: false, baseline: false, confirmBaseline: false });
     pg = new PgService();
     await pg.onModuleInit();
     objects = new UploadedObjectsRepository(pg);

@@ -90,6 +90,7 @@ export class PdfProcessingService {
         objectKey: obj.objectKey,
         bucketName: obj.bucket,
       });
+      await this.jobs.markRunning(inserted.row.id);
       await this.grpc.startPdfJob({
         idempotencyKey,
         tenantId: input.tenantId ?? '',
@@ -106,7 +107,6 @@ export class PdfProcessingService {
         prompt: input.prompt,
         options: input.options,
       });
-      await this.jobs.markRunning(inserted.row.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'gRPC StartJob failed';
       // Do not surface raw err to clients — message may include sidecar

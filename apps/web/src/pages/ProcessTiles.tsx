@@ -13,7 +13,7 @@ import { RequestFunctionAuditTile } from '../components/tiles/RequestFunctionAud
 import { Skeleton } from '../components/shared/Skeleton';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
 import { fetchProcessTiles, type ApiTiles } from '../lib/api/tilesApi';
-import { escalationCenterPath, workspacePath } from '../lib/processRoutes';
+import { escalationCenterPath, processAnalyticsPath, workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 
 const RequestFunctionAuditModal = lazy(() =>
@@ -73,7 +73,7 @@ export function ProcessTiles() {
               id: 'analytics',
               label: 'Open analytics',
               icon: AlertTriangle,
-              onClick: () => navigate(`/processes/${encodeURIComponent(processKey)}/analytics`),
+              onClick: () => navigate(processAnalyticsPath(processKey)),
             },
           ]
         : [],

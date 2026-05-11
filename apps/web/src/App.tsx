@@ -119,8 +119,8 @@ const tilesDashboardRoutes: ProtectedRouteDefinition[] = [
 
 const legacyWorkspaceRoutes: ProtectedRouteDefinition[] = [
   { path: '/workspace/:processId', element: <ProcessTiles /> },
-  { path: '/workspace/:processId/escalations', element: <EscalationCenter /> },
-  { path: '/workspace/:processId/analytics', element: <ProcessAnalytics /> },
+  { path: '/workspace/:processId/escalations', element: <ScopedErrorBoundary label="Escalation Center"><EscalationCenter /></ScopedErrorBoundary> },
+  { path: '/workspace/:processId/analytics', element: <ScopedErrorBoundary label="Analytics"><ProcessAnalytics /></ScopedErrorBoundary> },
   { path: '/workspace/:processId/:functionId', element: <Workspace /> },
   { path: '/workspace/:processId/:functionId/compare', element: <VersionCompare /> },
   { path: '/workspace/:processId/compare', element: <WorkspaceShallowCompareRedirect /> },

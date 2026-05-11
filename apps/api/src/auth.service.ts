@@ -70,7 +70,7 @@ export class AuthService implements OnModuleInit {
       return {
         tenantId: t.id,
         tenantDisplayCode: t.name,
-        managerDirectoryEnabled: tenantManagerDirectoryEnabled(null),
+        managerDirectoryEnabled: tenantManagerDirectoryEnabled(t.settings),
       };
     }
     // Fallback to the default tenant for any role without a process membership.
@@ -83,7 +83,7 @@ export class AuthService implements OnModuleInit {
     return {
       tenantId: t.id,
       tenantDisplayCode: t.name,
-      managerDirectoryEnabled: tenantManagerDirectoryEnabled(null),
+      managerDirectoryEnabled: tenantManagerDirectoryEnabled(t.settings),
     };
   }
 

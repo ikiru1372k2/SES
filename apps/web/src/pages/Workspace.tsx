@@ -22,7 +22,7 @@ import { selectCorrectionCount, selectHasUnsavedAudit, selectLatestAuditResult }
 import { useAppStore } from '../store/useAppStore';
 import { isLegacyTileTrackingTabEnabled } from '../lib/featureFlags';
 import { anchorResultForFile, formatDiffChips, summarizeDiff } from '../lib/versionDiff';
-import { versionComparePath } from '../lib/processRoutes';
+import { escalationCenterPath, processDashboardPath, versionComparePath } from '../lib/processRoutes';
 import { useRealtime } from '../realtime/useRealtime';
 import { onRealtimeEvent } from '../realtime/socket';
 import { directorySuggestions } from '../lib/api/directoryApi';
@@ -86,10 +86,10 @@ export function Workspace() {
   const [mappingSource, setMappingSource] = useState<MappingSourceInput | undefined>(undefined);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- reset mapping source on function navigation
   useEffect(() => { setMappingSource(undefined); }, [functionId]);
-  const hydrateAttemptedRef = useRef(false);
+  const hydrateAttemptedRef = useRef<string | undefined>(undefined);
   const queryClient = useQueryClient();
-  const [hydrateFinished, setHydrateFinished] = useState(false);
-  const hydrating = !process && !hydrateFinished;
+  const [hydratedProcessParam, setHydratedProcessParam] = useState<string | undefined>(undefined);
+  const hydrating = !process && hydratedProcessParam !== processId;
 
   useEffect(() => {
     if (saveAsNewRequestCount === 0 || !process) return;
@@ -134,10 +134,17 @@ export function Workspace() {
   }, [queryClient]);
 
   useEffect(() => {
-    if (process || hydrateAttemptedRef.current) return;
-    hydrateAttemptedRef.current = true;
-    void hydrateProcesses().finally(() => setHydrateFinished(true));
-  }, [process, hydrateProcesses]);
+    if (process) {
+      if (hydratedProcessParam !== processId) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- record route param covered by store data
+        setHydratedProcessParam(processId);
+      }
+      return;
+    }
+    if (hydrateAttemptedRef.current === processId) return;
+    hydrateAttemptedRef.current = processId;
+    void hydrateProcesses().finally(() => setHydratedProcessParam(processId));
+  }, [hydratedProcessParam, process, processId, hydrateProcesses]);
 
   useEffect(() => {
     if (!processRecordId) return;
@@ -345,7 +352,7 @@ export function Workspace() {
     return {
       breadcrumbs: [
         { label: 'Dashboard', to: '/' },
-        { label: process.name, to: `/processes/${encodeURIComponent(process.displayCode ?? process.id)}` },
+        { label: process.name, to: processDashboardPath(process.displayCode ?? process.id) },
         { label: getFunctionLabel(functionId) },
       ],
       primaryActions: [
@@ -474,7 +481,7 @@ export function Workspace() {
         ) : null}
         {tab === 'notifications' ? (
           <TabPanel>
-            <NotificationsRedirect processId={process.id} onGoToResults={() => setWorkspaceTab('results')} />
+            <NotificationsRedirect processId={process.displayCode ?? process.id} onGoToResults={() => setWorkspaceTab('results')} />
           </TabPanel>
         ) : null}
         {tab === 'tracking' && isLegacyTileTrackingTabEnabled() ? (
@@ -575,7 +582,7 @@ function NotificationsRedirect({ processId, onGoToResults }: { processId: string
       </p>
       <div className="mt-2 flex gap-2">
         <Link
-          to={`/processes/${processId}/escalations`}
+          to={escalationCenterPath(processId)}
           className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover"
         >
           Open Escalation Center

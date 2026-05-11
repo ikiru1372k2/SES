@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
+import { parsePositiveIntEnv } from '../common/env';
 
 const PROTO_PATH = resolve(__dirname, '..', '..', 'proto', 'ai_pilot', 'v1', 'ai_pilot.proto');
 
@@ -135,7 +136,7 @@ export class AiGrpcClient implements OnModuleInit, OnModuleDestroy {
 
   constructor() {
     this.target = (process.env.AI_SERVICE_GRPC_URL ?? 'localhost:50051').replace(/^grpc:\/\//, '');
-    this.timeoutMs = Number(process.env.AI_PILOT_REQUEST_TIMEOUT_MS ?? 60000);
+    this.timeoutMs = parsePositiveIntEnv('AI_PILOT_REQUEST_TIMEOUT_MS', 60_000);
   }
 
   onModuleInit(): void {

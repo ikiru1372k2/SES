@@ -22,7 +22,7 @@ describe('db migrator', { skip: !hasDb || !allowReset }, () => {
   it('creates the ledger and applies on a fresh DB', async () => {
     await pool.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public');
 
-    await runMigrations({ dryRun: false, baseline: false });
+    await runMigrations({ dryRun: false, baseline: false, confirmBaseline: false });
 
     const ledger = await pool.query<{ version: string; note: string }>(
       `SELECT version, note FROM _schema_migrations ORDER BY version`,
@@ -43,7 +43,7 @@ describe('db migrator', { skip: !hasDb || !allowReset }, () => {
     const before = await pool.query<{ version: string }>(
       `SELECT version FROM _schema_migrations ORDER BY version`,
     );
-    await runMigrations({ dryRun: false, baseline: false });
+    await runMigrations({ dryRun: false, baseline: false, confirmBaseline: false });
     const after = await pool.query<{ version: string }>(
       `SELECT version FROM _schema_migrations ORDER BY version`,
     );
@@ -56,7 +56,7 @@ describe('db migrator', { skip: !hasDb || !allowReset }, () => {
   it('--baseline marks all on-disk migrations as applied without running DDL', async () => {
     await pool.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public');
 
-    await runMigrations({ dryRun: false, baseline: true });
+    await runMigrations({ dryRun: false, baseline: true, confirmBaseline: true });
 
     const ledger = await pool.query<{ version: string; note: string }>(
       `SELECT version, note FROM _schema_migrations ORDER BY version`,

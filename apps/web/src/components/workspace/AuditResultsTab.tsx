@@ -15,6 +15,7 @@ import {
   MD_REVIEW_OTHERS_RULE_CODE,
 } from '@ses/domain';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
+import { escalationCenterPath } from '../../lib/processRoutes';
 import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/auditPolicy';
 import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
 import { openAuditReport } from '../../lib/reportExporter';
@@ -993,7 +994,7 @@ function EscalationCenterCta({
   processDisplayCode: string | undefined;
   managerCount: number;
 }) {
-  const href = `/processes/${encodeURIComponent(processDisplayCode ?? processId)}/escalations`;
+  const href = escalationCenterPath(processDisplayCode ?? processId);
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/5 p-4 text-sm">
       <div>

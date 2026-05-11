@@ -166,13 +166,17 @@ export function ChartRenderer({
 
 function HeatmapView({ spec }: { spec: Extract<ChartSpec, { type: 'heatmap' }> }) {
   const { xs, ys, grid, max } = useMemo(() => {
-    const xs = Array.from(new Set(spec.data.map((d) => String((d as Row)[spec.x]))));
-    const ys = Array.from(new Set(spec.data.map((d) => String((d as Row)[spec.y]))));
+    const validRows = (spec.data as Row[]).filter(
+      (row) => row[spec.x] !== null && row[spec.x] !== undefined && row[spec.y] !== null && row[spec.y] !== undefined,
+    );
+    const xs = Array.from(new Set(validRows.map((d) => String(d[spec.x]))));
+    const ys = Array.from(new Set(validRows.map((d) => String(d[spec.y]))));
     let max = 0;
     const grid: number[][] = ys.map(() => xs.map(() => 0));
-    for (const r of spec.data as Row[]) {
+    for (const r of validRows) {
       const xi = xs.indexOf(String(r[spec.x]));
       const yi = ys.indexOf(String(r[spec.y]));
+      if (xi < 0 || yi < 0) continue;
       const v = Number(r[spec.value]) || 0;
       grid[yi]![xi] = v;
       if (v > max) max = v;

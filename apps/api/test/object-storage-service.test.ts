@@ -9,6 +9,33 @@ import { aiPilotObjectKey } from '../src/object-storage/object-key';
 
 const hasMinio = Boolean(process.env.OBJECT_STORAGE_ENDPOINT && process.env.OBJECT_STORAGE_BUCKET);
 
+describe('ObjectStorageService config loading', () => {
+  it('does not require object storage env at construction time', () => {
+    const prior = {
+      region: process.env.OBJECT_STORAGE_REGION,
+      accessKey: process.env.OBJECT_STORAGE_ACCESS_KEY,
+      secretKey: process.env.OBJECT_STORAGE_SECRET_KEY,
+      bucket: process.env.OBJECT_STORAGE_BUCKET,
+    };
+    delete process.env.OBJECT_STORAGE_REGION;
+    delete process.env.OBJECT_STORAGE_ACCESS_KEY;
+    delete process.env.OBJECT_STORAGE_SECRET_KEY;
+    delete process.env.OBJECT_STORAGE_BUCKET;
+    try {
+      assert.doesNotThrow(() => new ObjectStorageService());
+    } finally {
+      if (prior.region === undefined) delete process.env.OBJECT_STORAGE_REGION;
+      else process.env.OBJECT_STORAGE_REGION = prior.region;
+      if (prior.accessKey === undefined) delete process.env.OBJECT_STORAGE_ACCESS_KEY;
+      else process.env.OBJECT_STORAGE_ACCESS_KEY = prior.accessKey;
+      if (prior.secretKey === undefined) delete process.env.OBJECT_STORAGE_SECRET_KEY;
+      else process.env.OBJECT_STORAGE_SECRET_KEY = prior.secretKey;
+      if (prior.bucket === undefined) delete process.env.OBJECT_STORAGE_BUCKET;
+      else process.env.OBJECT_STORAGE_BUCKET = prior.bucket;
+    }
+  });
+});
+
 describe('ObjectStorageService roundtrip', { skip: !hasMinio }, () => {
   let svc: ObjectStorageService;
   let probe: S3Client;
