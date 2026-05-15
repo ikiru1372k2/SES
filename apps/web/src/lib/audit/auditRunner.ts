@@ -1,5 +1,5 @@
 import { runFunctionAudit } from '@ses/domain';
-import type { AuditPolicy, AuditResult, WorkbookFile } from './types';
+import type { AuditPolicy, AuditResult, WorkbookFile } from '../domain/types';
 import type { AuditWorkerResponse } from './auditWorker';
 
 // Route every client-side audit through the per-function dispatcher so the

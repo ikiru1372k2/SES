@@ -13,7 +13,7 @@ import {
   type FunctionId,
   type IssueFieldDiff,
 } from '@ses/domain';
-import { buildIssuesCsv, compareResults, exportIssuesCsv } from '../lib/auditEngine';
+import { buildIssuesCsv, compareResults, exportIssuesCsv } from '../lib/domain/auditEngine';
 import { processDashboardPath, workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
 import { AppShell } from '../components/layout/AppShell';

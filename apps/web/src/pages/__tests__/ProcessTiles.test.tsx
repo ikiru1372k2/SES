@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { FUNCTION_REGISTRY } from '@ses/domain';
 import { ProcessTiles } from '../ProcessTiles';
-import type { AuditProcess, AuditVersion, WorkbookFile } from '../../lib/types';
+import type { AuditProcess, AuditVersion, WorkbookFile } from '../../lib/domain/types';
 
 const policy = {
   highEffortThreshold: 900,

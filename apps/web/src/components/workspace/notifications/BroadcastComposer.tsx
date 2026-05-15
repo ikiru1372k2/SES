@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import toast from 'react-hot-toast';
-import type { NotificationDraft } from '../../../lib/types';
+import type { NotificationDraft } from '../../../lib/domain/types';
 
 export function BroadcastComposer({
   drafts,

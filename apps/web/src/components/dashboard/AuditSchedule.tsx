@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
-import { bucketedProcesses, daysUntilDue, type ScheduleBucket } from '../../lib/scheduleHelpers';
+import { bucketedProcesses, daysUntilDue, type ScheduleBucket } from '../../lib/domain/scheduleHelpers';
 import { processDashboardPath } from '../../lib/processRoutes';
-import type { AuditProcess } from '../../lib/types';
+import type { AuditProcess } from '../../lib/domain/types';
 
 const labels: Record<ScheduleBucket, { title: string; empty: string; tone: string }> = {
   overdue: { title: 'Overdue', empty: 'Nothing overdue', tone: 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200' },

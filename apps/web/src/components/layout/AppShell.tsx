@@ -1,7 +1,7 @@
 import { FileText, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useSidebarCollapsed } from '../../hooks/useSidebarCollapsed';
-import type { AuditProcess } from '../../lib/types';
+import type { AuditProcess } from '../../lib/domain/types';
 import { useAppStore } from '../../store/useAppStore';
 import { GlobalShortcutOverlay } from '../shared/GlobalShortcutOverlay';
 import { ProgressBar } from '../shared/ProgressBar';

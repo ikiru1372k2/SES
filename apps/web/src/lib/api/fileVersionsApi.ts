@@ -1,4 +1,4 @@
-import type { FileVersionMetadata } from '../types';
+import type { FileVersionMetadata } from '../domain/types';
 import { JSON_HEADERS, parseApiError } from './client';
 
 export async function listFileVersionsOnApi(fileIdOrCode: string): Promise<FileVersionMetadata[]> {

@@ -1,9 +1,9 @@
 import type ExcelJS from 'exceljs';
 import { MAX_WORKBOOK_FILE_SIZE_BYTES } from '@ses/domain';
-import { auditIssueKey } from './auditEngine';
-import { createId } from './id';
+import { auditIssueKey } from '../domain/auditEngine';
+import { createId } from '../domain/id';
 import { detectHeader } from './workbookDetection';
-import type { AuditIssue, AuditResult, IssueCorrection, SheetInfo, WorkbookFile } from './types';
+import type { AuditIssue, AuditResult, IssueCorrection, SheetInfo, WorkbookFile } from '../domain/types';
 
 export { MAX_WORKBOOK_FILE_SIZE_BYTES };
 const HEADER_SCAN_LIMIT = 20;

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AuditSchedule } from '../src/components/dashboard/AuditSchedule';
 import { NotificationsTab } from '../src/components/workspace/NotificationsTab';
-import type { AuditProcess, AuditResult } from '../src/lib/types';
+import type { AuditProcess, AuditResult } from '../src/lib/domain/types';
 
 const process: AuditProcess = {
   id: 'process-1',

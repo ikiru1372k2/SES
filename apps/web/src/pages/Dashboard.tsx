@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GitCompare, Plus, Sparkles, Users } from 'lucide-react';
 import { useKeyboardShortcut } from '../hooks/useKeyboardShortcut';
-import { bucketedProcesses } from '../lib/scheduleHelpers';
+import { bucketedProcesses } from '../lib/domain/scheduleHelpers';
 import { CreateProcessModal } from '../components/dashboard/CreateProcessModal';
 import { AuditSchedule } from '../components/dashboard/AuditSchedule';
 import { ProcessCard } from '../components/dashboard/ProcessCard';

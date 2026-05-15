@@ -1,5 +1,5 @@
 import { clearBrowserWorkspace } from './storage';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore } from '../../store/useAppStore';
 
 const BOUND_KEY = 'ses_workspace_bound_email';
 

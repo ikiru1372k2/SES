@@ -16,10 +16,10 @@ import {
 } from '@ses/domain';
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { escalationCenterPath } from '../../lib/processRoutes';
-import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/auditPolicy';
-import { auditIssueKey, exportIssuesCsv } from '../../lib/auditEngine';
+import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/domain/auditPolicy';
+import { auditIssueKey, exportIssuesCsv } from '../../lib/domain/auditEngine';
 import { openAuditReport } from '../../lib/reportExporter';
-import { severityTone } from '../../lib/severity';
+import { severityTone } from '../../lib/domain/severity';
 import type {
   AcknowledgmentStatus,
   AuditPolicy,
@@ -29,7 +29,7 @@ import type {
   IssueComment,
   IssueCorrection,
   WorkbookFile,
-} from '../../lib/types';
+} from '../../lib/domain/types';
 import { selectIssueComments, selectIssueCorrection } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { Badge } from '../shared/Badge';

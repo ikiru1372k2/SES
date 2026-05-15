@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import type { AuditProcess } from '../../../lib/types';
+import type { AuditProcess } from '../../../lib/domain/types';
 import { SaveVersionModal } from '../SaveVersionModal';
 
 // Mock the whole store to avoid pulling in network modules. We only need

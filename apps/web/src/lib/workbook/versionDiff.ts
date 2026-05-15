@@ -3,8 +3,8 @@
 // VersionCompare, post-run toast). Centralising here means we stop forking
 // the "what changed" phrasing across three components.
 
-import { compareResults } from './auditEngine';
-import type { AuditResult, AuditVersion } from './types';
+import { compareResults } from '../domain/auditEngine';
+import type { AuditResult, AuditVersion } from '../domain/types';
 
 export type VersionDiffSummary = {
   added: number;

@@ -1,5 +1,5 @@
 import { runFunctionAudit } from '@ses/domain';
-import type { AuditPolicy, AuditResult, WorkbookFile } from './types';
+import type { AuditPolicy, AuditResult, WorkbookFile } from '../domain/types';
 
 export type AuditWorkerRequest = { file: WorkbookFile; functionId: string | undefined; policy: AuditPolicy };
 export type AuditWorkerResponse = { ok: true; result: AuditResult } | { ok: false; error: string };

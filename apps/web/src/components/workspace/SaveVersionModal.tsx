@@ -1,11 +1,11 @@
 import { FormEvent, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Button } from '../shared/Button';
-import { displayName } from '../../lib/storage';
-import { isAuditDueSoon, nextDueDateAfterSave } from '../../lib/scheduleHelpers';
-import type { AuditProcess } from '../../lib/types';
+import { displayName } from '../../lib/storage/storage';
+import { isAuditDueSoon, nextDueDateAfterSave } from '../../lib/domain/scheduleHelpers';
+import type { AuditProcess } from '../../lib/domain/types';
 import { useAppStore } from '../../store/useAppStore';
-import { formatDiffChips, summarizeDiff, suggestVersionName } from '../../lib/versionDiff';
+import { formatDiffChips, summarizeDiff, suggestVersionName } from '../../lib/workbook/versionDiff';
 
 export function SaveVersionModal({
   process,

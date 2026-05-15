@@ -6,14 +6,14 @@ import type {
   TrackingChannel,
   TrackingEntry,
   WorkbookFile,
-} from './types';
+} from '../domain/types';
 import { isEscalationStage, parseProjectStatuses, type EscalationStage } from '@ses/domain';
 import { clear } from 'idb-keyval';
 import { getWorkbookRawData } from './blobStore';
-import { detectWorkbookSheets } from './excelParser';
-import { createId } from './id';
-import { normalizeAuditPolicy } from './auditPolicy';
-import { trackingKey } from './tracking';
+import { detectWorkbookSheets } from '../workbook/excelParser';
+import { createId } from '../domain/id';
+import { normalizeAuditPolicy } from '../domain/auditPolicy';
+import { trackingKey } from '../domain/tracking';
 
 export const DATA_KEY = 'effort-auditor-data';
 export const UI_KEY = 'effort-auditor-ui';

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Workspace } from '../Workspace';
 import { ConfirmProvider } from '../../components/shared/ConfirmProvider';
-import type { AuditProcess, AuditVersion, WorkbookFile } from '../../lib/types';
+import type { AuditProcess, AuditVersion, WorkbookFile } from '../../lib/domain/types';
 
 // Issue #74: Workspace now uses useQuery for the unmapped-manager banner,
 // so tests must wrap it in a QueryClientProvider. Retries off to keep

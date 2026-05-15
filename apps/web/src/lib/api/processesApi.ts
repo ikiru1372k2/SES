@@ -1,5 +1,5 @@
-import { normalizeAuditPolicy } from '../auditPolicy';
-import type { AuditPolicy, AuditProcess } from '../types';
+import { normalizeAuditPolicy } from '../domain/auditPolicy';
+import type { AuditPolicy, AuditProcess } from '../domain/types';
 import { JSON_HEADERS, parseApiError } from './client';
 
 export type ApiProcessSummary = {

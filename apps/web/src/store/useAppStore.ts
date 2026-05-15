@@ -8,11 +8,11 @@ import {
   type LegacyProjectTrackingRow,
   parseProjectStatuses,
 } from '@ses/domain';
-import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../lib/auditPolicy';
-import { runAuditAsync } from '../lib/auditRunner';
-import { deleteWorkbookRawData, getWorkbookRawData, putWorkbookRawData, renameWorkbookRawDataKey } from '../lib/blobStore';
-import { detectWorkbookSheets, parseWorkbook } from '../lib/excelParser';
-import { createId } from '../lib/id';
+import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../lib/domain/auditPolicy';
+import { runAuditAsync } from '../lib/audit/auditRunner';
+import { deleteWorkbookRawData, getWorkbookRawData, putWorkbookRawData, renameWorkbookRawDataKey } from '../lib/storage/blobStore';
+import { detectWorkbookSheets, parseWorkbook } from '../lib/workbook/excelParser';
+import { createId } from '../lib/domain/id';
 import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
 import { uploadFileToApi, deleteFileOnApi, listFilesOnApi, type ApiFileSummary } from '../lib/api/filesApi';
 import { listFileVersionsOnApi } from '../lib/api/fileVersionsApi';
@@ -26,8 +26,8 @@ import {
   clearIssueCorrectionOnApi,
   saveIssueAcknowledgmentOnApi,
 } from '../lib/api/issuesApi';
-import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage';
-import { makeDefaultTrackingEntry, trackingKey } from '../lib/tracking';
+import { DATA_KEY, loadProcessesFromLocalDb, rememberActiveProcess, saveProcessesToLocalDb } from '../lib/storage/storage';
+import { makeDefaultTrackingEntry, trackingKey } from '../lib/domain/tracking';
 import type {
   AcknowledgmentStatus,
   AuditPolicy,
@@ -44,7 +44,7 @@ import type {
   TrackingEntry,
   WorkbookFile,
   WorkspaceTab,
-} from '../lib/types';
+} from '../lib/domain/types';
 
 function inferEscalationStageFromCounts(outlookCount: number, teamsCount: number, resolved: boolean): EscalationStage {
   if (resolved) return 'RESOLVED';

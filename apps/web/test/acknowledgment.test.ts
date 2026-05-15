@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { auditIssueKey } from '../src/lib/auditEngine.js';
-import { buildNotificationDrafts } from '../src/lib/notificationBuilder.js';
-import type { AuditIssue, IssueAcknowledgment, IssueComment, IssueCorrection } from '../src/lib/types.js';
+import { auditIssueKey } from '../src/lib/domain/auditEngine.js';
+import { buildNotificationDrafts } from '../src/lib/domain/notificationBuilder.js';
+import type { AuditIssue, IssueAcknowledgment, IssueComment, IssueCorrection } from '../src/lib/domain/types.js';
 
 function mk(patch: Partial<AuditIssue> = {}): AuditIssue {
   return {

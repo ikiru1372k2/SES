@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { isNewHeaderEnabled } from '../../lib/featureFlags';
-import type { AuditProcess } from '../../lib/types';
+import type { AuditProcess } from '../../lib/domain/types';
 import { TopBarLegacy } from './TopBarLegacy';
 import { TopBarNew } from './TopBarNew';
 

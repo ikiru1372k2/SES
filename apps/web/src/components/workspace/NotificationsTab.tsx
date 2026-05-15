@@ -5,8 +5,8 @@ import {
   defaultTemplateForTheme,
   downloadEml,
   notificationPlainText,
-} from '../../lib/notificationBuilder';
-import type { AuditProcess, AuditResult, NotificationDraft, NotificationComposeTemplate, NotificationTheme } from '../../lib/types';
+} from '../../lib/domain/notificationBuilder';
+import type { AuditProcess, AuditResult, NotificationDraft, NotificationComposeTemplate, NotificationTheme } from '../../lib/domain/types';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 import { BroadcastComposer } from './notifications/BroadcastComposer';

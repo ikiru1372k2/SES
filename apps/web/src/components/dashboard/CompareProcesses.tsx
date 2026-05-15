@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { compareResults, exportIssuesCsv } from '../../lib/auditEngine';
-import type { AuditVersion, ComparisonResult } from '../../lib/types';
-import { displayName } from '../../lib/storage';
+import { compareResults, exportIssuesCsv } from '../../lib/domain/auditEngine';
+import type { AuditVersion, ComparisonResult } from '../../lib/domain/types';
+import { displayName } from '../../lib/storage/storage';
 import { useAppStore } from '../../store/useAppStore';
 import { AppShell } from '../layout/AppShell';
 import { usePageHeader } from '../layout/usePageHeader';

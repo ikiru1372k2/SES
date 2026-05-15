@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { applySessionUserForLocalWorkspace } from '../lib/sessionWorkspace';
+import { applySessionUserForLocalWorkspace } from '../lib/storage/sessionWorkspace';
 import { BrandMark } from '../components/shared/BrandMark';
 import { Button } from '../components/shared/Button';
 import { loginOnApi } from '../lib/api/authApi';

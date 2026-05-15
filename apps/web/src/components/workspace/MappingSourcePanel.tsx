@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { WorkbookFile } from '../../lib/types';
+import type { WorkbookFile } from '../../lib/domain/types';
 import type { MappingSourceInput, ApiAuditRunListItem } from '../../lib/api/auditsApi';
 import { fetchAuditRunsForProcess } from '../../lib/api/auditsApi';
 

@@ -1,5 +1,5 @@
 import type { FunctionId } from '@ses/domain';
-import type { FileDraftMetadata } from '../types';
+import type { FileDraftMetadata } from '../domain/types';
 import { JSON_HEADERS, parseApiError } from './client';
 
 export async function getFileDraftOnApi(processIdOrCode: string, functionId: FunctionId): Promise<FileDraftMetadata> {

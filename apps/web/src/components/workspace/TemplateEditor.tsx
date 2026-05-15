@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import type { NotificationComposeTemplate, NotificationTheme } from '../../lib/types';
+import type { NotificationComposeTemplate, NotificationTheme } from '../../lib/domain/types';
 import { Button } from '../shared/Button';
 
 const VARIABLES: Array<{ name: string; label: string }> = [

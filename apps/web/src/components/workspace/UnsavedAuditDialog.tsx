@@ -1,7 +1,7 @@
 import { AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { AuditProcess, AuditResult } from '../../lib/types';
-import { anchorResultForFile, formatDiffChips, summarizeDiff } from '../../lib/versionDiff';
+import type { AuditProcess, AuditResult } from '../../lib/domain/types';
+import { anchorResultForFile, formatDiffChips, summarizeDiff } from '../../lib/workbook/versionDiff';
 import { useAppStore } from '../../store/useAppStore';
 import { Button } from '../shared/Button';
 import { Modal } from '../shared/Modal';

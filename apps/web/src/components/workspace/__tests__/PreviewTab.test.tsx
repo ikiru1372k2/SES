@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PreviewTab } from '../PreviewTab';
-import type { AuditProcess, WorkbookFile } from '../../../lib/types';
+import type { AuditProcess, WorkbookFile } from '../../../lib/domain/types';
 
 const fetchSheetPreviewFromApi = vi.fn();
 

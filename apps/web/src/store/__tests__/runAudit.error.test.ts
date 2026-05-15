@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AuditProcess, AuditPolicy, SheetInfo, WorkbookFile } from '../../lib/types';
+import type { AuditProcess, AuditPolicy, SheetInfo, WorkbookFile } from '../../lib/domain/types';
 import { useAppStore } from '../useAppStore';
 
 // Keep the test purely at the store level — no API paths exercised. The
