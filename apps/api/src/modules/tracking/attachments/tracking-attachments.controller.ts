@@ -16,7 +16,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from '../../../auth.guard';
+import { AuthGuard } from '../../auth/auth.guard';
 import { AccessScopeService } from '../../../common/access-scope.service';
 import { CurrentUser } from '../../../common/current-user';
 import { attachmentContentDisposition } from '../../../common/http';

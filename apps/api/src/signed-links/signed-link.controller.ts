@@ -1,7 +1,7 @@
 import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
 import { IsEmail, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from '../auth.guard';
+import { AuthGuard } from '../modules/auth/auth.guard';
 import { CurrentUser } from '../common/current-user';
 import { ProcessAccessService } from '../common/process-access.service';
 import { SignedLinkService } from './signed-link.service';

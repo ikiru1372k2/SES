@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { StatusReconcilerService } from '../src/status-reconciler.service';
+import { StatusReconcilerService } from '../src/modules/tracking/status-reconciler.service';
 import type { IdentifierService } from '../src/common/identifier.service';
 
 // Minimal identifier stub — the tests never observe new-manager creation

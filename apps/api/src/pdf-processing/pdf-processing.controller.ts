@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from '../auth.guard';
+import { AuthGuard } from '../modules/auth/auth.guard';
 import { CurrentUser } from '../common/current-user';
 import { PdfProcessingService } from './pdf-processing.service';
 import type { PdfJobKind, PdfProcessingJobRow } from '../db/types';

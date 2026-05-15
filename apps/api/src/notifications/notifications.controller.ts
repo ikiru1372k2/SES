@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from '../auth.guard';
+import { AuthGuard } from '../modules/auth/auth.guard';
 import { CurrentUser } from '../common/current-user';
 import { RecordSendDto } from './dto/record-send.dto';
 import { NotificationsService } from './notifications.service';

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import type { SessionUser } from '@ses/domain';
-import { EscalationsService } from '../src/escalations.service';
+import { EscalationsService } from '../src/modules/escalations/escalations.service';
 
 type AnyObj = Record<string, unknown>;
 

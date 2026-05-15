@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, NotFoundException, Param, Post, Query, UseGuards } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from '../../../auth.guard';
+import { AuthGuard } from '../../auth/auth.guard';
 import { AccessScopeService } from '../../../common/access-scope.service';
 import { CurrentUser } from '../../../common/current-user';
 import { PrismaService } from '../../../common/prisma.service';

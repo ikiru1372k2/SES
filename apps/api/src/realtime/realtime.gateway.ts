@@ -11,7 +11,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Server, Socket } from 'socket.io';
 import { createRequestId, requestContext } from '../common/request-context';
-import { AuthService } from '../auth.service';
+import { AuthService } from '../modules/auth/auth.service';
 import { ProcessAccessService } from '../common/process-access.service';
 import { PresenceRegistry } from './presence.registry';
 import { buildRedisAdapterClients } from './realtime.redis';

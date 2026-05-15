@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from '../auth.guard';
+import { AuthGuard } from '../modules/auth/auth.guard';
 import { CurrentUser } from '../common/current-user';
 import { EscalationTemplatesService } from './escalation-templates.service';
 

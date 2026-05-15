@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { aggregateEscalations, type AggregatorIssueRow, type AggregatorTrackingRow } from '../src/escalations-aggregator';
+import { aggregateEscalations, type AggregatorIssueRow, type AggregatorTrackingRow } from '../src/modules/escalations/escalations-aggregator';
 
 describe('aggregateEscalations', () => {
   it('groups issues by manager key and attaches tracking', () => {

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { AuthGuard } from '../auth.guard';
-import { AuthService } from '../auth.service';
+import { AuthGuard } from '../modules/auth/auth.guard';
+import { AuthService } from '../modules/auth/auth.service';
 import { DatabaseModule } from '../db/database.module';
 import { ObjectStorageModule } from '../object-storage';
 import { UploadedObjectsRepository } from '../repositories/uploaded-objects.repository';

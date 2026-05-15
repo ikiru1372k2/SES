@@ -17,7 +17,7 @@ import { Throttle } from '@nestjs/throttler';
 import { memoryStorage } from 'multer';
 import { isFunctionId } from '@ses/domain';
 import type { FunctionId, SessionUser } from '@ses/domain';
-import { AuthGuard } from '../auth.guard';
+import { AuthGuard } from '../modules/auth/auth.guard';
 import { CurrentUser } from '../common/current-user';
 import { AdminGuard } from '../common/admin.guard';
 import { AiPilotService } from './ai-pilot.service';

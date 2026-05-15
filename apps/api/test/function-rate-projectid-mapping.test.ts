@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { BadRequestException } from '@nestjs/common';
-import { AuditsService } from '../src/audits.service';
+import { AuditsService } from '../src/modules/audits/audits.service';
 import type { AuditIssue } from '@ses/domain';
 
 // Minimal AuditsService instance — exercises only the two private methods

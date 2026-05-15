@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Patch, Post, Query, Param, UseGuards, HttpCode } from '@nestjs/common';
 import type { SessionUser, DirectoryRowInput } from '@ses/domain';
-import { AuthGuard } from '../auth.guard';
+import { AuthGuard } from '../modules/auth/auth.guard';
 import { CurrentUser } from '../common/current-user';
 import { DirectoryService } from './directory.service';
 

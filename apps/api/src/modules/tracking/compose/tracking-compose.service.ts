@@ -26,7 +26,7 @@ import { ProcessAccessService } from '../../../common/process-access.service';
 import { ActivityLogService } from '../../../common/activity-log.service';
 import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 import { DEFAULT_TENANT_ID } from '../../../common/default-tenant';
-import { EscalationsService } from '../../../escalations.service';
+import { EscalationsService } from '../../escalations/escalations.service';
 import { OutboundDeliveryService, type EscalationSendChannel } from '../../../outbound/outbound-delivery.service';
 import {
   DEFAULT_BODY_TEMPLATE,

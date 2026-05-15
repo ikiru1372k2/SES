@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nest
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { isFunctionId, type FunctionId, type SessionUser } from '@ses/domain';
-import { AuthGuard } from '../auth.guard';
+import { AuthGuard } from '../modules/auth/auth.guard';
 import { CurrentUser } from '../common/current-user';
 import { AnalyticsService } from './analytics.service';
 import {
