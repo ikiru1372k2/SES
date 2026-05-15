@@ -8,7 +8,7 @@ import { CurrentUser } from '../../common/current-user';
 import { attachmentContentDisposition } from '../../common/http';
 import { PrismaService } from '../../common/prisma.service';
 import { ProcessAccessService } from '../../common/process-access.service';
-import { RunAuditDto } from '../../dto/audits.dto';
+import { RunAuditDto } from './dto/audits.dto';
 import { AuditsService } from './audits.service';
 
 @Controller()

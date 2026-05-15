@@ -7,7 +7,7 @@ import { ActivityLogService } from '../../common/activity-log.service';
 import { IdentifierService } from '../../common/identifier.service';
 import { ProcessAccessService } from '../../common/process-access.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
-import { ChatCacheService } from '../../analytics/chat-cache.service';
+import { ChatCacheService } from '../analytics/chat-cache.service';
 
 function serializeVersion(version: {
   id: string;

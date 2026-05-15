@@ -4,7 +4,7 @@ import {
   loadObjectStorageConfig,
   redactedConfig,
   ObjectStorageConfigError,
-} from '../src/object-storage';
+} from '../src/modules/object-storage';
 
 const MINIO = {
   OBJECT_STORAGE_DRIVER: 's3',

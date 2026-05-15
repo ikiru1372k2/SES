@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../../common/current-user';
-import { CreateVersionDto } from '../../dto/versions.dto';
+import { CreateVersionDto } from './dto/versions.dto';
 import { VersionsService } from './versions.service';
 
 @Controller()

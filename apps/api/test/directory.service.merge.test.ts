@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { managerKey } from '@ses/domain';
-import { DirectoryService } from '../src/directory/directory.service';
+import { DirectoryService } from '../src/modules/directory/directory.service';
 
 const admin = {
   id: 'u-admin',

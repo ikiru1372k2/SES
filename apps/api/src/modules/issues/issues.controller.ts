@@ -5,7 +5,7 @@ import { AccessScopeService } from '../../common/access-scope.service';
 import { CurrentUser } from '../../common/current-user';
 import { PrismaService } from '../../common/prisma.service';
 import { ProcessAccessService } from '../../common/process-access.service';
-import { AddIssueCommentDto, SaveAcknowledgmentDto, SaveCorrectionDto } from '../../dto/issues.dto';
+import { AddIssueCommentDto, SaveAcknowledgmentDto, SaveCorrectionDto } from './dto/issues.dto';
 import { IssuesService } from './issues.service';
 
 @Controller()

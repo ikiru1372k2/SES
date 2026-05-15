@@ -16,7 +16,7 @@ import { createId, tenantManagerDirectoryEnabled } from '@ses/domain';
 import { DEFAULT_TENANT_ID } from '../../common/default-tenant';
 import { PrismaService } from '../../common/prisma.service';
 import { requestContext } from '../../common/request-context';
-import type { LoginDto, SignupDto } from '../../dto/auth.dto';
+import type { LoginDto, SignupDto } from './dto/auth.dto';
 
 type TokenPayload = {
   sub: string;

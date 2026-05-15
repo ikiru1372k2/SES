@@ -9,7 +9,7 @@ import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../../common/current-user';
 import { FunctionAccessGuard } from '../../common/function-access.guard';
 import { attachmentContentDisposition, parseIfMatch } from '../../common/http';
-import { UpdateSheetSelectionDto } from '../../dto/processes.dto';
+import { UpdateSheetSelectionDto } from '../processes/dto/processes.dto';
 import { UploadValidationPipe } from '../../common/pipes/upload-validation.pipe';
 import { FilesService } from './files.service';
 

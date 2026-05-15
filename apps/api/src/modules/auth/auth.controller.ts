@@ -13,7 +13,7 @@ import type { Response } from 'express';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from '../../common/current-user';
-import { DevLoginDto, LoginDto, SignupDto } from '../../dto/auth.dto';
+import { DevLoginDto, LoginDto, SignupDto } from './dto/auth.dto';
 
 // Auth endpoints get a tight per-IP throttle for anti-bot protection,
 // but the e2e suite makes 100+ rapid signup/login calls from a single

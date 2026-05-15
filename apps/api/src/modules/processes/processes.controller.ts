@@ -5,8 +5,8 @@ import { FunctionAccessGuard } from '../../common/function-access.guard';
 import { CurrentUser } from '../../common/current-user';
 import { parseIfMatch } from '../../common/http';
 import { RequiresScope } from '../../common/requires-scope.decorator';
-import { CreateFunctionAuditRequestDto, CreateProcessDto, UpdateProcessDto } from '../../dto/processes.dto';
-import { AddProcessMemberDto, UpdateProcessMemberDto } from '../../dto/process-members.dto';
+import { CreateFunctionAuditRequestDto, CreateProcessDto, UpdateProcessDto } from './dto/processes.dto';
+import { AddProcessMemberDto, UpdateProcessMemberDto } from './dto/process-members.dto';
 import { EscalationsService } from '../escalations/escalations.service';
 import { ProcessesService } from './processes.service';
 

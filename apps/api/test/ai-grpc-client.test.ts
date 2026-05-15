@@ -4,7 +4,7 @@ import { describe, it, before, after } from 'node:test';
 import { resolve } from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
-import { AiGrpcClient, PDF_JOB_KIND, PDF_JOB_STATUS } from '../src/ai-pilot/ai-grpc.client';
+import { AiGrpcClient, PDF_JOB_KIND, PDF_JOB_STATUS } from '../src/modules/ai-pilot/ai-grpc.client';
 
 const PROTO_PATH = resolve(__dirname, '..', 'proto', 'ai_pilot', 'v1', 'ai_pilot.proto');
 

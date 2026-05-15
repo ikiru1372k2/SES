@@ -3,11 +3,11 @@ import { ulid } from 'ulid';
 // Import directly (not via the barrel `../object-storage`) so we don't
 // pull in `object-storage.module.ts`, which provides this very class
 // — that creates a circular import that breaks Nest DI on boot.
-import { ObjectStorageService, sha256Hex } from '../object-storage/object-storage.service';
+import { ObjectStorageService, sha256Hex } from '../modules/object-storage/object-storage.service';
 import {
   workbookObjectKey,
   workbookDraftObjectKey,
-} from '../object-storage/object-key';
+} from '../modules/object-storage/object-key';
 import { UploadedObjectsRepository } from './uploaded-objects.repository';
 
 export interface UploadWorkbookInput {

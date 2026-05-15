@@ -17,7 +17,7 @@ import {
   runFunctionAudit,
 } from '@ses/domain';
 import type { FunctionId } from '@ses/domain';
-import type { MappingSourceDto } from '../../dto/audits.dto';
+import type { MappingSourceDto } from './dto/audits.dto';
 import { PrismaService } from '../../common/prisma.service';
 import { IdentifierService } from '../../common/identifier.service';
 import { ActivityLogService } from '../../common/activity-log.service';
@@ -25,8 +25,8 @@ import { ProcessAccessService } from '../../common/process-access.service';
 import { requestContext } from '../../common/request-context';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { StatusReconcilerService } from '../tracking/status-reconciler.service';
-import { resolveIssueEmailsFromDirectory } from '../../directory/resolve-issue-emails';
-import { AiPilotService } from '../../ai-pilot/ai-pilot.service';
+import { resolveIssueEmailsFromDirectory } from '../directory/resolve-issue-emails';
+import { AiPilotService } from '../ai-pilot/ai-pilot.service';
 
 /**
  * Stable sha256 over the sorted identity of each issue.

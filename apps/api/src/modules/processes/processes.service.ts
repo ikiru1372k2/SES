@@ -15,7 +15,7 @@ import type {
   ScopeEntryDto,
   UpdateProcessMemberDto,
   AddProcessMemberDto,
-} from '../../dto/process-members.dto';
+} from './dto/process-members.dto';
 import { FunctionsService } from '../functions/functions.service';
 import { RealtimeGateway } from '../../realtime/realtime.gateway';
 import { requestContext } from '../../common/request-context';

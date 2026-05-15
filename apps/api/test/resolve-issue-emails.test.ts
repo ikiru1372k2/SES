@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { resolveIssueEmailsFromDirectory } from '../src/directory/resolve-issue-emails';
+import { resolveIssueEmailsFromDirectory } from '../src/modules/directory/resolve-issue-emails';
 
 type DirectoryRow = {
   id: string;
