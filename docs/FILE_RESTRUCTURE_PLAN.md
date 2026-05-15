@@ -1,7 +1,7 @@
 # File & Folder Restructure Plan
 
 > Branch: `asv/file-restructure`
-> Status: living document — updated as phases land.
+> Status: **All phases (0–4) executed and committed.** See §10 Outcomes.
 > Last updated: 2026-05-15
 
 **Location rationale.** This document lives in `docs/` because that is the
@@ -194,7 +194,7 @@ phase, one commit per feature folder.
 - [x] Capture green baseline: `npm run typecheck` (domain build + api + web).
 - [x] This plan committed before any source move.
 
-### Phase 1 — Relocation only, **DI graph unchanged** (low risk)
+### Phase 1 — Relocation only, **DI graph unchanged** (low risk) — ✅ DONE (1a/1b/1c)
 Move flat root files into `src/modules/<feature>/` and consolidate the
 `tracking*` cluster. **`app.module.ts` keeps the same controller/provider
 lists** — only import *paths* change. No `*.module.ts` per feature yet. This
@@ -212,7 +212,7 @@ Ordered tasks:
 5. Verify after **every** feature commit (typecheck is fast; full suite at
    phase end).
 
-### Phase 2 — Introduce feature modules, slim `app.module.ts` (medium risk)
+### Phase 2 — Introduce feature modules, slim `app.module.ts` (medium risk) — ✅ DONE
 One feature at a time: add `modules/<feature>/<feature>.module.ts`
 declaring that feature's controllers/providers and `exports`; replace its
 entries in `app.module.ts` with the module import. Extract shared providers
@@ -220,12 +220,12 @@ into `SharedModule`. Risk: DI resolution changes — a missing `exports` or
 `imports` is a runtime (not compile) failure, so **e2e suite is the gate**
 for every feature in this phase.
 
-### Phase 3 — Co-locate API unit specs (low risk)
+### Phase 3 — Co-locate API unit specs (low risk) — ✅ DONE
 Move `apps/api/test/<x>.test.ts` unit specs to
 `modules/<feature>/<x>.spec.ts`; widen the test glob in
 `apps/api/package.json`; keep e2e specs in `test/`.
 
-### Phase 4 — Optional library grouping (low risk, may be deferred/dropped)
+### Phase 4 — Optional library grouping (low risk, may be deferred/dropped) — ✅ DONE (4A/4B)
 `packages/domain/src` root grouping behind the stable `index.ts` barrel;
 optional `apps/web/src/lib/` grouping. Only if there is appetite; not
 required for the initiative to be "done."
@@ -306,23 +306,61 @@ not the glob directly).
 
 ---
 
-## 8. Open questions (need team input)
+## 8. Open questions — decisions taken
 
-1. **`modules/` segment vs flat-at-`src/`.** Plan assumes
-   `src/modules/<feature>/`. Some Nest teams prefer `src/<feature>/`
-   (shallower). Assumption documented; flag if the team prefers flat.
-2. **`common/` → `shared/` and infra extraction.** High import churn for a
-   naming win. Plan defers it to a late phase / separate PR. Confirm whether
-   it is wanted at all, or whether keeping `common/` is acceptable.
-3. **Scope of Phase 2 this iteration.** Modularization (per-feature
-   `*.module.ts` + slim `app.module.ts`) carries runtime DI risk. Confirm
-   whether to land it now or land Phase 1 (relocation) first and schedule
-   Phase 2 as its own reviewed PR — recommended default.
-4. **Phase 4 appetite.** Is domain/web `lib` grouping wanted, or explicitly
-   out of scope for this initiative?
-5. **Owning feature for cron services.** `sla-engine` → `escalations` and
-   `status-reconciler` → `tracking` is the proposed mapping. Confirm, or
-   prefer a dedicated `scheduler/` feature.
+These were resolved in-flight (assumptions documented per the brief);
+revisit in review if the team disagrees — each is revertible per §7.
+
+1. **`modules/` segment vs flat-at-`src/`.** **Decided: `src/modules/<feature>/`.**
+   Keeps the package root to `main.ts`/`app.module.ts`/`load-env.ts` and
+   visually separates feature code from `common/`/infra. Reversible.
+2. **`common/` → `shared/` and infra extraction.** **Decided: NOT done.**
+   `common/`, `db/`, `repositories/`, `realtime/` kept at `src/` root —
+   high import churn for a naming-only win, explicitly out of scope for
+   this initiative. Can be a separate later PR if wanted.
+3. **Scope of Phase 2.** **Decided: landed now**, as its own commit after
+   Phase 1, gated by the full e2e suite (passed). Per-feature commits
+   within Phase 1 were consolidated into per-*cluster* atomic relocation
+   commits — the dense cross-feature import web (auth.guard, escalations,
+   etc.) made per-feature commits leave the tree in a non-compiling
+   intermediate state; atomic relocation is the safer revertible unit
+   (§7 explicitly permits this judgement).
+4. **Phase 4 appetite.** **Decided: executed** (domain behind the stable
+   `index.ts` barrel; web `lib/` grouped). Reversible single commits;
+   API public surface unchanged.
+5. **Owning feature for cron services.** **Decided as proposed:**
+   `sla-engine.service` → `modules/escalations/`,
+   `status-reconciler.service` → `modules/tracking/`.
+
+## 10. Outcomes (execution log)
+
+Commits on `asv/file-restructure` (oldest → newest):
+
+| Commit | Phase | Result |
+|---|---|---|
+| `docs: …plan` | 0 | plan committed before any move |
+| `consolidate tracking* cluster` | 1a | typecheck + 112 unit + e2e green |
+| `relocate flat root files` | 1b | 38 files → 16 feature folders; e2e green |
+| `move feature folders + co-locate dto` | 1c | + ai-grpc proto-path fix; 112/112 |
+| `per-feature modules + CoreModule` | 2 | slim app.module; full e2e green |
+| `co-locate unit specs` | 3 | 17 specs co-located; 112/112 |
+| `group domain src by concern` | 4A | domain 172/172 + web 63/63 |
+| `group web src/lib by concern` | 4B | + 2 vi.mock path fixes; 63/63 |
+
+End state `apps/api/src/`: `main.ts`, `app.module.ts`, `load-env.ts` +
+`common/ db/ realtime/ repositories/ modules/<23 features>/`. `dto/`
+removed (co-located). `app.module.ts`: ~200 → ~80 lines.
+
+Move-induced behavior-preserving fixes (necessary, in scope; not logic
+changes): (1) `ai-grpc.client.ts` PROTO_PATH gained one `..` hop;
+(2) two `vi.mock()` specifiers (`processPersistDebounce`, `Signup`) the
+import-only recompute could not reach. All other changes are pure
+relocation + deterministic import recomputation.
+
+Known follow-ups (intentionally out of scope): `common/`→`shared/` +
+`infra/` extraction (open Q2); the 6 fs/DB-integration tests left in
+`apps/api/test/` could move once their `__dirname`/runner coupling is
+refactored.
 
 ---
 
