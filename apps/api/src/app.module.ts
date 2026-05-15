@@ -1,83 +1,34 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { AccessScopeService } from './common/access-scope.service';
-import { ActivityLogService } from './common/activity-log.service';
-import { FunctionAccessGuard } from './common/function-access.guard';
-import { IdentifierService } from './common/identifier.service';
-import { ProcessAccessService } from './common/process-access.service';
 import { DatabaseModule } from './db/database.module';
-import { ActivityController } from './modules/activity/activity.controller';
-import { AuthController } from './modules/auth/auth.controller';
-import { AuthGuard } from './modules/auth/auth.guard';
-import { AuthService } from './modules/auth/auth.service';
-import { AuditsController } from './modules/audits/audits.controller';
-import { AuditsService } from './modules/audits/audits.service';
-import { ExportsController } from './modules/exports/exports.controller';
-import { ExportsService } from './modules/exports/exports.service';
-import { FileDraftsController } from './modules/files/file-drafts.controller';
-import { FileDraftsService } from './modules/files/file-drafts.service';
-import { FileVersionsController } from './modules/files/file-versions.controller';
-import { FileVersionsService } from './modules/files/file-versions.service';
-import { FilesController } from './modules/files/files.controller';
-import { FilesRepository } from './modules/files/files.repository';
-import { FilesService } from './modules/files/files.service';
-import { FunctionsController } from './modules/functions/functions.controller';
-import { FunctionsService } from './modules/functions/functions.service';
-import { IssuesController } from './modules/issues/issues.controller';
-import { IssuesService } from './modules/issues/issues.service';
-import { JobsController } from './modules/jobs/jobs.controller';
-import { JobsService } from './modules/jobs/jobs.service';
-import { HealthController } from './modules/health/health.controller';
-import { EscalationsService } from './modules/escalations/escalations.service';
-import { ProcessesController } from './modules/processes/processes.controller';
-import { ProcessActivityController } from './modules/processes/process-activity.controller';
-import { ProcessesService } from './modules/processes/processes.service';
-import { RulesController } from './modules/rules/rules.controller';
-import { RulesService } from './modules/rules/rules.service';
-import { TemplatesController } from './modules/templates/templates.controller';
-import { TemplatesService } from './modules/templates/templates.service';
-import { TrackingController } from './modules/tracking/tracking.controller';
-import { TrackingService } from './modules/tracking/tracking.service';
-import { VersionsController } from './modules/versions/versions.controller';
-import { VersionsService } from './modules/versions/versions.service';
-import { PresenceRegistry } from './realtime/presence.registry';
-import { RealtimeGateway } from './realtime/realtime.gateway';
-import { SignedLinkTokenService } from './modules/signed-links/signed-link-token.service';
-import { SignedLinkService } from './modules/signed-links/signed-link.service';
-import { SignedLinkController } from './modules/signed-links/signed-link.controller';
-import { PublicResponseService } from './modules/signed-links/public-response.service';
-import { PublicResponseController } from './modules/signed-links/public-response.controller';
-import { NotificationsController } from './modules/notifications/notifications.controller';
-import { NotificationsService } from './modules/notifications/notifications.service';
-import { UploadValidationPipe } from './common/pipes/upload-validation.pipe';
-import { DirectoryController } from './modules/directory/directory.controller';
-import { DirectoryService } from './modules/directory/directory.service';
-import { StatusReconcilerService } from './modules/tracking/status-reconciler.service';
-import { EscalationTemplatesController } from './modules/escalation-templates/escalation-templates.controller';
-import { EscalationTemplatesService } from './modules/escalation-templates/escalation-templates.service';
-import { TrackingComposeController } from './modules/tracking/compose/tracking-compose.controller';
-import { TrackingComposeService } from './modules/tracking/compose/tracking-compose.service';
-import { TrackingStageController } from './modules/tracking/stage/tracking-stage.controller';
-import { TrackingStageService } from './modules/tracking/stage/tracking-stage.service';
-import { TrackingAttachmentsController } from './modules/tracking/attachments/tracking-attachments.controller';
-import { TrackingAttachmentsService } from './modules/tracking/attachments/tracking-attachments.service';
-import { OutboundDeliveryService } from './modules/outbound/outbound-delivery.service';
-import { TrackingBulkController } from './modules/tracking/bulk/tracking-bulk.controller';
-import { TrackingBulkService } from './modules/tracking/bulk/tracking-bulk.service';
-import { InAppNotificationsController } from './modules/in-app-notifications/in-app-notifications.controller';
-import { InAppNotificationsService } from './modules/in-app-notifications/in-app-notifications.service';
-import { SavedViewsController } from './modules/saved-views/saved-views.controller';
-import { SavedViewsService } from './modules/saved-views/saved-views.service';
-import { SlaEngineService } from './modules/escalations/sla-engine.service';
-import { HttpModule } from '@nestjs/axios';
-import { AiPilotModule } from './modules/ai-pilot/ai-pilot.module';
-import { AnalyticsController } from './modules/analytics/analytics.controller';
-import { AnalyticsService } from './modules/analytics/analytics.service';
-import { ChatCacheService } from './modules/analytics/chat-cache.service';
-import { ChatAuditService } from './modules/analytics/chat-audit.service';
+import { CoreModule } from './common/core.module';
 import { ObjectStorageModule } from './modules/object-storage';
+import { AiPilotModule } from './modules/ai-pilot/ai-pilot.module';
 import { PdfProcessingModule } from './modules/pdf-processing/pdf-processing.module';
+import { HealthModule } from './modules/health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { RulesModule } from './modules/rules/rules.module';
+import { FunctionsModule } from './modules/functions/functions.module';
+import { ProcessesModule } from './modules/processes/processes.module';
+import { FilesModule } from './modules/files/files.module';
+import { AuditsModule } from './modules/audits/audits.module';
+import { VersionsModule } from './modules/versions/versions.module';
+import { IssuesModule } from './modules/issues/issues.module';
+import { TrackingModule } from './modules/tracking/tracking.module';
+import { TemplatesModule } from './modules/templates/templates.module';
+import { ActivityModule } from './modules/activity/activity.module';
+import { JobsModule } from './modules/jobs/jobs.module';
+import { ExportsModule } from './modules/exports/exports.module';
+import { SignedLinksModule } from './modules/signed-links/signed-links.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { DirectoryModule } from './modules/directory/directory.module';
+import { EscalationsModule } from './modules/escalations/escalations.module';
+import { EscalationTemplatesModule } from './modules/escalation-templates/escalation-templates.module';
+import { OutboundModule } from './modules/outbound/outbound.module';
+import { InAppNotificationsModule } from './modules/in-app-notifications/in-app-notifications.module';
+import { SavedViewsModule } from './modules/saved-views/saved-views.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 @Module({
   imports: [
@@ -94,104 +45,35 @@ import { PdfProcessingModule } from './modules/pdf-processing/pdf-processing.mod
         limit: () => (process.env.NODE_ENV === 'test' ? 10_000 : 400),
       },
     ]),
-    AiPilotModule,
     DatabaseModule,
+    CoreModule,
     ObjectStorageModule,
+    AiPilotModule,
     PdfProcessingModule,
-    HttpModule.register({ timeout: 120_000, maxRedirects: 0 }),
+    HealthModule,
+    AuthModule,
+    RulesModule,
+    FunctionsModule,
+    ProcessesModule,
+    FilesModule,
+    AuditsModule,
+    VersionsModule,
+    IssuesModule,
+    TrackingModule,
+    TemplatesModule,
+    ActivityModule,
+    JobsModule,
+    ExportsModule,
+    SignedLinksModule,
+    NotificationsModule,
+    DirectoryModule,
+    EscalationsModule,
+    EscalationTemplatesModule,
+    OutboundModule,
+    InAppNotificationsModule,
+    SavedViewsModule,
+    AnalyticsModule,
   ],
-  controllers: [
-    HealthController,
-    AuthController,
-    RulesController,
-    FunctionsController,
-    ProcessesController,
-    ProcessActivityController,
-    FilesController,
-    FileVersionsController,
-    FileDraftsController,
-    AuditsController,
-    VersionsController,
-    IssuesController,
-    TrackingController,
-    TemplatesController,
-    ActivityController,
-    JobsController,
-    ExportsController,
-    PublicResponseController,
-    SignedLinkController,
-    NotificationsController,
-    DirectoryController,
-    EscalationTemplatesController,
-    // Register bulk controller before the per-entry compose controller so
-    // that POST /tracking/bulk/compose matches the literal `bulk` segment
-    // instead of being captured by `:idOrCode` on the compose controller.
-    TrackingBulkController,
-    TrackingComposeController,
-    TrackingStageController,
-    TrackingAttachmentsController,
-    InAppNotificationsController,
-    SavedViewsController,
-    AnalyticsController,
-  ],
-  providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-    ProcessAccessService,
-    AccessScopeService,
-    IdentifierService,
-    ActivityLogService,
-    AuthService,
-    AuthGuard,
-    FunctionsService,
-    FunctionAccessGuard,
-    RulesService,
-    ProcessesService,
-    EscalationsService,
-    FilesRepository,
-    FilesService,
-    FileVersionsService,
-    FileDraftsService,
-    AuditsService,
-    StatusReconcilerService,
-    VersionsService,
-    IssuesService,
-    TrackingService,
-    TemplatesService,
-    ExportsService,
-    JobsService,
-    PresenceRegistry,
-    RealtimeGateway,
-    SignedLinkTokenService,
-    SignedLinkService,
-    PublicResponseService,
-    NotificationsService,
-    UploadValidationPipe,
-    DirectoryService,
-    OutboundDeliveryService,
-    EscalationTemplatesService,
-    TrackingComposeService,
-    TrackingStageService,
-    TrackingAttachmentsService,
-    TrackingBulkService,
-    InAppNotificationsService,
-    SavedViewsService,
-    SlaEngineService,
-    AnalyticsService,
-    ChatCacheService,
-    ChatAuditService,
-  ],
-  exports: [
-    DatabaseModule,
-    ProcessAccessService,
-    AccessScopeService,
-    IdentifierService,
-    ActivityLogService,
-    AuthService,
-    AuthGuard,
-    FunctionsService,
-    FunctionAccessGuard,
-    RealtimeGateway,
-    PresenceRegistry,
-  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
