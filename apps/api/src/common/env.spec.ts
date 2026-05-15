@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { parsePositiveIntEnv } from '../src/common/env';
+import { parsePositiveIntEnv } from './env';
 
 describe('parsePositiveIntEnv', () => {
   afterEach(() => {

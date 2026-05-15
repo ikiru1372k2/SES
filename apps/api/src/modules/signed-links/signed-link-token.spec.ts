@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { afterEach, beforeEach, describe, it } from 'node:test';
-import { SignedLinkTokenService } from '../src/modules/signed-links/signed-link-token.service';
+import { SignedLinkTokenService } from './signed-link-token.service';
 
 describe('SignedLinkTokenService', () => {
   let svc: SignedLinkTokenService;

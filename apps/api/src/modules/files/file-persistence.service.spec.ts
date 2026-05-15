@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { BadRequestException } from '@nestjs/common';
-import { FileVersionsService } from '../src/modules/files/file-versions.service';
+import { FileVersionsService } from './file-versions.service';
 
 const user = {
   id: 'user-1',

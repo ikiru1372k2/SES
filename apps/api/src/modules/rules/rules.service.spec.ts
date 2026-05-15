@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
 import { AUDIT_RULE_CATALOG } from '@ses/domain';
-import { RulesService } from '../src/modules/rules/rules.service';
+import { RulesService } from './rules.service';
 
 describe('RulesService.syncCatalog', () => {
   it('upserts every audit rule from the domain catalog', async () => {

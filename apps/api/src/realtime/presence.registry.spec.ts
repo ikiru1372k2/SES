@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { PresenceRegistry } from '../src/realtime/presence.registry';
-import type { PresenceInfo } from '../src/realtime/realtime.types';
+import { PresenceRegistry } from './presence.registry';
+import type { PresenceInfo } from './realtime.types';
 
 /**
  * Pure-logic tests for the presence tracker.

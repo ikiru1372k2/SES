@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { describe, it, before, after } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { S3Client, PutObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
-import { ObjectStorageService } from '../src/modules/object-storage/object-storage.service';
-import { loadObjectStorageConfig } from '../src/modules/object-storage/object-storage.config';
-import { aiPilotObjectKey } from '../src/modules/object-storage/object-key';
+import { ObjectStorageService } from './object-storage.service';
+import { loadObjectStorageConfig } from './object-storage.config';
+import { aiPilotObjectKey } from './object-key';
 
 const hasMinio = Boolean(process.env.OBJECT_STORAGE_ENDPOINT && process.env.OBJECT_STORAGE_BUCKET);
 

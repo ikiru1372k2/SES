@@ -4,7 +4,7 @@ import {
   AccessScopeService,
   type ScopeContext,
   type ScopeRow,
-} from '../src/common/access-scope.service';
+} from './access-scope.service';
 
 // The resolver is pure — passing a stubbed prisma is fine because we never
 // touch it from resolve(). Other AccessScopeService methods (load/replace)

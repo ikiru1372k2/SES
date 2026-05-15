@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { aiPilotObjectKey, sanitizeFileName } from '../src/modules/object-storage';
+import { aiPilotObjectKey, sanitizeFileName } from '.';
 
 describe('object key generation', () => {
   it('shapes the AI Pilot key as ai-pilot/{tenant}/{session}/{ulid}-{name}', () => {

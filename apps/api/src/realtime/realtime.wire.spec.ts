@@ -4,8 +4,8 @@ import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 import { Server, type Socket } from 'socket.io';
 import { io as ioClient, type Socket as ClientSocket } from 'socket.io-client';
-import { PresenceRegistry } from '../src/realtime/presence.registry';
-import type { PresenceInfo, RealtimeEnvelope } from '../src/realtime/realtime.types';
+import { PresenceRegistry } from './presence.registry';
+import type { PresenceInfo, RealtimeEnvelope } from './realtime.types';
 
 /**
  * Wire-level integration test for the realtime protocol.

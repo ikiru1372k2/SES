@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { describe, it } from 'node:test';
-import { matchRawNameToDirectoryEntries } from '../src/modules/directory/directory-matching';
+import { matchRawNameToDirectoryEntries } from './directory-matching';
 
 describe('matchRawNameToDirectoryEntries', () => {
   it('returns no autoMatch for empty raw name', () => {
