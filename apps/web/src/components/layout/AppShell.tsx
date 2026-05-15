@@ -26,6 +26,12 @@ export function AppShell({
   const documentCount = process ? process.files.length || process.serverFilesCount || 0 : 0;
   return (
     <div className="flex h-full flex-col bg-slate-50 text-gray-950 dark:bg-gray-950 dark:text-white">
+      <a
+        href="#main-content"
+        className="sr-only z-50 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white focus:not-sr-only focus:absolute focus:left-3 focus:top-3"
+      >
+        Skip to main content
+      </a>
       <TopBar process={process} accessory={topBarAccessory} />
       {isAuditRunning ? (
         <div className="border-b border-gray-200 bg-white px-5 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
@@ -68,7 +74,13 @@ export function AppShell({
             </aside>
           )
         ) : null}
-        <main className={`flex min-w-0 flex-1 flex-col ${sidebar || !contentScrolls ? 'overflow-hidden' : 'overflow-y-auto'}`}>{children}</main>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className={`flex min-w-0 flex-1 flex-col focus:outline-none ${sidebar || !contentScrolls ? 'overflow-hidden' : 'overflow-y-auto'}`}
+        >
+          {children}
+        </main>
       </div>
       <GlobalShortcutOverlay />
     </div>
