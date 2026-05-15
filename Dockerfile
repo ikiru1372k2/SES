@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22-bookworm-slim AS node-base
+FROM node:26-bookworm-slim AS node-base
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
