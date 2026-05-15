@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { managerStats } from '../src/managerAnalytics.js';
-import { emptyProjectStatuses } from '../src/projectStatuses.js';
-import type { AuditIssue, AuditProcess, AuditResult, AuditVersion, TrackingEntry } from '../src/types.js';
+import { managerStats } from '../src/reporting/managerAnalytics.js';
+import { emptyProjectStatuses } from '../src/project/projectStatuses.js';
+import type { AuditIssue, AuditProcess, AuditResult, AuditVersion, TrackingEntry } from '../src/core/types.js';
 
 function issue(patch: Partial<AuditIssue> = {}): AuditIssue {
   return {

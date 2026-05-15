@@ -1,1 +1,1 @@
-export * from '@ses/domain/id';
+export * from '@ses/domain/core/id';

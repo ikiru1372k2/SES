@@ -1,5 +1,5 @@
-import type { TrackingEntry } from './types';
-import { emptyProjectStatuses } from './projectStatuses';
+import type { TrackingEntry } from '../core/types';
+import { emptyProjectStatuses } from '../project/projectStatuses';
 
 export type PipelineKey = 'notContacted' | 'notified' | 'escalated' | 'resolved';
 

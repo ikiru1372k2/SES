@@ -1,1 +1,1 @@
-export * from '@ses/domain/notificationBuilder';
+export * from '@ses/domain/notifications/notificationBuilder';

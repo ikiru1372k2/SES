@@ -1,1 +1,1 @@
-export * from '@ses/domain/anomaly';
+export * from '@ses/domain/audit/anomaly';

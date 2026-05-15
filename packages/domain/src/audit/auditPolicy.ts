@@ -1,4 +1,4 @@
-import type { AuditPolicy } from './types';
+import type { AuditPolicy } from '../core/types';
 
 export function createDefaultAuditPolicy(now = new Date().toISOString()): AuditPolicy {
   return {

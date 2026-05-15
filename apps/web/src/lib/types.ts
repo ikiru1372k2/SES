@@ -1,1 +1,1 @@
-export type * from '@ses/domain/types';
+export type * from '@ses/domain/core/types';

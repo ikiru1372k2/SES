@@ -1,5 +1,5 @@
 import { auditIssueKey } from './auditEngine';
-import type { AuditIssue, AuditVersion } from './types';
+import type { AuditIssue, AuditVersion } from '../core/types';
 
 export type EffortAnomaly = {
   issue: AuditIssue;

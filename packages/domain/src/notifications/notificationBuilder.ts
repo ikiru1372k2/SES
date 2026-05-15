@@ -1,4 +1,4 @@
-import { auditIssueKey } from './auditEngine';
+import { auditIssueKey } from '../audit/auditEngine';
 import type {
   AuditIssue,
   IssueAcknowledgment,
@@ -7,7 +7,7 @@ import type {
   NotificationDraft,
   NotificationComposeTemplate,
   NotificationTheme,
-} from './types';
+} from '../core/types';
 
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 // eslint-disable-next-line no-control-regex

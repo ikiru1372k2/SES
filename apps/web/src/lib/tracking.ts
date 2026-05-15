@@ -1,1 +1,1 @@
-export * from '@ses/domain/tracking';
+export * from '@ses/domain/escalation/tracking';

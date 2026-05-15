@@ -1,4 +1,4 @@
-import type { AuditProcess } from './types';
+import type { AuditProcess } from '../core/types';
 
 export type ScheduleBucket = 'overdue' | 'dueThisWeek' | 'upcoming';
 

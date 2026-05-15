@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { effortAnomalies } from '../src/anomaly.js';
-import { buildAuditReportHtml } from '../src/reporting.js';
+import { effortAnomalies } from '../src/audit/anomaly.js';
+import { buildAuditReportHtml } from '../src/reporting/reporting.js';
 import {
   auditIssueKey,
   buildIssuesCsv,
   compareResults,
   createIssueKey,
   runAudit,
-} from '../src/auditEngine.js';
-import type { AuditIssue, AuditResult, AuditVersion, WorkbookFile } from '../src/types.js';
+} from '../src/audit/auditEngine.js';
+import type { AuditIssue, AuditResult, AuditVersion, WorkbookFile } from '../src/core/types.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
-import type { FunctionId } from './functions';
-import { FUNCTION_IDS } from './functions';
+import type { FunctionId } from '../project/functions';
+import { FUNCTION_IDS } from '../project/functions';
 
 export interface ProcessEscalationsSummary {
   totalOpenFindings: number;

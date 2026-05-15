@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
-import { parseWorkbook } from '../src/workbook.js';
-import { RULE_CATALOG_BY_FUNCTION, getRuleCatalogForFunction } from '../src/auditRules.js';
-import { FUNCTION_REGISTRY } from '../src/functions.js';
+import { parseWorkbook } from '../src/workbook/workbook.js';
+import { RULE_CATALOG_BY_FUNCTION, getRuleCatalogForFunction } from '../src/audit/auditRules.js';
+import { FUNCTION_REGISTRY } from '../src/project/functions.js';
 import {
   FR_RATE_ZERO_RULE_CODE,
   ICR_COST_ZERO_RULE_CODE,
@@ -17,7 +17,7 @@ import {
   isCostRateMonthColumn,
   runFunctionAudit,
 } from '../src/functions-audit/index.js';
-import type { WorkbookFile } from '../src/types.js';
+import type { WorkbookFile } from '../src/core/types.js';
 
 class TestFile extends Blob {
   name: string;

@@ -1,1 +1,1 @@
-export * from '@ses/domain/scheduleHelpers';
+export * from '@ses/domain/workbook/scheduleHelpers';

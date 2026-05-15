@@ -6,7 +6,7 @@ import {
   normalizeManagerKey,
   normalizeObservedManagerLabel,
   parseTsvRows,
-} from '../src/managerDirectory.js';
+} from '../src/reporting/managerDirectory.js';
 
 describe('normalizeManagerKey', () => {
   it('orders tokens deterministically', () => {

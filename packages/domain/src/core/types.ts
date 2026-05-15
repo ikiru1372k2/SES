@@ -1,8 +1,8 @@
-import type { EscalationStage } from './escalationStages';
-import type { ProjectStatusesV2 } from './projectStatuses';
+import type { EscalationStage } from '../escalation/escalationStages';
+import type { ProjectStatusesV2 } from '../project/projectStatuses';
 
-export type { EscalationStage } from './escalationStages';
-export type { ProjectStatusesV2, EngineProjectStatus, EngineSubStatus, ProjectStatusesAggregate } from './projectStatuses';
+export type { EscalationStage } from '../escalation/escalationStages';
+export type { ProjectStatusesV2, EngineProjectStatus, EngineSubStatus, ProjectStatusesAggregate } from '../project/projectStatuses';
 
 export type SheetStatus = 'valid' | 'duplicate' | 'invalid';
 export type Severity = 'High' | 'Medium' | 'Low';

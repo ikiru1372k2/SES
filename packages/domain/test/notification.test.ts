@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildNotificationDrafts, isValidEmail, notificationPlainText, openMailDraft } from '../src/notificationBuilder.js';
-import type { AuditIssue } from '../src/types.js';
+import { buildNotificationDrafts, isValidEmail, notificationPlainText, openMailDraft } from '../src/notifications/notificationBuilder.js';
+import type { AuditIssue } from '../src/core/types.js';
 
 function issue(patch: Partial<AuditIssue> = {}): AuditIssue {
   return {

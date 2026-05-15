@@ -1,5 +1,5 @@
-import type { AuditPolicy, AuditResult, WorkbookFile } from '../types';
-import { FUNCTION_IDS, type FunctionId } from '../functions';
+import type { AuditPolicy, AuditResult, WorkbookFile } from '../core/types';
+import { FUNCTION_IDS, type FunctionId } from '../project/functions';
 import { functionRateAuditEngine } from './function-rate';
 import { internalCostRateAuditEngine } from './internal-cost-rate';
 import { masterDataAuditEngine } from './master-data';

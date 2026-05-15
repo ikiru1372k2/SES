@@ -1,1 +1,1 @@
-export * from '@ses/domain/auditPolicy';
+export * from '@ses/domain/audit/auditPolicy';

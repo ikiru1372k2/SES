@@ -1,7 +1,7 @@
 import type ExcelJS from 'exceljs';
-import { auditIssueKey } from './auditEngine';
-import { createId } from './id';
-import type { AuditIssue, AuditResult, IssueCorrection, SheetInfo, WorkbookFile } from './types';
+import { auditIssueKey } from '../audit/auditEngine';
+import { createId } from '../core/id';
+import type { AuditIssue, AuditResult, IssueCorrection, SheetInfo, WorkbookFile } from '../core/types';
 
 export const MAX_WORKBOOK_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const HEADER_SCAN_LIMIT = 20;

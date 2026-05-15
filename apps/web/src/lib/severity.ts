@@ -1,1 +1,1 @@
-export * from '@ses/domain/severity';
+export * from '@ses/domain/core/severity';

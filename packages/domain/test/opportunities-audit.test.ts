@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { parseWorkbook } from '../src/workbook.js';
-import { RULE_CATALOG_BY_FUNCTION } from '../src/auditRules.js';
+import { parseWorkbook } from '../src/workbook/workbook.js';
+import { RULE_CATALOG_BY_FUNCTION } from '../src/audit/auditRules.js';
 import {
   getFunctionAuditEngine,
   runFunctionAudit,
@@ -15,8 +15,8 @@ import {
   OPP_PROJECT_START_PAST_LOW_PROB_RULE_CODE,
   OPPORTUNITIES_RULE_CATALOG,
 } from '../src/functions-audit/index.js';
-import { FUNCTION_REGISTRY } from '../src/functions.js';
-import type { AuditPolicy, WorkbookFile } from '../src/types.js';
+import { FUNCTION_REGISTRY } from '../src/project/functions.js';
+import type { AuditPolicy, WorkbookFile } from '../src/core/types.js';
 
 class TestFile extends Blob {
   name: string;

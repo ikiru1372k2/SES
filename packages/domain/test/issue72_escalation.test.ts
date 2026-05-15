@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertTransition, canTransition } from '../src/escalationStages';
-import { buildFindingsByEngineMarkdown } from '../src/findingsByEngine';
-import { substitute } from '../src/templateSubstitute';
+import { assertTransition, canTransition } from '../src/escalation/escalationStages';
+import { buildFindingsByEngineMarkdown } from '../src/audit/findingsByEngine';
+import { substitute } from '../src/notifications/templateSubstitute';
 
 test('substitute replaces known tokens', () => {
   const out = substitute('Hi {managerFirstName}, {processName}', {

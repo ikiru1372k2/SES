@@ -1,4 +1,4 @@
-import type { FunctionId } from '../functions';
+import type { FunctionId } from '../project/functions';
 
 export const PROMPT_EXAMPLES: Record<FunctionId, string[]> = {
   'master-data': [

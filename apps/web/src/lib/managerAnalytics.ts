@@ -1,1 +1,1 @@
-export * from '@ses/domain/managerAnalytics';
+export * from '@ses/domain/reporting/managerAnalytics';

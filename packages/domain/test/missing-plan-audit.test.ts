@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { parseWorkbook } from '../src/workbook.js';
-import { RULE_CATALOG_BY_FUNCTION, getRuleCatalogForFunction } from '../src/auditRules.js';
+import { parseWorkbook } from '../src/workbook/workbook.js';
+import { RULE_CATALOG_BY_FUNCTION, getRuleCatalogForFunction } from '../src/audit/auditRules.js';
 import {
   getFunctionAuditEngine,
   MP_EFFORT_ALIASES,
@@ -11,7 +11,7 @@ import {
   MISSING_PLAN_RULE_CATALOG,
   runFunctionAudit,
 } from '../src/functions-audit/index.js';
-import type { WorkbookFile } from '../src/types.js';
+import type { WorkbookFile } from '../src/core/types.js';
 
 class TestFile extends Blob {
   name: string;
@@ -175,7 +175,7 @@ test('flags row with undefined effort cell (missingEffortEnabled=true by default
 });
 
 test('does NOT flag blank effort when missingEffortEnabled=false', async () => {
-  const { normalizeAuditPolicy } = await import('../src/auditPolicy.js');
+  const { normalizeAuditPolicy } = await import('../src/audit/auditPolicy.js');
   const policy = normalizeAuditPolicy({ missingEffortEnabled: false });
   const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': '' })]);
   const result = runFunctionAudit('missing-plan', file, policy);
@@ -184,7 +184,7 @@ test('does NOT flag blank effort when missingEffortEnabled=false', async () => {
 });
 
 test('does NOT flag zero effort when zeroEffortEnabled=false', async () => {
-  const { normalizeAuditPolicy } = await import('../src/auditPolicy.js');
+  const { normalizeAuditPolicy } = await import('../src/audit/auditPolicy.js');
   const policy = normalizeAuditPolicy({ zeroEffortEnabled: false });
   const file = await buildWorkbook(BASE_HEADERS, [makeRow({ 'Effort (H)': 0 })]);
   const result = runFunctionAudit('missing-plan', file, policy);

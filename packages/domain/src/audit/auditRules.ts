@@ -1,11 +1,11 @@
-import type { IssueCategory, Severity } from './types';
-import type { FunctionId } from './functions';
-import { FUNCTION_RATE_RULE_CATALOG } from './functions-audit/function-rate/rules';
-import { INTERNAL_COST_RATE_RULE_CATALOG } from './functions-audit/internal-cost-rate/rules';
-import { MASTER_DATA_RULE_CATALOG } from './functions-audit/master-data/rules';
-import { MISSING_PLAN_RULE_CATALOG } from './functions-audit/missing-plan/rules';
-import { OPPORTUNITIES_RULE_CATALOG } from './functions-audit/opportunities/rules';
-import { OVER_PLANNING_ENGINE_RULE_CATALOG as OVER_PLANNING_RULE_CATALOG_IMPORT } from './functions-audit/over-planning/rules';
+import type { IssueCategory, Severity } from '../core/types';
+import type { FunctionId } from '../project/functions';
+import { FUNCTION_RATE_RULE_CATALOG } from '../functions-audit/function-rate/rules';
+import { INTERNAL_COST_RATE_RULE_CATALOG } from '../functions-audit/internal-cost-rate/rules';
+import { MASTER_DATA_RULE_CATALOG } from '../functions-audit/master-data/rules';
+import { MISSING_PLAN_RULE_CATALOG } from '../functions-audit/missing-plan/rules';
+import { OPPORTUNITIES_RULE_CATALOG } from '../functions-audit/opportunities/rules';
+import { OVER_PLANNING_ENGINE_RULE_CATALOG as OVER_PLANNING_RULE_CATALOG_IMPORT } from '../functions-audit/over-planning/rules';
 
 export interface RuleCatalogEntry {
   ruleCode: string;

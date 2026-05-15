@@ -1,4 +1,4 @@
-import { isValidEmail, sanitizeHeader } from './notificationBuilder';
+import { isValidEmail, sanitizeHeader } from '../notifications/notificationBuilder';
 
 export type DirectoryColumnRole = 'firstName' | 'lastName' | 'email';
 

@@ -1,6 +1,6 @@
 import { normalizeAuditPolicy } from './auditPolicy';
 import { AUDIT_RULES_BY_CODE, type RuleCatalogEntry } from './auditRules';
-import type { AuditIssue, AuditPolicy, AuditResult, ChangedIssue, ComparisonResult, DiffableIssueField, IssueCategory, IssueDiffMap, Severity, WorkbookFile } from './types';
+import type { AuditIssue, AuditPolicy, AuditResult, ChangedIssue, ComparisonResult, DiffableIssueField, IssueCategory, IssueDiffMap, Severity, WorkbookFile } from '../core/types';
 
 type RowObject = Record<string, unknown>;
 type AuditRule = RuleCatalogEntry & {

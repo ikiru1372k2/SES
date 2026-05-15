@@ -1,1 +1,1 @@
-export * from '@ses/domain/auditEngine';
+export * from '@ses/domain/audit/auditEngine';

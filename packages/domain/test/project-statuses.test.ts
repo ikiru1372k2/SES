@@ -6,8 +6,8 @@ import {
   parseProjectStatuses,
   patchEngineStatus,
   recomputeAggregate,
-} from '../src/projectStatuses.js';
-import type { FunctionId } from '../src/functions.js';
+} from '../src/project/projectStatuses.js';
+import type { FunctionId } from '../src/project/functions.js';
 
 test('parseProjectStatuses migrates legacy project map', () => {
   const raw = {

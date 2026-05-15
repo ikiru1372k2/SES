@@ -1,4 +1,4 @@
-import type { AuditIssue, AuditResult, SheetAuditResult } from '../types';
+import type { AuditIssue, AuditResult, SheetAuditResult } from '../core/types';
 
 function countDistinctFlaggedRows(issues: AuditIssue[], sheetName?: string): number {
   const keys = new Set<string>();

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { parseWorkbook } from '../src/workbook.js';
-import { RULE_CATALOG_BY_FUNCTION, getRuleCatalogForFunction } from '../src/auditRules.js';
+import { parseWorkbook } from '../src/workbook/workbook.js';
+import { RULE_CATALOG_BY_FUNCTION, getRuleCatalogForFunction } from '../src/audit/auditRules.js';
 import {
   FR_RATE_ZERO_RULE_CODE,
   FUNCTION_RATE_RULE_CATALOG,
@@ -12,7 +12,7 @@ import {
   isRateColumn,
   runFunctionAudit,
 } from '../src/functions-audit/index.js';
-import type { WorkbookFile } from '../src/types.js';
+import type { WorkbookFile } from '../src/core/types.js';
 
 class TestFile extends Blob {
   name: string;

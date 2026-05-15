@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { downloadAuditedWorkbook } from '../src/workbook.js';
-import type { AuditResult, WorkbookFile } from '../src/types.js';
+import { downloadAuditedWorkbook } from '../src/workbook/workbook.js';
+import type { AuditResult, WorkbookFile } from '../src/core/types.js';
 
 test('corrected workbook export adds correction columns without overwriting source values', async () => {
   const capturedBlob: { current: Blob | null } = { current: null };
