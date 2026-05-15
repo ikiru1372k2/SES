@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bucketedProcesses, daysUntilDue, nextDueDateAfterSave, scheduleBucket } from '../src/scheduleHelpers.js';
-import type { AuditProcess } from '../src/types.js';
+import { bucketedProcesses, daysUntilDue, nextDueDateAfterSave, scheduleBucket } from '../src/workbook/scheduleHelpers.js';
+import type { AuditProcess } from '../src/core/types.js';
 
 function process(nextAuditDue: string | null, patch: Partial<AuditProcess> = {}): AuditProcess {
   return {

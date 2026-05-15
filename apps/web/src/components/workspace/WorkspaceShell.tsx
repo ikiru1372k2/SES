@@ -1,5 +1,5 @@
 import { useRef, type KeyboardEvent, type ReactNode } from 'react';
-import type { WorkspaceTab } from '../../lib/types';
+import type { WorkspaceTab } from '../../lib/domain/types';
 import { isLegacyTileTrackingTabEnabled } from '../../lib/featureFlags';
 import { useAppStore } from '../../store/useAppStore';
 

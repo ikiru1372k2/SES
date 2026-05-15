@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runAiPilotRules } from '../../src/ai-pilot/executor.js';
 import type { AiRuleSpec } from '../../src/ai-pilot/types.js';
-import type { WorkbookFile } from '../../src/types.js';
+import type { WorkbookFile } from '../../src/core/types.js';
 
 const fileWithRows = (): WorkbookFile => ({
   id: 'f1',

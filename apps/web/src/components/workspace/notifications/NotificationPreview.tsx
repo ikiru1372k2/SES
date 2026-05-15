@@ -1,6 +1,6 @@
-import { auditIssueKey } from '../../../lib/auditEngine';
-import { severityBarClass } from '../../../lib/severity';
-import type { NotificationDraft, NotificationComposeTemplate } from '../../../lib/types';
+import { auditIssueKey } from '../../../lib/domain/auditEngine';
+import { severityBarClass } from '../../../lib/domain/severity';
+import type { NotificationDraft, NotificationComposeTemplate } from '../../../lib/domain/types';
 
 export function NotificationPreview({
   draft,

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { AuditProcess, AuditVersion, WorkbookFile } from '../src/lib/types';
+import type { AuditProcess, AuditVersion, WorkbookFile } from '../src/lib/domain/types';
 
 const { saveProcessesToLocalDb } = vi.hoisted(() => ({
   saveProcessesToLocalDb: vi.fn(),
 }));
 
-vi.mock('../src/lib/storage', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/lib/storage')>();
+vi.mock('../src/lib/storage/storage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/storage/storage')>();
   return {
     ...actual,
     loadProcessesFromLocalDb: vi.fn(() => Promise.resolve([])),

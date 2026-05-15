@@ -1,5 +1,5 @@
-import type { FunctionId } from '../functions';
-import type { AuditIssue, AuditPolicy, AuditResult, WorkbookFile } from '../types';
+import type { FunctionId } from '../project/functions';
+import type { AuditIssue, AuditPolicy, AuditResult, WorkbookFile } from '../core/types';
 
 export interface FunctionAuditOptions {
   issueScope?: string;

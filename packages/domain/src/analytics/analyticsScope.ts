@@ -1,4 +1,4 @@
-import type { FunctionId } from '../functions';
+import type { FunctionId } from '../project/functions';
 
 /**
  * Scope contract for every analytics request.

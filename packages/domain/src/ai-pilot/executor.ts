@@ -1,5 +1,5 @@
-import { createIssueKey } from '../auditEngine';
-import type { AuditIssue, AuditResult, SheetAuditResult, WorkbookFile } from '../types';
+import { createIssueKey } from '../audit/auditEngine';
+import type { AuditIssue, AuditResult, SheetAuditResult, WorkbookFile } from '../core/types';
 import { ColumnResolver } from './columnResolver';
 import { evaluateNode } from './evaluator';
 import type { AiRuleSpec } from './types';

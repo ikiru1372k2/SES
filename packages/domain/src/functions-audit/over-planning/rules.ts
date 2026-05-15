@@ -1,4 +1,4 @@
-import type { RuleCatalogEntry } from '../../auditRules';
+import type { RuleCatalogEntry } from '../../audit/auditRules';
 
 export const OP_MONTH_PD_HIGH_RULE_CODE = 'RUL-OP-MONTH-PD-HIGH';
 

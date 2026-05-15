@@ -1,7 +1,7 @@
 import { isFunctionId, type FunctionId } from '@ses/domain';
-import { effortAnomalies } from '../../lib/anomaly';
-import { managerStats } from '../../lib/managerAnalytics';
-import type { AuditProcess } from '../../lib/types';
+import { effortAnomalies } from '../../lib/domain/anomaly';
+import { managerStats } from '../../lib/domain/managerAnalytics';
+import type { AuditProcess } from '../../lib/domain/types';
 import { EmptyState } from '../shared/EmptyState';
 import { AnalyticsWorkbench } from '../analytics/AnalyticsWorkbench';
 

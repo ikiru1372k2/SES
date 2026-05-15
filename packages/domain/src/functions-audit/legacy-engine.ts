@@ -1,7 +1,7 @@
-import { runAudit } from '../auditEngine';
-import type { AuditResult, WorkbookFile, AuditPolicy } from '../types';
+import { runAudit } from '../audit/auditEngine';
+import type { AuditResult, WorkbookFile, AuditPolicy } from '../core/types';
 import type { FunctionAuditEngine, FunctionAuditOptions } from './types';
-import type { FunctionId } from '../functions';
+import type { FunctionId } from '../project/functions';
 
 // Wrapper around the original effort-oriented audit engine. The other four
 // functions (over-planning, missing-plan, function-rate, internal-cost-rate)

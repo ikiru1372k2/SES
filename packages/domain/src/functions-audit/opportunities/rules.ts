@@ -1,4 +1,4 @@
-import type { RuleCatalogEntry } from '../../auditRules';
+import type { RuleCatalogEntry } from '../../audit/auditRules';
 // NOTE: keep `import type` — a value import would create a runtime cycle with
 // auditRules.ts, which imports OPPORTUNITIES_RULE_CATALOG from us.
 

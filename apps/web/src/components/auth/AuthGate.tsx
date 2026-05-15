@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { applySessionUserForLocalWorkspace } from '../../lib/sessionWorkspace';
+import { applySessionUserForLocalWorkspace } from '../../lib/storage/sessionWorkspace';
 import { fetchProcessesFromApi } from '../../lib/api/processesApi';
 import { useAppStore } from '../../store/useAppStore';
 import { CurrentUserContext, type SessionUserInfo } from './authContext';

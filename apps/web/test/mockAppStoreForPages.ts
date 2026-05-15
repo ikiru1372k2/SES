@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { FunctionId } from '@ses/domain';
-import type { AuditProcess, FileDraftMetadata, AuditResult, WorkspaceTab } from '../src/lib/types';
+import type { AuditProcess, FileDraftMetadata, AuditResult, WorkspaceTab } from '../src/lib/domain/types';
 import { vi } from 'vitest';
 
 type MockSnap = {

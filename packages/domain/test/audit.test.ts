@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
-import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../src/auditPolicy.js';
-import { compareResults, runAudit } from '../src/auditEngine.js';
-import { MAX_WORKBOOK_FILE_SIZE_BYTES, parseWorkbook } from '../src/workbook.js';
-import type { AuditIssue, AuditResult, WorkbookFile } from '../src/types.js';
+import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../src/audit/auditPolicy.js';
+import { compareResults, runAudit } from '../src/audit/auditEngine.js';
+import { MAX_WORKBOOK_FILE_SIZE_BYTES, parseWorkbook } from '../src/workbook/workbook.js';
+import type { AuditIssue, AuditResult, WorkbookFile } from '../src/core/types.js';
 
 class TestFile extends Blob {
   name: string;

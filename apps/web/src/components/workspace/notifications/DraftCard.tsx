@@ -1,5 +1,5 @@
 import { memo, type KeyboardEvent, type ReactNode } from 'react';
-import type { NotificationDraft } from '../../../lib/types';
+import type { NotificationDraft } from '../../../lib/domain/types';
 
 export const DraftCard = memo(function DraftCard({
   draft,

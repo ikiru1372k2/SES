@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RULE_CATALOG_BY_FUNCTION } from '../../src/auditRules.js';
+import { RULE_CATALOG_BY_FUNCTION } from '../../src/audit/auditRules.js';
 import { runAiPilotRules } from '../../src/ai-pilot/executor.js';
 import { mergeAuditResults, mergeSheetSummaries } from '../../src/ai-pilot/merger.js';
-import type { AuditIssue, WorkbookFile, AuditResult } from '../../src/types.js';
+import type { AuditIssue, WorkbookFile, AuditResult } from '../../src/core/types.js';
 
 const blankFile: WorkbookFile = {
   id: 'f1',

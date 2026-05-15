@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { allStagePairs, canTransition, transition, type EscalationStage } from '../src/escalationStages.js';
+import { allStagePairs, canTransition, transition, type EscalationStage } from '../src/escalation/escalationStages.js';
 
 test('canTransition matches exhaustive matrix expectations', () => {
   for (const [from, to] of allStagePairs()) {

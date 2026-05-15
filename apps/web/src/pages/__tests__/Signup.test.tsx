@@ -25,7 +25,7 @@ vi.mock('react-hot-toast', () => ({
   },
 }));
 
-vi.mock('../../lib/sessionWorkspace', () => ({
+vi.mock('../../lib/storage/sessionWorkspace', () => ({
   applySessionUserForLocalWorkspace: vi.fn(),
 }));
 

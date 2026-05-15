@@ -1,7 +1,7 @@
 import { FileClock, RotateCcw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { FunctionId } from '@ses/domain';
-import type { FileDraftMetadata, WorkbookFile } from '../../lib/types';
+import type { FileDraftMetadata, WorkbookFile } from '../../lib/domain/types';
 import { Button } from '../shared/Button';
 
 export function DraftRestoreBanner({

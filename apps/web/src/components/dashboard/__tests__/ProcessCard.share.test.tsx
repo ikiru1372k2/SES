@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProcessCard } from '../ProcessCard';
 import { ConfirmProvider } from '../../shared/ConfirmProvider';
-import type { AuditProcess, AuditVersion, WorkbookFile } from '../../../lib/types';
+import type { AuditProcess, AuditVersion, WorkbookFile } from '../../../lib/domain/types';
 import type { AccessGate } from '../../../hooks/useEffectiveAccess';
 
 vi.mock('react-hot-toast', () => ({

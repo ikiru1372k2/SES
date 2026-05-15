@@ -1,4 +1,4 @@
-import type { RuleCatalogEntry } from '../../auditRules';
+import type { RuleCatalogEntry } from '../../audit/auditRules';
 // NOTE: keep `import type` — a value import here would create a runtime
 // cycle with auditRules.ts, which imports MASTER_DATA_RULE_CATALOG from us.
 import { MD_REQUIRED_COLUMNS } from './columns';

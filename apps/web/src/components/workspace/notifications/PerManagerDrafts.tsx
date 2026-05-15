@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import type { AuditProcess, NotificationDraft, NotificationComposeTemplate, NotificationTheme } from '../../../lib/types';
-import { trackingKey } from '../../../lib/tracking';
+import type { AuditProcess, NotificationDraft, NotificationComposeTemplate, NotificationTheme } from '../../../lib/domain/types';
+import { trackingKey } from '../../../lib/domain/tracking';
 import { TemplateEditor } from '../TemplateEditor';
 import { DraftCard } from './DraftCard';
 import { NotificationPreview } from './NotificationPreview';

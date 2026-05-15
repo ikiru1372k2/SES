@@ -1,6 +1,6 @@
 import { Lock } from 'lucide-react';
 import { useState } from 'react';
-import type { AuditProcess, WorkbookFile } from '../../lib/types';
+import type { AuditProcess, WorkbookFile } from '../../lib/domain/types';
 import { useAppStore } from '../../store/useAppStore';
 import { Badge } from '../shared/Badge';
 import { StatusBadge } from '../shared/StatusBadge';

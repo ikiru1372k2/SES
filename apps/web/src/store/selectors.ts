@@ -1,5 +1,5 @@
-import { auditIssueKey } from '../lib/auditEngine';
-import type { AuditIssue, AuditProcess, AuditResult, IssueComment, IssueCorrection } from '../lib/types';
+import { auditIssueKey } from '../lib/domain/auditEngine';
+import type { AuditIssue, AuditProcess, AuditResult, IssueComment, IssueCorrection } from '../lib/domain/types';
 
 export function selectIssueComments(process: AuditProcess, issue: AuditIssue): IssueComment[] {
   return process.comments?.[auditIssueKey(issue)] ?? [];

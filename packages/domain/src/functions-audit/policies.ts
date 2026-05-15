@@ -1,6 +1,6 @@
-import type { FunctionId } from '../functions';
-import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../auditPolicy';
-import type { AuditPolicy } from '../types';
+import type { FunctionId } from '../project/functions';
+import { createDefaultAuditPolicy, normalizeAuditPolicy } from '../audit/auditPolicy';
+import type { AuditPolicy } from '../core/types';
 import type { OpportunitiesPolicy } from './opportunities';
 
 export type { OpportunitiesPolicy } from './opportunities';

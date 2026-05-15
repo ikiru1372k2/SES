@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { AuditProcess, AuditResult, WorkbookFile } from '../../lib/types';
+import type { AuditProcess, AuditResult, WorkbookFile } from '../../lib/domain/types';
 import { fetchSheetPreviewFromApi } from '../../lib/api/filesApi';
 import { EmptyState } from '../shared/EmptyState';
 import { StatusBadge } from '../shared/StatusBadge';

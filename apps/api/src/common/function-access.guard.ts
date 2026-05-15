@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { isFunctionId, type FunctionId } from '@ses/domain';
-import { FunctionsService } from '../functions.service';
+import { FunctionsService } from '../modules/functions/functions.service';
 import {
   AccessScopeService,
   type ScopeAction,

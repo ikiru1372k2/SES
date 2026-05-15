@@ -1,5 +1,5 @@
-import type { AuditProcess, AuditResult } from './types';
-import { auditIssueKey } from './auditEngine';
+import type { AuditProcess, AuditResult } from './domain/types';
+import { auditIssueKey } from './domain/auditEngine';
 
 const escape = (value: unknown) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 

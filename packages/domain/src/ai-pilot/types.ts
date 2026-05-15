@@ -1,5 +1,5 @@
-import type { IssueCategory, Severity } from '../types';
-import type { FunctionId } from '../functions';
+import type { IssueCategory, Severity } from '../core/types';
+import type { FunctionId } from '../project/functions';
 
 export type AiRuleOperator =
   | '>'

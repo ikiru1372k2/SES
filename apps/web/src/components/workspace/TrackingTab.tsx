@@ -4,8 +4,8 @@ import { useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import toast from 'react-hot-toast';
 import { createSignedLink } from '../../lib/api/signedLinksApi';
-import { buildNotificationDrafts, isValidEmail, managerKey } from '../../lib/notificationBuilder';
-import { makeDefaultTrackingEntry, PIPELINE_COLUMNS, type PipelineKey, pipelineKey, trackingKey } from '../../lib/tracking';
+import { buildNotificationDrafts, isValidEmail, managerKey } from '../../lib/domain/notificationBuilder';
+import { makeDefaultTrackingEntry, PIPELINE_COLUMNS, type PipelineKey, pipelineKey, trackingKey } from '../../lib/domain/tracking';
 import type { LegacyProjectTrackingRow } from '@ses/domain';
 import type {
   AuditIssue,
@@ -14,7 +14,7 @@ import type {
   ProjectTrackingStage,
   ProjectTrackingStatus,
   TrackingEntry,
-} from '../../lib/types';
+} from '../../lib/domain/types';
 import { useAppStore } from '../../store/useAppStore';
 import { EmptyState } from '../shared/EmptyState';
 

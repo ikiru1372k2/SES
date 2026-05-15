@@ -1,5 +1,5 @@
-import { createIssueKey } from '../../auditEngine';
-import type { AuditIssue, AuditPolicy, AuditResult, WorkbookFile } from '../../types';
+import { createIssueKey } from '../../audit/auditEngine';
+import type { AuditIssue, AuditPolicy, AuditResult, WorkbookFile } from '../../core/types';
 import type { FunctionAuditEngine, FunctionAuditOptions, RowObject } from '../types';
 import {
   detectPdColumns,

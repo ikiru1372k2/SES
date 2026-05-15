@@ -1,4 +1,4 @@
-import type { FunctionId } from '../functions';
+import type { FunctionId } from '../project/functions';
 
 /** Chips shown in the chat empty state — keyed by scope. */
 export const SUGGESTED_CHIPS: Record<FunctionId | 'process', string[]> = {

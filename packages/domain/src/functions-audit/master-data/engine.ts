@@ -1,5 +1,5 @@
-import { createIssueKey } from '../../auditEngine';
-import type { AuditIssue, AuditResult, WorkbookFile } from '../../types';
+import { createIssueKey } from '../../audit/auditEngine';
+import type { AuditIssue, AuditResult, WorkbookFile } from '../../core/types';
 import { isBadValue, isNotAssignedToken, isOthersToken } from '../bad-values';
 import type { FunctionAuditEngine, FunctionAuditOptions, RowObject } from '../types';
 import {
