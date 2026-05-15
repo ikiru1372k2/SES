@@ -40,6 +40,11 @@ COPY --from=runtime-deps /app/package*.json ./
 COPY --from=runtime-deps /app/node_modules ./node_modules
 COPY --from=workspace-build /app/apps/api/package.json ./apps/api/package.json
 COPY --from=workspace-build /app/apps/api/dist ./apps/api/dist
+# gRPC client loads ai_pilot.proto via __dirname/../../proto/... at runtime;
+# __dirname is /app/apps/api/dist/src/ai-pilot, so the resolved path is
+# /app/apps/api/dist/proto/... — copy the proto tree there explicitly since
+# the TS build doesn't bundle non-.ts assets.
+COPY --from=workspace-build /app/apps/api/proto ./apps/api/dist/proto
 COPY --from=workspace-build /app/packages/domain/package.json ./packages/domain/package.json
 COPY --from=workspace-build /app/packages/domain/dist ./packages/domain/dist
 
