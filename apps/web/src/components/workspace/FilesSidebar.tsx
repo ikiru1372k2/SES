@@ -1,4 +1,4 @@
-import { Download, Eye, Trash2, Upload } from 'lucide-react';
+import { AlertCircle, Download, Eye, RotateCcw, Trash2, Upload } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import toast from 'react-hot-toast';
 import { DEFAULT_FUNCTION_ID, type FunctionId } from '@ses/domain';
@@ -9,6 +9,25 @@ import { useAppStore } from '../../store/useAppStore';
 import { useConfirm } from '../shared/ConfirmProvider';
 import { ProgressBar } from '../shared/ProgressBar';
 import { SheetList } from './SheetList';
+
+/** Map raw server/storage errors to a message an end user can act on.
+ * Technical detail is logged to the console, never shown verbatim. */
+function humanizeUploadError(raw: string | undefined): string {
+  const r = (raw ?? '').toLowerCase();
+  if (r.includes('object-storage') || r.includes('object_storage') || r.includes('s3')) {
+    return 'Upload failed — file storage is unavailable. Please try again, or contact an administrator if it persists.';
+  }
+  if (r.includes('413') || r.includes('too large') || r.includes('payload')) {
+    return 'Upload failed — the file is too large. Workbooks must be 10 MB or smaller.';
+  }
+  if (r.includes('network') || r.includes('fetch') || r.includes('timeout')) {
+    return 'Upload failed — network problem. Check your connection and try again.';
+  }
+  if (r.includes('401') || r.includes('403') || r.includes('unauthor')) {
+    return 'Upload failed — your session may have expired. Sign in again and retry.';
+  }
+  return 'Upload failed. Please try again.';
+}
 
 interface Props {
   process: AuditProcess;
@@ -48,7 +67,10 @@ export function FilesSidebar({ process, functionId, canEdit = true, readOnlyReas
       }
       void uploadFile(process.id, file, scopedFid)
         .then(() => toast.success(`${file.name} uploaded`))
-        .catch(() => toast.error(`${file.name} failed`));
+        .catch((error: unknown) => {
+          const msg = error instanceof Error ? error.message : undefined;
+          toast.error(`${file.name}: ${humanizeUploadError(msg)}`);
+        });
     }
   }
 
@@ -122,22 +144,60 @@ export function FilesSidebar({ process, functionId, canEdit = true, readOnlyReas
         >
           {canEdit ? 'Drag documents here or pick multiple files' : 'Read-only — upload disabled'}
           <input
+            id="ses-file-reupload-input"
             type="file"
             multiple
             accept=".xlsx,.xlsm"
             disabled={!canEdit}
             onChange={(event) => { void upload(event.target.files); }}
-            className="hidden"
+            className="sr-only"
           />
         </label>
         <div className="mt-4 space-y-2">
-          {Object.entries(uploads).map(([key, item]) => (
-            <div key={key} className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-              <div className="text-sm font-medium">{item.fileName}</div>
-              <div className="mt-1 text-xs text-gray-500">{item.status === 'failed' ? item.error : item.status}</div>
-              <div className="mt-2"><ProgressBar value={item.progress} /></div>
-            </div>
-          ))}
+          {Object.entries(uploads).map(([key, item]) => {
+            const failed = item.status === 'failed';
+            return (
+              <div
+                key={key}
+                className={`rounded-lg border p-3 ${
+                  failed
+                    ? 'border-red-300 bg-red-50 dark:border-red-800/60 dark:bg-red-950/30'
+                    : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
+                }`}
+              >
+                <div className="text-sm font-medium">{item.fileName}</div>
+                {failed ? (
+                  <>
+                    <div
+                      className="mt-1 flex items-start gap-1.5 text-xs text-red-700 dark:text-red-300"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <AlertCircle size={14} className="mt-px shrink-0" aria-hidden="true" />
+                      <span>{humanizeUploadError(item.error)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        document.getElementById('ses-file-reupload-input')?.click()
+                      }
+                      disabled={!canEdit}
+                      className="mt-2 inline-flex min-h-[32px] items-center gap-1 rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800/60 dark:bg-gray-900 dark:text-red-300"
+                    >
+                      <RotateCcw size={12} aria-hidden="true" /> Upload again
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-1 text-xs text-gray-500" role="status" aria-live="polite">
+                      {item.status === 'uploading' ? 'Uploading…' : 'Uploaded'}
+                    </div>
+                    <div className="mt-2"><ProgressBar value={item.progress} /></div>
+                  </>
+                )}
+              </div>
+            );
+          })}
           {process.files.map((file) => (
             <DocumentCard
               key={file.id}

@@ -1,6 +1,12 @@
 # Local dev: Postgres + Redis + MinIO (S3-compatible object store).
 # AI Pilot uploads land in MinIO; only metadata lives in Postgres.
 # Production swaps MinIO for AWS S3 by changing OBJECT_STORAGE_* env vars only — no code change.
+#
+# Distinct Compose project name so `docker compose up`/`down` here can never
+# recreate or tear down the production stack (project name: ses, from
+# docker-compose.prod.yml). Without this both files share the directory-derived
+# project "ses" and the dev `up` silently clobbers the prod containers.
+name: ses-dev
 services:
   postgres:
     image: postgres:16-alpine

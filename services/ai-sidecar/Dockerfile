@@ -14,7 +14,9 @@ RUN pip install --no-cache-dir \
     pandas==2.2.3 \
     duckdb==1.1.1 \
     openpyxl==3.1.5 \
-    ollama==0.3.3
+    ollama==0.3.3 \
+    "docling>=2.0,<3.0" \
+    python-multipart==0.0.12
 
 COPY . .
 

@@ -176,8 +176,21 @@ cmd_local() {
   fi
   log "Building and starting the prod stack (docker-compose.prod.yml)…"
   compose --env-file "$LOCAL_ENV_FILE" "${profile_args[@]}" -f "$PROD_COMPOSE" up --build -d
-  log "Waiting for web healthcheck…"
+
+  log "Waiting for Ollama to become healthy (needed before model pull)…"
   local attempts=0
+  until docker inspect -f '{{.State.Health.Status}}' ses-ollama-prod 2>/dev/null | grep -q '^healthy$'; do
+    attempts=$((attempts + 1))
+    if [[ $attempts -gt 40 ]]; then
+      warn "Ollama not healthy after ~2 minutes. Check: ./deploy.sh logs ollama"
+      break
+    fi
+    sleep 3
+  done
+  ensure_ollama_models
+
+  log "Waiting for web healthcheck…"
+  attempts=0
   until curl -fsS "http://localhost:3210/healthz" >/dev/null 2>&1; do
     attempts=$((attempts + 1))
     if [[ $attempts -gt 40 ]]; then
@@ -189,12 +202,49 @@ cmd_local() {
   ok "SES is up at http://localhost:3210"
 }
 
+# Make sure the Ollama models the analytics agent depends on are present.
+# Idempotent: skips any model already in the volume. Runs the pull inside
+# the running container so it goes straight into the persistent volume.
+ensure_ollama_models() {
+  # Analytics agent + router (small, fast).
+  local agent_model="${AI_AGENT_MODEL:-llama3.2:3b}"
+  local router_model="${AI_ROUTER_MODEL:-${agent_model}}"
+  local embed_model="${AI_EMBED_MODEL:-nomic-embed-text}"
+  # AI Pilot rule generator (larger — better at JSON spec generation).
+  # The enhancer reuses agent_model by default; no extra pull needed.
+  local rule_model="${AI_MODEL:-qwen2.5:7b}"
+  local enhance_model="${AI_ENHANCE_MODEL:-${agent_model}}"
+
+  for m in "${agent_model}" "${router_model}" "${embed_model}" "${rule_model}" "${enhance_model}"; do
+    [[ -z "$m" ]] && continue
+    if docker exec ses-ollama-prod ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$m"; then
+      ok "ollama model present: $m"
+    else
+      log "pulling ollama model: $m  (may take several minutes on first run)"
+      if ! docker exec ses-ollama-prod ollama pull "$m"; then
+        warn "ollama pull failed for $m — features that depend on it will be unavailable until this resolves."
+      fi
+    fi
+  done
+}
+
 cmd_demo() {
   require_cmd docker "Install Docker first."
   write_env_file
   log "Building and starting the demo overlay (seeded users + dev login)…"
   compose --env-file "$LOCAL_ENV_FILE" \
     -f "$PROD_COMPOSE" -f "$DEMO_COMPOSE" up --build -d
+  log "Waiting for Ollama to become healthy…"
+  local attempts=0
+  until docker inspect -f '{{.State.Health.Status}}' ses-ollama-prod 2>/dev/null | grep -q '^healthy$'; do
+    attempts=$((attempts + 1))
+    if [[ $attempts -gt 40 ]]; then
+      warn "Ollama not healthy after ~2 minutes."
+      break
+    fi
+    sleep 3
+  done
+  ensure_ollama_models
   ok "Demo stack up at http://localhost:3210 (dev-login enabled)."
 }
 
@@ -234,6 +284,16 @@ cmd_status() {
   else
     warn "api: not responding"
   fi
+  # Sidecar + Ollama are internal — query via docker inspect.
+  for c in ses-ai-sidecar-prod ses-ollama-prod; do
+    local state
+    state=$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || echo "absent")
+    if [[ "$state" == "healthy" ]]; then
+      ok "$c: healthy"
+    else
+      warn "$c: $state"
+    fi
+  done
 }
 
 # --- ec2 --------------------------------------------------------------------

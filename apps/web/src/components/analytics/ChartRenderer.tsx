@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Fragment } from 'react';
 import {
   Area,
@@ -30,6 +30,83 @@ function colourFor(idx: number): string {
 function formatVal(v: unknown): string {
   if (typeof v === 'number') return v.toLocaleString();
   return String(v ?? '');
+}
+
+/** One-sentence text equivalent of a graphical chart for screen readers. */
+function chartSummary(spec: ChartSpec): string {
+  switch (spec.type) {
+    case 'bar':
+    case 'line':
+    case 'area': {
+      const ys = Array.isArray(spec.y) ? spec.y.join(', ') : spec.y;
+      return `${spec.type} chart of ${ys} by ${spec.x}, ${spec.data.length} data point${
+        spec.data.length === 1 ? '' : 's'
+      }.`;
+    }
+    case 'pie':
+      return `Pie chart of ${spec.value} by ${spec.name}, ${spec.data.length} segment${
+        spec.data.length === 1 ? '' : 's'
+      }.`;
+    case 'scatter':
+      return `Scatter plot of ${String(spec.y)} versus ${String(spec.x)}, ${spec.data.length} point${
+        spec.data.length === 1 ? '' : 's'
+      }.`;
+    case 'heatmap':
+      return `Heatmap of ${spec.value} across ${spec.x} and ${spec.y}.`;
+    default:
+      return 'Chart.';
+  }
+}
+
+/** Wraps a visual chart with an accessible name + a visually-hidden data
+ * table so the same numbers are available to assistive tech (charts are
+ * otherwise opaque to screen readers and colour-only to low-vision users). */
+function ChartA11y({
+  spec,
+  children,
+}: {
+  spec: Extract<ChartSpec, { type: 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'heatmap' }>;
+  children: ReactNode;
+}) {
+  // Build a generic [{col: value}] table from whatever the spec carries.
+  const cols: string[] =
+    spec.type === 'pie'
+      ? [spec.name, spec.value]
+      : Array.from(
+          new Set([
+            String(spec.x),
+            ...(Array.isArray((spec as { y?: unknown }).y)
+              ? ((spec as { y: string[] }).y)
+              : [String((spec as { y?: unknown }).y ?? 'value')]),
+          ]),
+        );
+  const rows = (spec.data as Row[]) ?? [];
+  return (
+    <div role="img" aria-label={chartSummary(spec)}>
+      {children}
+      <table className="sr-only">
+        <caption>{chartSummary(spec)}</caption>
+        <thead>
+          <tr>
+            {cols.map((c) => (
+              <th key={c} scope="col">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {cols.map((c) => (
+                <td key={c}>{formatVal(r[c])}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 export function ChartRenderer({
@@ -94,66 +171,72 @@ export function ChartRenderer({
       : undefined;
     const clickProp = handleClick ? { onClick: handleClick as unknown as never } : {};
     return (
-      <div className="h-72 w-full">
-        <ResponsiveContainer>
-          <ChartCmp data={spec.data} {...clickProp}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={spec.x} />
-            <YAxis />
-            <Tooltip />
-            {ys.map((y, i) =>
-              spec.type === 'bar' ? (
-                spec.stacked
-                  ? <Bar key={y} dataKey={y} fill={colourFor(i)} stackId="a" />
-                  : <Bar key={y} dataKey={y} fill={colourFor(i)} />
-              ) : spec.type === 'line' ? (
-                <Line key={y} type="monotone" dataKey={y} stroke={colourFor(i)} strokeWidth={2} dot={false} />
-              ) : (
-                <Area key={y} type="monotone" dataKey={y} stroke={colourFor(i)} fill={colourFor(i)} fillOpacity={0.25} />
-              ),
-            )}
-          </ChartCmp>
-        </ResponsiveContainer>
-      </div>
+      <ChartA11y spec={spec}>
+        <div className="h-72 w-full" aria-hidden="true">
+          <ResponsiveContainer>
+            <ChartCmp data={spec.data} {...clickProp}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey={spec.x} />
+              <YAxis />
+              <Tooltip />
+              {ys.map((y, i) =>
+                spec.type === 'bar' ? (
+                  spec.stacked
+                    ? <Bar key={y} dataKey={y} fill={colourFor(i)} stackId="a" />
+                    : <Bar key={y} dataKey={y} fill={colourFor(i)} />
+                ) : spec.type === 'line' ? (
+                  <Line key={y} type="monotone" dataKey={y} stroke={colourFor(i)} strokeWidth={2} dot={false} />
+                ) : (
+                  <Area key={y} type="monotone" dataKey={y} stroke={colourFor(i)} fill={colourFor(i)} fillOpacity={0.25} />
+                ),
+              )}
+            </ChartCmp>
+          </ResponsiveContainer>
+        </div>
+      </ChartA11y>
     );
   }
 
   if (spec.type === 'pie') {
     return (
-      <div className="h-72 w-full">
-        <ResponsiveContainer>
-          <PieChart>
-            <Tooltip />
-            <Pie
-              data={spec.data}
-              dataKey={spec.value}
-              nameKey={spec.name}
-              outerRadius={90}
-              label
-            >
-              {spec.data.map((_d, i) => (
-                <Cell key={i} fill={colourFor(i)} />
-              ))}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
+      <ChartA11y spec={spec}>
+        <div className="h-72 w-full" aria-hidden="true">
+          <ResponsiveContainer>
+            <PieChart>
+              <Tooltip />
+              <Pie
+                data={spec.data}
+                dataKey={spec.value}
+                nameKey={spec.name}
+                outerRadius={90}
+                label
+              >
+                {spec.data.map((_d, i) => (
+                  <Cell key={i} fill={colourFor(i)} />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </ChartA11y>
     );
   }
 
   if (spec.type === 'scatter') {
     return (
-      <div className="h-72 w-full">
-        <ResponsiveContainer>
-          <ScatterChart>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey={spec.x} type="number" />
-            <YAxis dataKey={spec.y} type="number" />
-            <Tooltip />
-            <Scatter data={spec.data} fill={PRIMARY} />
-          </ScatterChart>
-        </ResponsiveContainer>
-      </div>
+      <ChartA11y spec={spec}>
+        <div className="h-72 w-full" aria-hidden="true">
+          <ResponsiveContainer>
+            <ScatterChart>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey={spec.x} type="number" />
+              <YAxis dataKey={spec.y} type="number" />
+              <Tooltip />
+              <Scatter data={spec.data} fill={PRIMARY} />
+            </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+      </ChartA11y>
     );
   }
 

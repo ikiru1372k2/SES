@@ -4,6 +4,23 @@ import App from './App';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import './index.css';
 
+// The pre-React splash lives inside #root and is replaced when React renders.
+// To avoid a flash / layout shift on the handoff we keep a sibling overlay
+// node out of #root, fade it after first paint, then remove it.
+function dismissSplash() {
+  const splash = document.getElementById('ses-splash');
+  if (!splash) return;
+  // Two rAFs ⇒ the React tree has painted at least one frame before we fade.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      splash.style.transition = 'opacity 200ms ease';
+      splash.style.opacity = '0';
+      splash.style.pointerEvents = 'none';
+      window.setTimeout(() => splash.remove(), 220);
+    }),
+  );
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
@@ -11,3 +28,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </React.StrictMode>,
 );
+
+dismissSplash();

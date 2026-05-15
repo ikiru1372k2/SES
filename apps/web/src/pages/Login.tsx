@@ -87,7 +87,7 @@ export function Login() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-400"
               autoComplete="email"
               required
             />
@@ -102,7 +102,7 @@ export function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-400"
               autoComplete="current-password"
               required
             />
@@ -119,32 +119,38 @@ export function Login() {
           </Link>
         </p>
 
-        <details className="mt-6 border-t border-gray-200 pt-5 dark:border-gray-700">
-          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Dev fallback (seeded users)
-          </summary>
-          <p className="mt-2 text-[11px] text-gray-400">
-            For local development only. Requires{' '}
-            <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">SES_ALLOW_DEV_LOGIN=true</code>{' '}
-            on the server.
-          </p>
-          <div className="mt-3 space-y-2">
-            {SEEDED_USERS.map((user) => (
-              <button
-                key={user.email}
-                type="button"
-                onClick={() => void devLoginAs(user.email)}
-                disabled={busy}
-                className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm hover:border-brand hover:bg-brand/5 disabled:opacity-50 dark:border-gray-700 dark:hover:border-brand dark:hover:bg-brand/10"
-              >
-                <div className="font-medium text-gray-900 dark:text-gray-100">{user.label}</div>
-                <div className="text-xs text-gray-500">
-                  {user.email} · {user.role}
-                </div>
-              </button>
-            ))}
-          </div>
-        </details>
+        {/* Dev-login fallback: only rendered in non-production builds. The
+            server-side SES_ALLOW_DEV_LOGIN flag is omitted in deploy.sh
+            local/EC2, so even with this block visible the endpoint would
+            refuse — hiding it removes the dead UI for end users. */}
+        {import.meta.env.PROD ? null : (
+          <details className="mt-6 border-t border-gray-200 pt-5 dark:border-gray-700">
+            <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Dev fallback (seeded users)
+            </summary>
+            <p className="mt-2 text-[11px] text-gray-400">
+              For local development only. Requires{' '}
+              <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">SES_ALLOW_DEV_LOGIN=true</code>{' '}
+              on the server.
+            </p>
+            <div className="mt-3 space-y-2">
+              {SEEDED_USERS.map((user) => (
+                <button
+                  key={user.email}
+                  type="button"
+                  onClick={() => void devLoginAs(user.email)}
+                  disabled={busy}
+                  className="block w-full rounded-lg border border-gray-200 px-3 py-2 text-left text-sm hover:border-brand hover:bg-brand/5 disabled:opacity-50 dark:border-gray-700 dark:hover:border-brand dark:hover:bg-brand/10"
+                >
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{user.label}</div>
+                  <div className="text-xs text-gray-500">
+                    {user.email} · {user.role}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     </div>
   );
