@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EscalationStage, Prisma } from '../repositories/types';
+import { EscalationStage, Prisma } from '../../../repositories/types';
 import type { SessionUser } from '@ses/domain';
 import {
   assertTransition,
@@ -20,14 +20,14 @@ import {
   type EscalationStage as DomainEscalationStage,
   type FunctionId,
 } from '@ses/domain';
-import { PrismaService } from '../common/prisma.service';
-import { IdentifierService } from '../common/identifier.service';
-import { ProcessAccessService } from '../common/process-access.service';
-import { ActivityLogService } from '../common/activity-log.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
-import { DEFAULT_TENANT_ID } from '../common/default-tenant';
-import { EscalationsService } from '../escalations.service';
-import { OutboundDeliveryService, type EscalationSendChannel } from '../outbound/outbound-delivery.service';
+import { PrismaService } from '../../../common/prisma.service';
+import { IdentifierService } from '../../../common/identifier.service';
+import { ProcessAccessService } from '../../../common/process-access.service';
+import { ActivityLogService } from '../../../common/activity-log.service';
+import { RealtimeGateway } from '../../../realtime/realtime.gateway';
+import { DEFAULT_TENANT_ID } from '../../../common/default-tenant';
+import { EscalationsService } from '../../../escalations.service';
+import { OutboundDeliveryService, type EscalationSendChannel } from '../../../outbound/outbound-delivery.service';
 import {
   DEFAULT_BODY_TEMPLATE,
   DEFAULT_SUBJECT_TEMPLATE,

@@ -1,4 +1,4 @@
-import { EscalationStage } from '../repositories/types';
+import { EscalationStage } from '../../../repositories/types';
 
 export function isIndividualComposeSources(sources: unknown): boolean {
   if (!Array.isArray(sources)) return false;

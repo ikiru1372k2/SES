@@ -1,12 +1,12 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from './auth.guard';
-import { AccessScopeService } from './common/access-scope.service';
-import { CurrentUser } from './common/current-user';
-import { PrismaService } from './common/prisma.service';
-import { ProcessAccessService } from './common/process-access.service';
+import { AuthGuard } from '../../../auth.guard';
+import { AccessScopeService } from '../../../common/access-scope.service';
+import { CurrentUser } from '../../../common/current-user';
+import { PrismaService } from '../../../common/prisma.service';
+import { ProcessAccessService } from '../../../common/process-access.service';
 import { TrackingBulkService } from './tracking-bulk.service';
-import type { ComposeDraftPayload } from './tracking-compose/tracking-compose.service';
+import type { ComposeDraftPayload } from '../compose/tracking-compose.service';
 
 @Controller('tracking/bulk')
 @UseGuards(AuthGuard)

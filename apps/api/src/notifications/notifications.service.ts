@@ -7,7 +7,7 @@ import { IdentifierService } from '../common/identifier.service';
 import { ProcessAccessService } from '../common/process-access.service';
 import { PrismaService } from '../common/prisma.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
-import { TrackingService } from '../tracking.service';
+import { TrackingService } from '../modules/tracking/tracking.service';
 import type { RecordSendDto } from './dto/record-send.dto';
 
 /** Maps legacy send-count heuristics to `EscalationStage`. */

@@ -1,11 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
 import { createId } from '@ses/domain';
-import { IdentifierService } from './common/identifier.service';
-import { ProcessAccessService } from './common/process-access.service';
-import { PrismaService } from './common/prisma.service';
-import { TrackingComposeService, type ComposeDraftPayload } from './tracking-compose/tracking-compose.service';
-import { TrackingService } from './tracking.service';
+import { IdentifierService } from '../../../common/identifier.service';
+import { ProcessAccessService } from '../../../common/process-access.service';
+import { PrismaService } from '../../../common/prisma.service';
+import { TrackingComposeService, type ComposeDraftPayload } from '../compose/tracking-compose.service';
+import { TrackingService } from '../tracking.service';
 
 type BulkComposeInput = {
   trackingIds: string[];

@@ -8,11 +8,11 @@ import {
 } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
 import { createId } from '@ses/domain';
-import { PrismaService } from '../common/prisma.service';
-import { IdentifierService } from '../common/identifier.service';
-import { ActivityLogService } from '../common/activity-log.service';
-import { ProcessAccessService } from '../common/process-access.service';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { PrismaService } from '../../../common/prisma.service';
+import { IdentifierService } from '../../../common/identifier.service';
+import { ActivityLogService } from '../../../common/activity-log.service';
+import { ProcessAccessService } from '../../../common/process-access.service';
+import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB
 export const MAX_ATTACHMENTS_PER_ENTRY = 20;

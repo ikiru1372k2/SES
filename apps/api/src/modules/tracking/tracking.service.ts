@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { EscalationStage } from './repositories/types';
+import { EscalationStage } from '../../repositories/types';
 import type { SessionUser } from '@ses/domain';
 import {
   createId,
@@ -7,11 +7,11 @@ import {
   parseProjectStatuses,
   transition as applyTransition,
 } from '@ses/domain';
-import { PrismaService } from './common/prisma.service';
-import { ActivityLogService } from './common/activity-log.service';
-import { IdentifierService } from './common/identifier.service';
-import { ProcessAccessService } from './common/process-access.service';
-import { RealtimeGateway } from './realtime/realtime.gateway';
+import { PrismaService } from '../../common/prisma.service';
+import { ActivityLogService } from '../../common/activity-log.service';
+import { IdentifierService } from '../../common/identifier.service';
+import { ProcessAccessService } from '../../common/process-access.service';
+import { RealtimeGateway } from '../../realtime/realtime.gateway';
 
 function serializeTrackingEntry(entry: {
   id: string;

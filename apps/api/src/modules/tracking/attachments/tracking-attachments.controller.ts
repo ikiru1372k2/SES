@@ -16,11 +16,11 @@ import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from '../auth.guard';
-import { AccessScopeService } from '../common/access-scope.service';
-import { CurrentUser } from '../common/current-user';
-import { attachmentContentDisposition } from '../common/http';
-import { PrismaService } from '../common/prisma.service';
+import { AuthGuard } from '../../../auth.guard';
+import { AccessScopeService } from '../../../common/access-scope.service';
+import { CurrentUser } from '../../../common/current-user';
+import { attachmentContentDisposition } from '../../../common/http';
+import { PrismaService } from '../../../common/prisma.service';
 import {
   MAX_ATTACHMENT_BYTES,
   TrackingAttachmentsService,

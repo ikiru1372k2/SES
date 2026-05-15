@@ -1,10 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import type { SessionUser } from '@ses/domain';
-import { AuthGuard } from './auth.guard';
-import { AccessScopeService } from './common/access-scope.service';
-import { CurrentUser } from './common/current-user';
-import { PrismaService } from './common/prisma.service';
-import { ProcessAccessService } from './common/process-access.service';
+import { AuthGuard } from '../../auth.guard';
+import { AccessScopeService } from '../../common/access-scope.service';
+import { CurrentUser } from '../../common/current-user';
+import { PrismaService } from '../../common/prisma.service';
+import { ProcessAccessService } from '../../common/process-access.service';
 import { TrackingService } from './tracking.service';
 
 @Controller()
