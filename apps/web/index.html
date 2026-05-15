@@ -61,14 +61,15 @@
     </style>
   </head>
   <body>
-    <div id="root">
-      <div id="ses-splash" role="status" aria-live="polite">
-        <img class="logo" src="/msg-logo.png" alt="msg" />
-        <div class="title">Smart Escalation System</div>
-        <div class="subtitle">Getting things ready…</div>
-        <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
-      </div>
+    <!-- Splash sits OUTSIDE #root so React's first render doesn't clobber it;
+         main.tsx fades + removes it after first paint (no flash / layout shift). -->
+    <div id="ses-splash" role="status" aria-live="polite">
+      <img class="logo" src="/msg-logo.png" alt="msg" />
+      <div class="title">Smart Escalation System</div>
+      <div class="subtitle">Getting things ready…</div>
+      <div class="dots" aria-hidden="true"><span></span><span></span><span></span></div>
     </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,7 +1,8 @@
 import { LogOut, Bug, Users, FileText } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentUser, type SessionUserInfo } from '../auth/authContext';
+import { useRovingMenu } from '../shared/useRovingMenu';
 import { Z } from './pageHeader.types';
 
 async function signOutAndRedirect(navigate: ReturnType<typeof useNavigate>) {
@@ -36,42 +37,45 @@ export function AvatarMenu({
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const initials = getInitials(user);
   const isAdmin = user?.role === 'admin';
   const isDev = import.meta.env.DEV;
 
+  const close = useCallback(() => setOpen(false), []);
+
+  // Close on outside click. Escape + arrow-key roving handled by useRovingMenu.
   useEffect(() => {
     if (!open) return;
     function onDoc(event: MouseEvent) {
       if (!wrapRef.current) return;
       if (!wrapRef.current.contains(event.target as Node)) setOpen(false);
     }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false);
-    }
     document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
+
+  useRovingMenu(open, menuRef, triggerRef, close);
 
   return (
     <div ref={wrapRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={user ? `Account menu for ${user.displayName || user.email}` : 'Account menu'}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white ring-1 ring-brand-hover/40 hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-1"
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white ring-1 ring-brand-hover/40 hover:bg-brand-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900"
       >
         {initials}
       </button>
       {open ? (
         <div
+          ref={menuRef}
           role="menu"
+          aria-label="Account menu"
           style={{ zIndex: Z.headerPopover }}
           className="absolute right-0 top-full mt-2 w-64 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900"
         >

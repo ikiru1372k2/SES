@@ -1,6 +1,7 @@
 import { ChevronRight } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useRovingMenu } from '../shared/useRovingMenu';
 import type { Crumb } from './pageHeader.types';
 import { Z } from './pageHeader.types';
 
@@ -13,6 +14,9 @@ export function Breadcrumb({
 }) {
   const [expandOpen, setExpandOpen] = useState(false);
   const expandRef = useRef<HTMLDivElement | null>(null);
+  const expandMenuRef = useRef<HTMLDivElement | null>(null);
+  const expandTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeExpand = useCallback(() => setExpandOpen(false), []);
 
   useEffect(() => {
     if (!expandOpen) return;
@@ -20,16 +24,11 @@ export function Breadcrumb({
       if (!expandRef.current) return;
       if (!expandRef.current.contains(event.target as Node)) setExpandOpen(false);
     }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') setExpandOpen(false);
-    }
     document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('mousedown', onDoc);
   }, [expandOpen]);
+
+  useRovingMenu(expandOpen, expandMenuRef, expandTriggerRef, closeExpand);
 
   if (!crumbs.length) return null;
 
@@ -51,18 +50,21 @@ export function Breadcrumb({
           <Separator />
           <div ref={expandRef} className="relative">
             <button
+              ref={expandTriggerRef}
               type="button"
               aria-label={`Show ${middle.length} hidden breadcrumb segment${middle.length === 1 ? '' : 's'}`}
               aria-haspopup="menu"
               aria-expanded={expandOpen}
               onClick={() => setExpandOpen((v) => !v)}
-              className="rounded px-1.5 py-0.5 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              className="rounded px-1.5 py-0.5 text-gray-500 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand dark:text-gray-400 dark:hover:bg-gray-800"
             >
               …
             </button>
             {expandOpen ? (
               <div
+                ref={expandMenuRef}
                 role="menu"
+                aria-label="Hidden breadcrumb segments"
                 style={{ zIndex: Z.headerPopover }}
                 className="absolute left-0 top-full mt-1 min-w-[200px] rounded-lg border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
               >
@@ -89,6 +91,9 @@ export function BreadcrumbMobile({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const close = useCallback(() => setOpen(false), []);
 
   useEffect(() => {
     if (!open) return;
@@ -96,34 +101,32 @@ export function BreadcrumbMobile({
       if (!wrapRef.current) return;
       if (!wrapRef.current.contains(event.target as Node)) setOpen(false);
     }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape') setOpen(false);
-    }
     document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
+
+  useRovingMenu(open, menuRef, triggerRef, close);
 
   if (!crumbs.length) return null;
   const last = crumbs[crumbs.length - 1]!;
   return (
     <div ref={wrapRef} className="relative min-w-0 md:hidden">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex max-w-[18ch] items-center gap-1 truncate rounded px-1.5 py-0.5 text-sm font-medium text-gray-900 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800"
+        className="inline-flex max-w-[18ch] items-center gap-1 truncate rounded px-1.5 py-0.5 text-sm font-medium text-gray-900 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand dark:text-gray-100 dark:hover:bg-gray-800"
         title={last.label}
       >
         <span className="truncate">{last.label}</span>
       </button>
       {open ? (
         <div
+          ref={menuRef}
           role="menu"
+          aria-label="Breadcrumb navigation"
           style={{ zIndex: Z.headerPopover }}
           className="absolute left-0 top-full mt-1 w-max min-w-[200px] max-w-[320px] rounded-lg border border-gray-200 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
         >
