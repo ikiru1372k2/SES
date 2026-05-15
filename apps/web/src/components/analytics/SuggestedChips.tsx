@@ -16,7 +16,7 @@ export function SuggestedChips({
           key={c}
           type="button"
           onClick={() => onPick(c)}
-          className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[11px] text-gray-700 hover:border-rose-300 hover:bg-rose-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+          className="min-h-[32px] rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-700 hover:border-rose-300 hover:bg-rose-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
         >
           {c}
         </button>
