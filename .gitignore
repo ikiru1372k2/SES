@@ -6,9 +6,13 @@ data/
 coverage/
 *.tsbuildinfo
 
-# Logs
+# Logs / runtime pids (recreated by scripts/dev.sh at runtime)
 *.log
 npm-debug.log*
+.logs/
+
+# Vendored OS package binaries (install via package manager, not git)
+*.deb
 
 # Excel temp files (lock files created by Office while a file is open)
 ~$*.xlsx
