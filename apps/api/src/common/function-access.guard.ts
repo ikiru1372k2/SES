@@ -85,7 +85,18 @@ export class FunctionAccessGuard implements CanActivate {
     } else if (isProcessScoped) {
       const processParam = params.pid ?? params.processIdOrCode ?? params.idOrCode;
       if (processParam) {
-        const process = await this.processAccess.findAccessibleProcessOrThrow(user, processParam, 'viewer');
+        // F15: fail closed by HTTP method. Safe methods need only `viewer`;
+        // any state-changing method requires at least `editor` at the guard.
+        // Services may still demand more (e.g. `owner` for delete) — this
+        // just stops the guard from waving every mutation through as viewer.
+        const method = (request.method ?? 'GET').toUpperCase();
+        const minPermission =
+          method === 'GET' || method === 'HEAD' || method === 'OPTIONS' ? 'viewer' : 'editor';
+        const process = await this.processAccess.findAccessibleProcessOrThrow(
+          user,
+          processParam,
+          minPermission,
+        );
         processIdForFunctionCheck = process.id;
       }
     }

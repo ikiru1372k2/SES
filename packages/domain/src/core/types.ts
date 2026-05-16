@@ -43,11 +43,7 @@ export interface AuditPolicy {
   onHoldEffortThreshold: number;
   /** Per-month PD threshold for the over-planning engine (default 30). */
   pdThreshold?: number;
-  /**
-   * Opportunities engine config — namespaced under its own key so other
-   * engines never read these fields. The opportunities engine is the only
-   * consumer; an isolation test enforces this.
-   */
+  /** Opportunities engine config; namespaced so other engines cannot read these fields (isolation test enforces). */
   opportunities?: {
     closeDateLowProbabilityMax?: number;
     projectStartLowProbabilityMax?: number;
@@ -60,10 +56,7 @@ export interface AuditPolicy {
 
 export interface AuditProcess {
   id: string;
-  /**
-   * Stable human-readable code assigned by the server (PRC-YYYY-NNNN).
-   * Optional because legacy local-only processes may not have one yet.
-   */
+  /** Stable human-readable code from the server (PRC-YYYY-NNNN). Optional for legacy local-only processes. */
   displayCode?: string;
   /** When true, process metadata is owned by the API; list/create/delete use Postgres. */
   serverBacked?: boolean;
@@ -160,11 +153,7 @@ export interface AuditResult {
   runAt: string;
   scannedRows: number;
   flaggedRows: number;
-  /**
-   * Deterministic identity of the issue set. Used client-side (Issue #74) to
-   * skip auto-saving a version when two consecutive runs produce the same
-   * findings.
-   */
+  /** Deterministic identity of the issue set; client-side (Issue #74) skips auto-saving identical runs. */
   findingsHash?: string;
   issues: AuditIssue[];
   sheets: SheetAuditResult[];
@@ -197,8 +186,7 @@ export interface AuditIssue {
   reason?: string | undefined;
   thresholdLabel?: string | undefined;
   recommendedAction?: string | undefined;
-  // Function-rate context: every zero-rate month label for the row, and the
-  // cardinality of that list. Populated only by the function-rate engine.
+  // Function-rate context (set only by the function-rate engine).
   missingMonths?: readonly string[] | undefined;
   zeroMonthCount?: number | undefined;
 }
@@ -305,9 +293,7 @@ export interface ProjectTrackingStatus {
 }
 
 export type IssueFieldDiff<T = unknown> = { from: T; to: T };
-// Subset of AuditIssue fields that the UI renders per-row diffs for. Kept
-// narrow on purpose — rotating internal IDs / row indexes into diffs would
-// produce noise.
+// Narrow subset of AuditIssue fields the UI renders per-row diffs for.
 export type DiffableIssueField =
   | 'severity'
   | 'projectManager'
@@ -326,9 +312,7 @@ export interface ChangedIssue extends AuditIssue {
 export interface ComparisonResult {
   newIssues: AuditIssue[];
   resolvedIssues: AuditIssue[];
-  // `changedIssues` now carries per-field from/to pairs so the UI can render
-  // "Severity: Medium → High" style diffs. The enclosing AuditIssue fields
-  // reflect the "to" state (i.e. the latest), matching the previous shape.
+  // changedIssues carries per-field from/to pairs; enclosing AuditIssue fields reflect the "to" state.
   changedIssues: ChangedIssue[];
   unchangedIssues: AuditIssue[];
   managerChanges: AuditIssue[];

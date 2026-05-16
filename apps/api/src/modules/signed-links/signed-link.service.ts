@@ -67,7 +67,6 @@ export class SignedLinkService {
   ) {}
 
   async issue(input: IssueTokenInput & { createdByUserId?: string }): Promise<IssuedToken & { linkId: string; linkCode: string }> {
-    // Resolve processId from the displayCode so the DB has a hard FK.
     const process = await this.prisma.process.findFirst({
       where: { displayCode: input.processCode },
       select: { id: true, displayCode: true },
@@ -111,9 +110,8 @@ export class SignedLinkService {
   async peek(token: string): Promise<SignedLinkContext | { rejection: SignedLinkRejection }> {
     const payload = this.tokens.verify(token);
     if (!payload) {
-      // Either signature is wrong OR token is expired. We can't tell them
-      // apart without decoding, but we also shouldn't leak that distinction.
-      // If it decoded but exp <= now, verify() returns null; we fall through.
+      // Signature wrong or expired — verify() returns null and we don't
+      // leak the distinction to the caller.
       return { rejection: 'invalid_signature' };
     }
     const hash = this.tokens.hashFor(token);

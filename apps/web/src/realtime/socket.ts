@@ -2,23 +2,14 @@ import { io, type Socket } from 'socket.io-client';
 import type { RealtimeEnvelope } from './types';
 
 /**
- * One Socket.IO client for the whole app.
- *
- * Design notes:
- *   - Created lazily on first access so SSR / test harnesses don't open a
- *     socket just by importing this module.
- *   - `withCredentials: true` so the cookie auth set by /api/v1/auth/* rides
- *     the WebSocket handshake — same session, no separate token plumbing.
- *   - `reconnection: true` with exponential backoff is the Socket.IO default;
- *     we leave it on so VPN hiccups self-heal.
- *   - Path matches the gateway's @WebSocketGateway({ path: '/api/v1/realtime' })
- *     so Vite's /api proxy forwards it to the Nest process.
+ * One Socket.IO client for the whole app. Lazy-created so SSR/tests don't open
+ * a socket on import. withCredentials lets the auth cookie ride the WS handshake.
+ * Path matches the gateway's @WebSocketGateway path so the Vite proxy forwards it.
  */
 
 let socket: Socket | null = null;
 const envelopeListeners = new Set<(envelope: RealtimeEnvelope) => void>();
-// F5: surfaced so the UI can show a "Reconnecting…" pill. Listeners receive
-// the new connection state on every transition.
+// Surfaced so the UI can show a "Reconnecting…" pill.
 export type RealtimeConnectionState = 'connected' | 'connecting' | 'disconnected';
 let connectionState: RealtimeConnectionState = 'connecting';
 const connectionListeners = new Set<(state: RealtimeConnectionState) => void>();
@@ -54,14 +45,14 @@ function ensureSocket(): Socket {
       try {
         listener(envelope);
       } catch (err) {
-        // Recovery: remaining listeners still run; faulty listener is skipped.
+        // Faulty listener is skipped; remaining listeners still run.
         console.error('[realtime] listener threw', err);
       }
     }
   });
 
   socket.on('ses.error', (reason: { reason: string }) => {
-    // Recovery: socket.io will auto-reconnect; this surfaces the reason in devtools.
+    // socket.io auto-reconnects; surface reason in devtools.
     console.warn('[realtime] server error:', reason);
   });
 

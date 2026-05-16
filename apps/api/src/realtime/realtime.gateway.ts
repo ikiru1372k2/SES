@@ -103,9 +103,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       this.logger.debug(`connected ${user.displayCode} socket=${socket.id}`);
     } catch (err) {
       this.logger.debug(`rejecting unauthenticated socket ${socket.id}: ${(err as Error).message}`);
-      // Send a one-off failure event so the client can surface a useful toast,
-      // then close. Clients that accept anonymous public-share links will use
-      // a different namespace in a future revision.
       socket.emit('ses.error', { reason: 'unauthenticated' });
       socket.disconnect(true);
     }
@@ -136,7 +133,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     const processCode = (data?.processCode ?? '').trim();
     if (!processCode) return { ok: false, reason: 'missing_process_code' };
 
-    // Verify this user is allowed on this process before letting them into the room.
     try {
       await this.processAccess.findAccessibleProcessOrThrow(
         {
@@ -169,9 +165,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     };
     const snapshot = this.presence.join(processCode, info);
 
-    // Tell this socket who else is here…
     socket.emit('ses.event', this.envelope('presence.snapshot', { members: snapshot }, processCode, this.actorOf(authed)));
-    // …and tell the rest of the room about the new joiner.
     socket.to(`process:${processCode}`).emit(
       'ses.event',
       this.envelope('presence.joined', info, processCode, this.actorOf(authed)),
@@ -193,7 +187,6 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
       socketId: socket.id,
       memberCount: snapshot.length,
     }, { actor: this.actorOf(authed), processCode });
-    // Also drop from our local registry
     this.presence.leave(socket.id);
     return { ok: true };
   }
@@ -306,12 +299,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     };
   }
 
-  /**
-   * AuthService.authenticateRequest expects an Express-ish Request. Socket.IO
-   * hands us headers (cookie / authorization); we shim just enough to reuse
-   * the same verification path as the HTTP layer — one source of truth for
-   * auth, no drift.
-   */
+  /** Shim Socket.IO headers into an Express-ish Request so auth uses the same path as HTTP. */
   private buildRequestShim(socket: Socket) {
     const headers = socket.handshake.headers;
     const authHeader =

@@ -115,10 +115,7 @@ export class FilesRepository {
       input.file.mimetype ||
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-    // Upload to MinIO/S3 BEFORE the DB rows. If the tx rolls back, the
-    // object becomes orphaned with metadata status='uploaded'; a janitor
-    // job can sweep those (filtered by `uploadedObjectId NOT IN (
-    // SELECT uploadedObjectId FROM "WorkbookFile" UNION ... )`).
+    // Upload to S3 before DB rows; orphans on tx rollback are swept by janitor.
     const wbObject = await this.workbookStorage.putWorkbook({
       tenantId: input.tenantId,
       ownerId: input.uploadedById,
@@ -130,8 +127,7 @@ export class FilesRepository {
       contentType: mimeType,
     });
 
-    // Same bytes serve as the v1 FileVersion as well — point the
-    // FileVersion at the same uploaded_object row.
+    // Same bytes serve as v1 FileVersion — reuse the uploaded_object row.
     const versionObject = wbObject;
 
     const created = await tx.workbookFile.create({
@@ -236,8 +232,7 @@ export class FilesRepository {
       try {
         return await this.workbookStorage.getBuffer(file.uploadedObjectId);
       } catch (err) {
-        // Fall through to BYTEA so legacy rows still work even if S3 is
-        // misconfigured for a moment.
+        // Fall through to BYTEA for legacy rows / transient S3 errors.
       }
     }
     const blob = await this.prisma.fileBlob.findUnique({ where: { fileId: file.id } });
@@ -282,8 +277,7 @@ export class FilesRepository {
   async snapshotCurrentVersion(fileIdOrCode: string, user: SessionUser, note = '', processScope?: Prisma.ProcessWhereInput) {
     const file = await this.findFileWithSheets(fileIdOrCode, processScope);
     if (!file) throw new NotFoundException(`File ${fileIdOrCode} not found`);
-    // Confirm the current bytes are reachable (S3 first, BYTEA fallback)
-    // before writing the snapshot row.
+    // Confirm bytes are reachable before writing the snapshot row.
     const content = await this.fetchFileContent(file);
     if (!content) throw new NotFoundException(`File ${fileIdOrCode} has no stored content`);
     const latest = await this.prisma.fileVersion.aggregate({
@@ -291,10 +285,7 @@ export class FilesRepository {
       _max: { versionNumber: true },
     });
     const versionNumber = (latest._max.versionNumber ?? 0) + 1;
-    // Re-use the workbook's current uploadedObjectId — the bytes are
-    // identical, so duplicating the S3 object would just waste storage.
-    // Legacy rows without `uploadedObjectId` keep writing BYTEA so the
-    // download path can still find them.
+    // Reuse uploadedObjectId — identical bytes; legacy rows keep writing BYTEA.
     const useObjectRef = Boolean(file.uploadedObjectId);
     const created = await this.prisma.$transaction(async (tx) => {
       const version = await tx.fileVersion.create({
@@ -337,7 +328,6 @@ export class FilesRepository {
     buffer: Buffer;
   }) {
     const now = new Date();
-    // Upload to MinIO/S3 first so the draft row points at a real object.
     const stored = await this.workbookStorage.putDraft({
       tenantId: input.tenantId,
       ownerId: input.user.id,
@@ -349,9 +339,7 @@ export class FilesRepository {
       buffer: input.buffer,
     });
 
-    // If a previous draft existed with a different object, mark it
-    // deleted in metadata + (best-effort) drop the object so the bucket
-    // doesn't accumulate orphans.
+    // Drop the previous draft's object so the bucket doesn't accumulate orphans.
     const existing = await this.prisma.fileDraft.findUnique({
       where: {
         userId_processId_functionId: {
@@ -438,8 +426,7 @@ export class FilesRepository {
     const workbook = await parseWorkbookBuffer(buffer, draft.fileName);
     const contentSha256 = sha256(buffer);
 
-    // Decide the target file before writing to S3 so the object key
-    // includes the right fileCode + version number.
+    // Decide target file first so the S3 key carries the right fileCode + version.
     const latestFile = await this.prisma.workbookFile.findFirst({
       where: { processId: input.processId, functionId: input.functionId },
       orderBy: { uploadedAt: 'desc' },
@@ -518,7 +505,6 @@ export class FilesRepository {
         return { file: serializeWorkbookFile(withSheets), versionNumber: 1 };
       }
 
-      // Subsequent versions on an existing WorkbookFile.
       await tx.fileVersion.create({
         data: {
           id: createId(),
@@ -563,7 +549,6 @@ export class FilesRepository {
           storageKind: 's3',
         } as any,
       });
-      // Best-effort cleanup of the draft object (file row was promoted).
       if (draft.uploadedObjectId) {
         this.workbookStorage
           .deleteByUploadedObjectId(draft.uploadedObjectId)
@@ -594,7 +579,7 @@ export class FilesRepository {
       try {
         return await this.workbookStorage.getBuffer(draft.uploadedObjectId);
       } catch {
-        // legacy fallback
+        // fall back to BYTEA
       }
     }
     return (draft.content as Buffer | null | undefined) ?? null;

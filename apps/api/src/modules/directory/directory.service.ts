@@ -53,11 +53,8 @@ export class DirectoryService {
   ) {}
 
   /**
-   * Directory mutations are tenant-scoped, but the realtime gateway rooms
-   * are per-process. Fan the notification out to every non-archived process
-   * in the tenant so any open EscalationCenter / Workspace tab re-derives
-   * its "unmapped manager" state without a reload. Cheap: one SELECT on
-   * PRIMARY-KEYed data plus N in-memory emits.
+   * Fan tenant-scoped directory changes to every non-archived process room
+   * so open tabs re-derive their "unmapped manager" state without a reload.
    */
   private async broadcastDirectoryUpdate(
     tenantId: string,

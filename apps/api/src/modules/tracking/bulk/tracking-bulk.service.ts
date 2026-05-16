@@ -78,19 +78,12 @@ export class TrackingBulkService {
     let failed = 0;
     let skipped = 0;
     const progress: Array<Record<string, unknown>> = [];
-    // Per-recipient resolved content so the client can hand each send off to
-    // the user's own Outlook / Teams app (Issue #75 handoff model). Mirrors
-    // the single-manager SendComposeResult so BroadcastDialog and any future
-    // bulk-send UI can reuse the same openMailto / openTeamsChat helpers.
+    // Per-recipient content for client-side Outlook/Teams handoff (#75).
+    // Mirrors SendComposeResult so bulk-send UI reuses openMailto/openTeamsChat.
     const recipients: Array<Record<string, unknown>> = [];
     for (const [index, entry] of entries.entries()) {
-      // Fail-soft for the most common "soft" reason a row can't be sent:
-      // the manager is not in the directory yet and no email is attached.
-      // Previously TrackingComposeService.send() would throw a generic 400,
-      // the catch-all below would log it as "failed", and the auditor would
-      // have to cross-reference the error text. Now the UI can show a
-      // "Missing email — add to directory" chip and keep the row selectable
-      // so the auditor can fix the root cause once and retry.
+      // Fail-soft when manager email is missing; lets the UI show a
+      // "Missing email" chip instead of a generic 400.
       const managerEmail = (entry.managerEmail ?? '').trim();
       if (!managerEmail) {
         skipped += 1;
@@ -204,13 +197,8 @@ export class TrackingBulkService {
   }
 
   /**
-   * Push the SLA timer forward by N days without changing the stage. The
-   * SLA engine re-checks slaDueAt on its next tick; moving the deadline
-   * is the cheapest way to "snooze" without faking progress.
-   *
-   * Each entry gets its own slaDueAt bump (since they start from different
-   * baselines), but the event rows are batched via createMany so the
-   * transaction is O(2N) round-trips at worst instead of O(3N).
+   * Push slaDueAt forward by N days without changing stage; SLA engine
+   * re-checks on its next tick. Event rows batched via createMany.
    */
   async snooze(trackingIds: string[], days: number, note: string, user: SessionUser) {
     if (!Number.isFinite(days) || days <= 0 || days > 90) {
@@ -220,8 +208,7 @@ export class TrackingBulkService {
     const reason = note.trim() || `bulk_snooze:${days}d`;
     const bumpMs = days * 24 * 60 * 60 * 1000;
     await this.prisma.$transaction(async (tx) => {
-      // Pre-compute event rows + their display codes up front so the
-      // createMany below is a single round trip.
+      // Pre-compute rows + codes so createMany is one round-trip.
       const eventRows = await Promise.all(
         entries.map(async (entry) => {
           const base = entry.slaDueAt ?? new Date();
@@ -244,8 +231,7 @@ export class TrackingBulkService {
         }),
       );
 
-      // slaDueAt differs per entry, so updateMany can't do it in one SQL
-      // call. Keep the per-entry update but drop the nested event insert.
+      // slaDueAt differs per entry, so updateMany can't batch this.
       for (const r of eventRows) {
         await tx.trackingEntry.update({
           where: { id: r.entryId },
@@ -289,14 +275,9 @@ export class TrackingBulkService {
   }
 
   /**
-   * Broadcast to every manager with open findings in a process. Optional
-   * filter by functionId (only escalate findings produced by one engine)
-   * or includeResolved (sweep even resolved rows; rarely useful, but
-   * supported for "compliance reminder" workflows).
-   *
-   * Broadcasts are audit-only global notices. They create NotificationLog and
-   * TrackingEvent rows, but they do not consume the per-manager compose ladder
-   * counters used by the 2-Outlook-then-Teams workflow.
+   * Broadcast to every manager with open findings; optional filter by
+   * functionId / includeResolved. Audit-only — does not consume per-manager
+   * ladder counters used by the Outlook→Teams workflow.
    */
   async broadcast(input: BroadcastInput, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(
@@ -313,9 +294,7 @@ export class TrackingBulkService {
       orderBy: { managerName: 'asc' },
     });
 
-    // Optional filter: only include managers who have open findings under
-    // the requested functionId. Done in memory since the count is tiny
-    // and the query would otherwise need a JSON where-clause.
+    // In-memory functionId filter — count is tiny, JSON where-clause avoided.
     const filtered = input.filter?.functionId
       ? entries.filter((entry) => {
           const parsed = (entry.projectStatuses ?? {}) as {

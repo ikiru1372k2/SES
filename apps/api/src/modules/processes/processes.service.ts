@@ -177,8 +177,7 @@ export class ProcessesService {
           permission: 'owner',
         },
       });
-      // Seed ProcessFunction rows so the tile dashboard has all 5 tiles from
-      // the moment the process exists. Idempotent (upsert), so re-runs are safe.
+      // Seed ProcessFunction rows so tiles render immediately; idempotent.
       for (const fn of FUNCTION_REGISTRY) {
         await tx.processFunction.upsert({
           where: { processId_functionId: { processId: process.id, functionId: fn.id } },
@@ -220,10 +219,8 @@ export class ProcessesService {
         },
       },
     });
-    // Lightweight version summaries — full hydration with issues comes
-    // from /processes/:id/versions when the workspace opens. We send
-    // just enough so the unsaved-audit detector has an anchor and the
-    // SPA stops blocking navigation with a stale "leave site?" prompt.
+    // Lightweight version summaries; full hydration comes from
+    // /processes/:id/versions. Enough for the unsaved-audit anchor.
     const versionSummaries = versions.map((v: any) => ({
       id: v.id,
       versionId: v.displayCode,
@@ -392,10 +389,7 @@ export class ProcessesService {
   }
 
   // ----- Members -----------------------------------------------------------
-  //
-  // Membership controls who can see a process and what they can do inside it.
-  // Listing is allowed to any member (viewer+); adding/removing requires owner
-  // because a member who can add others can grant themselves privileges.
+  // Adding/removing requires owner — a member who can add others can self-promote.
 
   /**
    * Returns the current user's effective permission + scope rows for a process.
@@ -407,8 +401,7 @@ export class ProcessesService {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');
     const ctx = await this.accessScope.loadMemberContext(process.id, user.id);
     if (!ctx) {
-      // findAccessibleProcessOrThrow already enforces membership; this is a
-      // defensive belt-and-suspenders branch.
+      // Defensive: membership is already enforced above.
       return { permission: 'viewer' as const, scopes: [] };
     }
     return { permission: ctx.member.permission, scopes: ctx.scopes };
@@ -620,19 +613,12 @@ export class ProcessesService {
   }
 
   /**
-   * One round-trip used by the ProcessTilesPage to render all 5 tiles.
-   *
-   * Returns per-function aggregates: file count, latest upload, draft
-   * presence (for the current user), and the max version number seen on
-   * any file in that function. Aggregates are computed in 2 queries
-   * regardless of the number of functions so this endpoint scales.
-   *
-   * Draft presence is user-scoped — other members' drafts never leak.
+   * Per-function aggregates for ProcessTilesPage in 2 queries. Draft presence
+   * is user-scoped — other members' drafts never leak.
    */
   async tiles(idOrCode: string, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');
-    // Make sure the process has ProcessFunction rows; older data pre-#62
-    // might be missing the seed.
+    // Ensure ProcessFunction rows (older pre-#62 data may lack the seed).
     await this.functions.ensureProcessFunctions(process.id);
 
     const files = await this.prisma.workbookFile.findMany({
@@ -643,9 +629,7 @@ export class ProcessesService {
       },
     });
 
-    // Draft presence (Issue #63 adds the table; guard so the query only
-    // runs when the client is on a build that has FileDraft). We do a cheap
-    // raw SQL probe first to avoid exceptions before the #63 migration lands.
+    // Draft presence — guard for pre-#63 builds without the FileDraft table.
     let draftFunctions = new Set<string>();
     try {
       const rows = await this.prisma.$queryRaw<Array<{ functionId: string }>>`
@@ -654,8 +638,7 @@ export class ProcessesService {
       `;
       draftFunctions = new Set(rows.map((r) => r.functionId));
     } catch {
-      // FileDraft table not yet migrated (we're on a #62-only build).
-      // Treat as "no drafts" — tiles render fine without the badge.
+      // FileDraft not yet migrated — tiles render fine without the badge.
     }
 
     const byFunction: Record<string, { fileCount: number; lastUploadAt: string | null; hasDraft: boolean }> = {};
@@ -672,10 +655,8 @@ export class ProcessesService {
   }
 
   /**
-   * Stub helpdesk flow: write the request row, append an activity log entry,
-   * emit a realtime event so any connected admins see it. A real wire-up
-   * to an email transport lives outside this repo; we record enough that
-   * an operator can manually triage.
+   * Stub helpdesk flow: persist + activity log + realtime event. Email
+   * transport lives elsewhere; this records enough for manual triage.
    */
   async createFunctionAuditRequest(
     idOrCode: string,
@@ -690,7 +671,7 @@ export class ProcessesService {
     }
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, idOrCode, 'viewer');
     const created = await this.prisma.$transaction(async (tx) => {
-      // Displayable ref code. We piggy-back on the activity counter.
+      // Reuse the activity counter for the displayable ref code.
       const code = await this.identifiers.nextActivityCode(tx);
       const row = await tx.functionAuditRequest.create({
         data: {

@@ -1,10 +1,7 @@
 import type { RuleCatalogEntry } from '../../audit/auditRules';
-// NOTE: keep `import type` — a value import would create a runtime cycle with
-// auditRules.ts, which imports OPPORTUNITIES_RULE_CATALOG from us.
+// NOTE: keep `import type` — value import would create a runtime cycle with auditRules.ts.
 
-// All rule codes prefixed RUL-OPP-* so the opportunities namespace cannot
-// collide with master-data (RUL-MD-*), missing-plan (RUL-MP-*), function-rate
-// (RUL-FR-*), internal-cost-rate (RUL-ICR-*), or over-planning (RUL-EFFORT-*).
+// Rule codes prefixed RUL-OPP-* to namespace away from master-data/missing-plan/function-rate/etc.
 export const OPP_CLOSED_DATE_PAST_RULE_CODE = 'RUL-OPP-CLOSED-DATE-PAST';
 export const OPP_CLOSED_DATE_PAST_LOW_PROB_RULE_CODE =
   'RUL-OPP-CLOSED-DATE-PAST-LOW-PROB';
@@ -14,9 +11,7 @@ export const OPP_BCS_MISSING_RULE_CODE = 'RUL-OPP-BCS-MISSING';
 export const OPP_BCS_AVAILABLE_LOW_PROB_RULE_CODE =
   'RUL-OPP-BCS-AVAILABLE-LOW-PROB';
 export const OPP_INCORRECT_BU_RULE_CODE = 'RUL-OPP-INCORRECT-BU';
-// Composite code emitted when ≥2 specific checks fire on the same row. The
-// reason text always carries every triggered message joined by '; '; the
-// `notes` field additionally lists the matched specific codes.
+// Composite code emitted when ≥2 specific checks fire on the same row.
 export const OPP_COMPOSITE_RULE_CODE = 'RUL-OPP-COMPOSITE';
 
 const baseSchema = { type: 'object', properties: {}, additionalProperties: false } as const;

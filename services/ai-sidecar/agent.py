@@ -1,11 +1,4 @@
-"""SES Analytics Agent.
-
-Tool-calling loop over qwen2.5-coder. The API ships rows for the active
-scope with each request — the agent never reaches into the database.
-
-Day-1 stub: 5 canned answers keyed by phrase match. Replaced by a real
-JSON-mode agent loop once Ollama + qwen2.5-coder are pulled.
-"""
+"""SES Analytics Agent. Tool-calling loop; API ships scope-filtered rows so the agent never hits the DB."""
 from __future__ import annotations
 
 import hashlib
@@ -29,9 +22,7 @@ def _hash_rows(rows: list[dict[str, Any]]) -> str:
 
 
 def _stub_answer(question: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Hard-coded answers for the 5 most common questions — used until
-    Ollama is online and qwen2.5-coder is pulled. Always honest about scope.
-    """
+    """Hard-coded answers for the most common questions; used until the real agent is wired."""
     q = question.lower().strip()
     n = len(rows)
     if "worst shape" in q or "worst" in q:
@@ -197,7 +188,6 @@ async def _claude_chat(messages: list[dict[str, str]], model: str) -> dict[str, 
     """Single Anthropic Claude API call returning parsed JSON content."""
     import anthropic
 
-    # Separate system prompt from conversation messages (Anthropic API style)
     system_prompt = ""
     conv_messages = []
     for msg in messages:
@@ -218,7 +208,7 @@ async def _claude_chat(messages: list[dict[str, str]], model: str) -> dict[str, 
 
     content = response.content[0].text if response.content else "{}"
     cleaned = _strip_codefence(content)
-    # Extract first {...} block in case the model added prose
+    # Extract first {...} block in case the model added prose.
     depth = 0
     start = -1
     for i, ch in enumerate(cleaned):
@@ -259,7 +249,6 @@ async def _real_agent_loop(
     schema_sample = rows[0]
     columns = list(schema_sample.keys())
 
-    # Build a real data dictionary so the model isn't guessing column meanings.
     def _distinct(col: str, limit: int = 25) -> list[Any]:
         seen: list[Any] = []
         s: set[str] = set()
@@ -276,13 +265,9 @@ async def _real_agent_loop(
                 break
         return seen
 
-    # Build a distinct-values dictionary across ALL low-cardinality columns so
-    # the model can match the user's natural-language question to the actual
-    # data — no function-specific hardcoding. Works the same way for every
-    # function (master-data, over-planning, missing-plan, function-rate,
-    # internal-cost-rate, opportunities) because we describe what's actually
-    # in `issues`, not what's expected to be there.
-    LOW_CARD_LIMIT = 30  # if distinct count exceeds this, omit (high-cardinality)
+    # Distinct-values dictionary across low-cardinality columns so the model can
+    # map natural-language to actual values without per-function hardcoding.
+    LOW_CARD_LIMIT = 30  # omit columns with more distinct values than this
     distinct_dict: dict[str, list[Any]] = {}
     for col in columns:
         vals = _distinct(col, LOW_CARD_LIMIT + 1)
@@ -335,7 +320,7 @@ async def _real_agent_loop(
                     validate_chart_spec(spec)
                 except Exception as ve:
                     if iteration < AGENT_MAX_ITER:
-                        # Feed the validation error back so the model can fix the chart_spec.
+                        # Feed validation error back so the model can fix the chart_spec.
                         messages.append(
                             {"role": "assistant", "content": json.dumps(result)}
                         )
@@ -382,7 +367,6 @@ async def _real_agent_loop(
             )
             continue
 
-        # Model produced something we can't handle — exit.
         yield {
             "type": "final",
             "answer": json.dumps(result)[:600],
@@ -414,7 +398,7 @@ async def stream_chat(
     use_stub: bool = True,
 ) -> AsyncGenerator[dict[str, Any], None]:
     """Yield ChatEvent dicts. Stub mode for first run; real agent once Ollama is wired."""
-    import json as _json  # noqa: F401  (json already imported above; kept for clarity)
+    import json as _json  # noqa: F401
     started = time.monotonic()
     dataset_version = version_ref or _hash_rows(rows)[:8]
     _duck_cache.materialize(process_code, dataset_version, rows)
@@ -437,7 +421,6 @@ async def stream_chat(
         }
         return
 
-    # Real agent loop. Wraps every yield with the elapsed latency.
     async for evt in _real_agent_loop(question, rows, process_code, dataset_version):
         if evt.get("type") == "final":
             evt["latency_ms"] = int((time.monotonic() - started) * 1000)

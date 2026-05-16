@@ -18,13 +18,7 @@ export type EngineFindingLine = {
   detail?: EngineFindingDetail;
 };
 
-/**
- * Per-engine context stripped from `AuditIssue` rows so the email builder
- * can emit a column set that actually explains the finding. Different
- * engines surface different columns: e.g. master-data needs the missing
- * field name, over-planning wants the offending months and threshold,
- * function-rate / internal-cost-rate want the zero-month count.
- */
+/** Per-engine context for the email builder so each engine can render the columns that explain its findings. */
 export interface EngineFindingDetail {
   ruleCode: string;
   ruleName: string;
@@ -100,14 +94,7 @@ function clamp(value: string, max: number): string {
   return value.slice(0, Math.max(1, max - 1)).trimEnd() + '…';
 }
 
-/**
- * Engine → column map. Each engine surfaces only the columns that explain
- * its findings; values are clamped so wide free-text fields can't blow up
- * the layout. `width` is a CSS percentage so the HTML grid stays even when
- * the data is uneven. The optional `Project Link` column is appended only
- * when at least one finding in the engine has a link supplied — otherwise
- * the column is dropped so the table doesn't carry empty space.
- */
+/** Engine → column map. `width` is a CSS percentage; Project Link column is appended only when at least one row supplies a link. */
 type EngineColumn = ColumnSpec<EngineFindingLine> & {
   width: string;
   /** Marks the column as a hyperlink in the HTML renderer. */
@@ -178,12 +165,7 @@ function columnsForEngine(engineKey: string, hasProjectLink: boolean): EngineCol
         ...linkCol,
       ];
     case 'opportunities':
-      // Opportunity records: surface the columns an account owner needs
-      // to fix the row in the source CRM — opportunity ID + name, the
-      // category (sales phase / status), the probability number that
-      // gates several rules, and the rule violations the engine joined
-      // into `reason`. Mirrors the master-data layout: identity columns
-      // first, what's wrong second, severity last.
+      // Surfaces the columns an account owner needs to fix the row in the source CRM.
       return [
         { header: '#', width: '4%', read: () => '' },
         { header: 'Opportunity ID', width: '14%', read: (r) => dash(r.projectNo) },
@@ -237,13 +219,7 @@ function shortDescriptionForEngine(engineKey: string): string {
   }
 }
 
-/**
- * Render the findings as a styled HTML table grouped by engine, with each
- * engine getting the columns that actually explain its findings (set in
- * `columnsForEngine`). Inline styles are deliberately verbose so the
- * markup survives the trip through Outlook / Gmail / Teams web (none of
- * them honour <style> blocks reliably).
- */
+/** Renders findings as a styled HTML table grouped by engine. Inline styles (no <style> block) so Outlook/Gmail/Teams render correctly. */
 export function buildFindingsByEngineHtmlTable(lines: EngineFindingLine[]): string {
   if (!lines.length) {
     return '<p style="margin:0;color:#475569;font-style:italic;">No open findings.</p>';

@@ -9,11 +9,7 @@ import { OVER_PLANNING_ENGINE_RULE_CATALOG as OVER_PLANNING_RULE_CATALOG_IMPORT 
 
 export interface RuleCatalogEntry {
   ruleCode: string;
-  /**
-   * Function that owns this rule. Every rule belongs to exactly one
-   * function. Optional on write (derived from the catalog position) but
-   * always populated on read via `RULE_CATALOG_BY_FUNCTION`.
-   */
+  /** Owning function. Optional on write (derived from catalog position); always populated on read. */
   functionId?: FunctionId;
   name: string;
   category: IssueCategory;
@@ -24,16 +20,9 @@ export interface RuleCatalogEntry {
   paramsSchema: Record<string, unknown>;
 }
 
-// Sourced from the dedicated over-planning module so there is one source of truth.
 export const OVER_PLANNING_RULE_CATALOG: RuleCatalogEntry[] = OVER_PLANNING_RULE_CATALOG_IMPORT;
 
-// Per-function rule catalog. Every rule must live under exactly one function
-// key — this is the structural guarantee the product needs: Master Data
-// rules cannot accidentally run for Over Planning, etc. New functions add
-// their own catalog and register it here; adding rules never requires
-// touching another function's module.
-//
-// Every function has its own rule catalog; no cross-function sharing.
+// Per-function rule catalog. Every rule lives under exactly one function key — no cross-function sharing.
 export const RULE_CATALOG_BY_FUNCTION: Record<FunctionId, RuleCatalogEntry[]> = {
   'master-data': MASTER_DATA_RULE_CATALOG,
   'over-planning': OVER_PLANNING_RULE_CATALOG,
@@ -47,11 +36,7 @@ export function getRuleCatalogForFunction(functionId: FunctionId): RuleCatalogEn
   return RULE_CATALOG_BY_FUNCTION[functionId] ?? [];
 }
 
-// Flat list used by the DB seed loop and the RulesService in-memory fallback.
-// Derived from the per-function map so there is exactly one source of truth —
-// no risk of the flat list drifting from the per-function registry. Each
-// entry's `functionId` is populated from its map key so downstream consumers
-// (seed, rules service) can persist the column without looking it up again.
+// Flat list (DB seed + RulesService fallback) derived from the per-function map; functionId populated from key.
 export const AUDIT_RULE_CATALOG: RuleCatalogEntry[] = (
   Object.entries(RULE_CATALOG_BY_FUNCTION) as Array<[FunctionId, RuleCatalogEntry[]]>
 ).flatMap(([functionId, rules]) => rules.map((rule) => ({ ...rule, functionId })));

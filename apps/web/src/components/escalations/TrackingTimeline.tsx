@@ -32,9 +32,7 @@ interface RenderedEvent {
   synthetic: boolean;
 }
 
-// One source of truth for how we render each event kind. Adding a new
-// event type is one entry here — the UI picks up the icon + label + tone
-// automatically.
+// Single source of truth for per-event rendering; add a new event kind here.
 const EVENT_STYLE: Record<string, { label: string; tone: Tone; Icon: LucideIcon }> = {
   escalation_sent:    { label: 'Escalation sent',      tone: 'blue',    Icon: Send },
   contact:            { label: 'Contact logged',       tone: 'gray',    Icon: MessageSquare },
@@ -104,7 +102,6 @@ function relativeTime(iso: string, now = Date.now()): string {
 
 function absoluteTime(iso: string): string {
   const d = new Date(iso);
-  // Always show the full timestamp on hover so auditors can pin exact times.
   return d.toLocaleString(undefined, {
     year: 'numeric', month: 'short', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -199,17 +196,8 @@ function groupByDay(events: RenderedEvent[]): DayGroup[] {
 }
 
 /**
- * Vertical activity rail similar to Linear / GitHub. Each event shows:
- *   - a coloured icon on the rail
- *   - title + (optional) subtitle
- *   - actor avatar + name
- *   - relative time, absolute time on hover
- *   - channel badge when relevant
- *   - event displayCode for traceability
- *   - optional auditor note (auto-wrapped)
- *
- * Events are grouped by day with a sticky day header so a busy ladder
- * stays scannable even after a week of activity.
+ * Vertical activity rail grouped by day with a sticky day header so busy
+ * ladders stay scannable.
  */
 export function TrackingTimeline({
   events,

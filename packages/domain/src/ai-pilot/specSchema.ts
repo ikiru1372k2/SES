@@ -25,15 +25,14 @@ export type SpecValidationResult =
 export function validateSpec(input: unknown): SpecValidationResult {
   if (!input || typeof input !== 'object') return { ok: false, error: 'spec must be an object' };
   const s = input as Record<string, unknown>;
-  // ruleCode: just require a string. The service rewrites it to ai_<ulid>
-  // before persisting, so we don't care what the LLM picked.
+  // ruleCode: any string; service rewrites it to ai_<ulid> before persisting.
   if (typeof s.ruleCode !== 'string' || !s.ruleCode.trim()) {
     return { ok: false, error: 'ruleCode required' };
   }
   if (typeof s.functionId !== 'string') return { ok: false, error: 'functionId required' };
   if (typeof s.name !== 'string' || !s.name.trim()) return { ok: false, error: 'name required' };
   if (typeof s.flagMessage !== 'string') return { ok: false, error: 'flagMessage required' };
-  // ruleVersion: tolerate missing/wrong; service defaults to 1.
+  // ruleVersion: service defaults to 1 if missing/wrong.
   if (s.ruleVersion !== undefined && (typeof s.ruleVersion !== 'number' || s.ruleVersion < 1)) {
     return { ok: false, error: 'ruleVersion must be a positive integer if provided' };
   }
@@ -43,8 +42,7 @@ export function validateSpec(input: unknown): SpecValidationResult {
   if (!CATEGORIES.includes(s.category as (typeof CATEGORIES)[number])) {
     return { ok: false, error: `category must be one of ${CATEGORIES.join(', ')}` };
   }
-  // Normalize: if logic has children but no op, default to 'and'.
-  // If logic is a bare leaf with `operator` instead of `op`, rename.
+  // Normalize: default `op` to 'and' when only children present; rename `operator` → `op`.
   const normalizedLogic = normalizeLogic(s.logic);
   const logicError = validateNode(normalizedLogic, 0);
   if (logicError) return { ok: false, error: `logic: ${logicError}` };
@@ -54,21 +52,18 @@ export function validateSpec(input: unknown): SpecValidationResult {
 function normalizeLogic(node: unknown): AiRuleNode {
   if (!node || typeof node !== 'object') return node as AiRuleNode;
   const n = { ...(node as Record<string, unknown>) };
-  // Some LLMs use "operator" instead of "op"
+  // Some LLMs use "operator" instead of "op".
   if (typeof n.operator === 'string' && typeof n.op !== 'string') {
     n.op = n.operator;
     delete n.operator;
   }
-  // Wrap bare {children:[...]} into {op:'and', children:[...]}
   if (Array.isArray(n.children) && typeof n.op !== 'string') {
     n.op = 'and';
   }
-  // Recurse into children
   if (Array.isArray(n.children)) {
     n.children = (n.children as unknown[]).map(normalizeLogic);
   }
-  // For an isOneOf rule the LLM sometimes emits `value: "x"` instead of
-  // `values: ["x"]`. Coerce.
+  // Coerce isOneOf `value` → `values[]`.
   if (n.op === 'isOneOf' && n.value !== undefined && n.values === undefined) {
     n.values = Array.isArray(n.value) ? n.value : [n.value];
     delete n.value;

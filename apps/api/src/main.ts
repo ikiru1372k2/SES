@@ -48,6 +48,11 @@ function listenHost(): string {
 async function bootstrap() {
   assertProductionSecrets();
   const app = await NestFactory.create(AppModule, { cors: false });
+  // F6: the API always sits behind nginx (and usually a Cloudflare tunnel),
+  // which terminate TLS and set X-Forwarded-Proto/For. Trust the first proxy
+  // hop so Express reports req.secure / req.ip correctly — this is what makes
+  // cookie `secure` auto-detection and request-IP logging accurate.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   app.enableCors({
     origin: corsOrigins(),
     credentials: true,

@@ -16,6 +16,9 @@ export class ChatCacheService {
 
   key(input: {
     question: string;
+    /** F9: tenant scope — prevents a cached answer from one tenant ever
+     * being keyed identically to another's, even on a shared processCode. */
+    tenantId: string;
     processCode: string;
     functionId: string | null;
     datasetVersion: string;
@@ -26,6 +29,7 @@ export class ChatCacheService {
       .update(
         JSON.stringify({
           q: input.question.trim().toLowerCase(),
+          t: input.tenantId,
           p: input.processCode,
           f: input.functionId,
           v: input.datasetVersion,

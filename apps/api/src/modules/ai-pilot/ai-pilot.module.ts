@@ -22,6 +22,11 @@ import { AiGrpcClient } from './ai-grpc.client';
     HttpModule.register({
       baseURL: process.env.AI_SERVICE_URL ?? 'http://localhost:8000',
       timeout: parsePositiveIntEnv('AI_PILOT_REQUEST_TIMEOUT_MS', 60_000),
+      // F5: no redirect following toward the sidecar.
+      maxRedirects: 0,
+      // F2: authenticate every call to the sidecar. Empty when unset (dev
+      // without a sidecar) — the sidecar fails closed (503) on its side.
+      headers: { 'X-Internal-Token': process.env.SIDECAR_SHARED_SECRET ?? '' },
     }),
   ],
   controllers: [AiPilotController],

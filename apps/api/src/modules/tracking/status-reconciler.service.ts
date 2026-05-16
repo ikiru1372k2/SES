@@ -24,16 +24,9 @@ export class StatusReconcilerService {
   constructor(private readonly identifiers: IdentifierService) {}
 
   /**
-   * After an audit run completes, reconcile tracking rows for the process:
-   *   1. Collect every (managerKey → openCount + name/email) from the run.
-   *   2. Upsert a TrackingEntry for any manager observed in the audit that
-   *      does not yet have one. Without this step, new managers never
-   *      appear in the Escalation Center.
-   *   3. Patch `byEngine[functionId]` on every tracking row — observed
-   *      managers get their new openCount, absent managers get resolved.
-   *
-   * Keeps everything inside the caller's transaction so an audit row and
-   * its tracking side-effects commit together.
+   * Post-audit reconciliation: ensure TrackingEntry rows exist for observed
+   * managers, then patch `byEngine[functionId]` openCount/resolved on all rows.
+   * Runs in the caller's tx so audit + tracking side-effects commit together.
    */
   async reconcileAfterAudit(
     tx: Prisma.TransactionClient,
@@ -95,11 +88,8 @@ export class StatusReconcilerService {
   }
 
   /**
-   * Create TrackingEntry rows for any observed manager that doesn't yet
-   * have one in this process. Done in a single round-trip via createMany
-   * so large first-time audits don't do N identifier lookups. We skip
-   * creating rows for managers with empty names (shouldn't happen — the
-   * engine defaults to "Unknown" — but cheap to be defensive).
+   * Create TrackingEntry rows for newly-observed managers in one createMany
+   * round-trip; identifier lookups still happen per row.
    */
   private async ensureTrackingEntriesExist(
     tx: Prisma.TransactionClient,
@@ -128,9 +118,6 @@ export class StatusReconcilerService {
         managerKey: m.managerKey,
         managerName: m.managerName,
         managerEmail: m.managerEmail || null,
-        // A fresh manager starts at NEW so the Escalation Center treats
-        // them as actionable. resolved stays false until the next audit
-        // shows zero open findings.
       })),
     );
 

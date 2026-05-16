@@ -61,11 +61,8 @@ export async function resolveIssueEmailsFromDirectory<T extends IssueEmailInput>
     return { issues, resolvedFromDirectory: 0, unresolvedManagerNames: names };
   }
 
-  // Build an exact normalized-key index first so deterministic matches
-  // (including "Last, First" and whitespace/case variants) never fall
-  // through to the fuzzy matcher. If two active entries share a key, the
-  // exact lookup abstains and we hand off to the fuzzy path, which treats
-  // the tie as a collision.
+  // Exact-key index first so deterministic matches never fall through to
+  // fuzzy. Ties (two entries on one key) abstain and let fuzzy collide.
   const exactEmailByKey = new Map<string, string | null>();
   for (const e of entries) {
     if (!e.active) continue;
@@ -84,8 +81,7 @@ export async function resolveIssueEmailsFromDirectory<T extends IssueEmailInput>
     }
   }
 
-  // Match once per unique name — engines can produce hundreds of issues
-  // for the same manager; matching is O(entries) per call so cache it.
+  // Cache per unique name — engines emit many issues per manager.
   const resolvedEmailByName = new Map<string, string>();
   const unresolved: string[] = [];
   for (const name of names) {

@@ -1,9 +1,4 @@
-"""IsolationForest ML overlay for anomaly detection.
-
-Pure-stdlib implementation (no scikit-learn dep). For numeric-only outlier
-detection on small SES datasets this is fine and avoids dragging sklearn
-+ scipy + numpy ABI mismatches into the sidecar.
-"""
+"""IsolationForest-style anomaly detection. Stdlib-only to avoid sklearn/scipy/numpy ABI issues."""
 from __future__ import annotations
 
 import math
@@ -62,7 +57,6 @@ def detect_numeric_outliers(
     if not rows:
         return []
     if columns is None:
-        # auto-pick numeric columns from the first 50 rows
         sample = rows[:50]
         columns = []
         for k in sample[0].keys():
@@ -81,7 +75,6 @@ def detect_numeric_outliers(
                 idxs.append(i)
         if len(values) < 8:
             continue
-        # z-score outliers (rule-violation style)
         for local_i in _zscore_outliers(values):
             out.append(
                 {
@@ -92,7 +85,7 @@ def detect_numeric_outliers(
                     "kind": "zscore",
                 }
             )
-        # IsolationForest-style — only label top contamination%
+        # IsolationForest-style: only label top contamination%
         scored = [(i, _isolation_score(values, v)) for i, v in enumerate(values)]
         scored.sort(key=lambda kv: -kv[1])
         n_take = max(1, int(len(scored) * contamination))

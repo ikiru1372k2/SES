@@ -108,8 +108,7 @@ export function BroadcastDialog({
       return;
     }
 
-    // Email: one Outlook window — To = first, BCC = rest.
-    // Use the common subject/body (they're identical for a broadcast).
+    // Email: one Outlook window — To = first, BCC = rest (broadcasts share subject/body).
     const first = sent[0]!;
     const bcc = sent.slice(1).map((r) => r.managerEmail);
     const parts = [
@@ -120,7 +119,6 @@ export function BroadcastDialog({
     const mailtoUrl = `mailto:${encodeURIComponent(first.managerEmail)}?${parts.join('&')}`;
 
     const safeMailto = mailtoUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    // Build a simple body preview (plain text since it's a global message).
     const safeBody = first.body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const safeSubject = first.subject.replace(/</g, '&lt;');
     const toList = sent.map((r) => `${r.managerName} &lt;${r.managerEmail}&gt;`).join('<br>');
@@ -286,7 +284,6 @@ function copyBody(){
       }
     >
       <form id="broadcast-form" onSubmit={submit} className="space-y-4">
-        {/* Audience summary */}
         <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-800 dark:bg-blue-950/40">
           <Megaphone size={16} className="shrink-0 text-blue-600 dark:text-blue-400" />
           <div className="text-sm text-blue-800 dark:text-blue-200">
@@ -296,7 +293,6 @@ function copyBody(){
           </div>
         </div>
 
-        {/* Options row */}
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Channel</label>

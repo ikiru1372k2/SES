@@ -1,13 +1,6 @@
-// Authoritative column-name list for the Master Data function. Matches
-// the headers produced by the finance team's master-data export. Aliases
-// cover both the original export header and common normalised spellings so
-// the engine works whether the sheet was passed through the header
-// normaliser or not.
-//
-// To add a new required field: append a `MD_COLUMNS.<key>` entry, then add
-// it to `MD_REQUIRED_COLUMNS` in the user-facing order. The rule code is
-// generated deterministically from the column id (`RUL-MD-<ID>-MISSING`),
-// so a matching catalog entry appears automatically in `rules.ts`.
+// Authoritative column-name list for Master Data. Aliases cover original + normalised header spellings.
+// To add a new required field: append a `MD_COLUMNS.<key>` entry, then add it to `MD_REQUIRED_COLUMNS`.
+// The rule code is generated deterministically (`RUL-MD-<ID>-MISSING`) so a catalog entry appears automatically.
 
 import type { RowObject } from '../types';
 
@@ -17,13 +10,7 @@ export interface ColumnSpec {
   aliases: string[]; // header strings to look up in the row object
 }
 
-// Identifier-only alias arrays kept as standalone exports because the
-// engine reads them in a different code path (issue identifiers attached
-// to every finding, regardless of which rule fired). These columns are
-// intentionally NOT in MD_REQUIRED_COLUMNS — Project No., Project, Project
-// State, and email are part of every row but the business owners decided
-// not to audit them as required fields. They're still needed so each
-// finding can show "Project No: 90032101" and so on.
+// Identifier aliases — read separately for finding metadata; intentionally NOT in MD_REQUIRED_COLUMNS.
 export const MD_PROJECT_NO_ALIASES = ['Project No.', 'Project No', 'Project Number', 'projectNo'];
 export const MD_PROJECT_NAME_ALIASES = ['Project', 'Project Name', 'projectName', 'Name'];
 export const MD_EMAIL_ALIASES = ['Project Manager Email', 'Manager Email', 'email', 'Email'];
@@ -82,13 +69,8 @@ export const MD_COLUMNS = {
   },
 } as const satisfies Record<string, ColumnSpec>;
 
-// Required-field set, in the user-facing order the business owners use
-// when reviewing audit findings. Every column here generates a
-// `RUL-MD-<ID>-MISSING` rule via `missingFieldRuleCode` in `rules.ts`.
-//
-// Project Product appears here so it gets a MISSING rule code in the
-// catalog, but the engine handles it specially (three rules: missing,
-// not-assigned, review-others). See `engine.ts` for the dispatch.
+// Required-field set in business-owner order. Each generates `RUL-MD-<ID>-MISSING`.
+// Project Product is here for the catalog code but the engine handles it specially (see engine.ts).
 export const MD_REQUIRED_COLUMNS: ColumnSpec[] = [
   MD_COLUMNS.customerName,
   MD_COLUMNS.endCustomerName,

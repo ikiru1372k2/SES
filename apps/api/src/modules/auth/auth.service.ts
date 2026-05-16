@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -42,6 +43,20 @@ export class AuthService implements OnModuleInit {
     if (process.env.NODE_ENV === 'production' && (!secret || secret.length < 32)) {
       throw new InternalServerErrorException(
         'SES_AUTH_SECRET must be a cryptographically random string of at least 32 characters in production.',
+      );
+    }
+    // F14: dev-login is a passwordless login-by-identifier. It should never
+    // be on in production; if an operator deliberately enabled the demo
+    // escape hatch, make that loudly visible in the logs.
+    if (
+      process.env.NODE_ENV === 'production' &&
+      process.env.SES_ALLOW_DEV_LOGIN === 'true' &&
+      process.env.SES_ALLOW_DEMO_DEV_LOGIN === 'true'
+    ) {
+      new Logger(AuthService.name).warn(
+        'SECURITY: passwordless dev-login is ENABLED in production ' +
+          '(SES_ALLOW_DEV_LOGIN=true, SES_ALLOW_DEMO_DEV_LOGIN=true). ' +
+          'Disable both unless this is an intentional, time-boxed demo.',
       );
     }
   }

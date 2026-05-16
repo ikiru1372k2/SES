@@ -67,9 +67,4 @@ export class AuthController {
   me(@CurrentUser() user: unknown) {
     return { user };
   }
-
-  @Get('callback')
-  callbackStub() {
-    return { ok: false, message: 'OIDC callback is not configured in this environment.' };
-  }
 }

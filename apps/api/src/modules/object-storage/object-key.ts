@@ -12,9 +12,7 @@ export function sanitizeFileName(input: string): string {
   const cleaned = trimmed
     .normalize('NFKD')
     .replace(/[^A-Za-z0-9._-]+/g, '-')
-    // Strip leading dots/dashes so `../etc/passwd` becomes `etc-passwd` rather
-    // than `..-etc-passwd`. Object keys are prefixed safely either way, but
-    // surfacing dotty leaders in metadata/logs is misleading.
+    // Strip leading dots/dashes so `../etc/passwd` -> `etc-passwd`.
     .replace(/^[.\-]+/, '')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');

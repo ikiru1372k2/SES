@@ -47,8 +47,7 @@ export function normalizeForPdMatch(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// A column is a PD column if it contains the word "pd" AND a month/year indicator.
-// The month indicator can be a short/long month name, a numeric month (01-12), or a 4-digit year.
+// PD column = contains "pd" AND a month/year indicator (short/long month, numeric 01-12, or 4-digit year).
 export function isPdColumn(header: string): boolean {
   const n = normalizeForPdMatch(header);
   if (!/\bpd\b/.test(n)) return false;
@@ -59,28 +58,14 @@ export function isPdColumn(header: string): boolean {
   );
 }
 
-// Column index + display label for a detected PD column.
-// colIndex is the 0-based column position in the raw rows, used for direct
-// value lookup via rawRows[rowIndex][colIndex] regardless of header key names.
+// Column index + display label for a detected PD column. colIndex enables direct lookup by position.
 export interface PdColumnInfo {
   colIndex: number;
   label: string;
 }
 
-// Scan rawRows for PD columns using two strategies; return PdColumnInfo[] so
-// the engine can look up values by column index rather than header key name.
-// This correctly handles files where the data header row has blank PD cells
-// (e.g. SAP/SAC exports with a two-row Effort PD / month sub-header).
-//
-// Strategy A: find the single header row (within the first maxHeaderScan rows)
-//   that has the most cells matching isPdColumn.
-//
-// Strategy B: for each consecutive pair (i, i+1), merge cells column-by-column
-//   and check if the merged label matches isPdColumn (handles "Effort PD" +
-//   "Mar 31 2026" two-row layouts).
-//
-// Strategy B is preferred on ties (equal count) because it produces unique,
-// descriptive labels per month rather than repeated generic labels.
+// Scan two strategies (single-row max; consecutive-pair merge) to find PD columns.
+// Merge strategy preferred on ties — handles SAP/SAC two-row "Effort PD" / "Mar 31 2026" headers.
 export function detectPdColumns(rawRows: unknown[][], maxHeaderScan = 3): PdColumnInfo[] {
   if (rawRows.length === 0) return [];
 
@@ -127,8 +112,7 @@ export function detectPdColumns(rawRows: unknown[][], maxHeaderScan = 3): PdColu
   return bestSingleRow;
 }
 
-// Read manager name with First Name + Last Name fallback for files that store
-// the manager identity across two separate columns rather than a single one.
+// Read manager name with First Name + Last Name fallback for split-column files.
 export function readManagerName(row: RowObject): string {
   const mgr = readCell(row, OP_MANAGER_ALIASES);
   if (mgr !== undefined && String(mgr).trim()) return String(mgr).trim();

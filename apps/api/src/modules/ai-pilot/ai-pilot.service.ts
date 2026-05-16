@@ -55,9 +55,7 @@ export class AiPilotService {
     if (row.uploadedObjectId) {
       const meta = await this.uploadedObjects.findById(row.uploadedObjectId);
       if (!meta) throw new NotFoundException(`object ${row.uploadedObjectId} missing`);
-      // The bucket name is recorded on the metadata row, so we resolve
-      // by exact name (works whether the object lives in ses-ai-files,
-      // a legacy single bucket, or a future renamed bucket).
+      // Resolve by recorded bucket name to survive bucket renames.
       const stream = await this.storage.getObjectStream(meta.objectKey, {
         bucketName: meta.bucket,
       });
@@ -80,10 +78,7 @@ export class AiPilotService {
         include: { aiMeta: true },
       });
       const specs: AiRuleSpec[] = [];
-      // Dedupe by structural signature (logic + flagMessage). A user can
-      // accidentally save the same rule twice; without this guard the
-      // executor would emit one issue per duplicate, causing visible
-      // duplication on every audit run.
+      // Dedupe by signature so duplicate-saved rules don't double-flag.
       const seenSignatures = new Set<string>();
       for (const row of rows) {
         if (!row.aiMeta) continue;
@@ -173,8 +168,7 @@ export class AiPilotService {
       fileName: file.originalname,
     });
 
-    // 1. Reserve metadata row (status=pending) before touching storage so a
-    //    crash mid-upload leaves a forensic trail.
+    // Reserve metadata row before storage so mid-upload crashes leave a trail.
     const aiPilotBucket = this.storage.bucketFor('ai-pilot');
     const metadataId = ulid();
     await this.uploadedObjects.createPending({
@@ -191,7 +185,6 @@ export class AiPilotService {
       storageEndpoint: this.storage.storageEndpoint,
     });
 
-    // 2. Upload bytes to S3-compatible storage. On failure, mark the row.
     try {
       await this.storage.putObject({
         objectKey,
@@ -210,8 +203,7 @@ export class AiPilotService {
       throw new BadRequestException('upload failed');
     }
 
-    // 3. Persist sandbox session pointing at the uploaded object. Bytes are
-    //    NOT stored in Postgres — readSessionBytes() streams from storage.
+    // Persist sandbox session; bytes stay in storage, streamed via readSessionBytes().
     await this.pg.query(
       `INSERT INTO "AiPilotSandboxSession"
         ("id","authoredById","functionId","fileName","fileBytes","sheetName","expiresAt","uploadedObjectId")
@@ -242,10 +234,7 @@ export class AiPilotService {
         name: s.name,
         rowCount: s.rowCount,
         status: s.status,
-        // Prefer original headers (real text from the workbook) over
-        // normalizedHeaders (canonical SES IDs that include "column23"
-        // placeholders for non-canonical columns). The columnResolver
-        // can match either, but the LLM needs human-readable names.
+        // LLM needs human-readable header names, not "column23" placeholders.
         normalizedHeaders: s.originalHeaders?.length
           ? s.originalHeaders
           : s.normalizedHeaders ?? [],
@@ -274,8 +263,7 @@ export class AiPilotService {
     const sheet = session.sheetName
       ? parsed.sheets.find((s) => s.name === session.sheetName)
       : parsed.sheets.find((s) => s.status === 'valid' && s.isSelected);
-    // Prefer originalHeaders so the LLM sees real names like "Contractor Type"
-    // instead of canonical placeholders like "column23".
+    // LLM needs real header names, not "column23" placeholders.
     const columns =
       sheet?.originalHeaders?.length
         ? sheet.originalHeaders
@@ -298,8 +286,7 @@ export class AiPilotService {
       return { success: false, raw: generated.raw, error: generated.error };
     }
 
-    // Force the LLM-suggested ruleCode to a fresh ai_<ulid> so we never collide
-    // with an existing rule. Force functionId to match the session.
+    // Fresh ruleCode + sessionId-bound functionId to avoid collisions.
     generated.spec.ruleCode = `ai_${ulid().toLowerCase()}`;
     generated.spec.functionId = session.functionId as FunctionId;
     if (!generated.spec.ruleVersion || generated.spec.ruleVersion < 1) {
@@ -400,9 +387,7 @@ export class AiPilotService {
     const newRuleCode = spec.ruleCode.startsWith('ai_') ? spec.ruleCode : `ai_${ulid().toLowerCase()}`;
 
     const persisted = await this.prisma.$transaction(async (tx) => {
-      // Deactivate any pre-existing active AI rule on the same function with
-      // identical logic + flagMessage. Without this, repeatedly saving the
-      // same rule produces duplicate findings on every audit run.
+      // Archive any active rule with identical signature so re-saves don't double-flag.
       const existingActive = await tx.auditRule.findMany({
         where: { functionId: spec.functionId, source: 'ai-pilot', status: 'active' },
         include: { aiMeta: true },

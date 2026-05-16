@@ -39,8 +39,7 @@ const TrackingTab = lazy(() =>
   import('../components/workspace/TrackingTab').then((module) => ({ default: module.TrackingTab })),
 );
 
-// Module-scope so it is stable across renders and usable in useCallback deps
-// without churn. These functions require a manager-mapping source to run.
+// Module-scope (stable for useCallback deps). These require a mapping source.
 const MAPPING_ENABLED_FUNCTIONS: ReadonlySet<string> = new Set([
   'over-planning',
   'function-rate',
@@ -77,10 +76,8 @@ export function Workspace() {
   const tabFromUrl = searchParams.get('tab');
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
-  // Blocker handed off when the user picks "Save as new version" from the
-  // unsaved-audit dialog. We defer the proceed/reset decision until the
-  // SaveVersionModal resolves so navigation only continues if a version was
-  // actually created; abandoning the modal rolls back to "stay on page".
+  // Defers the blocker proceed/reset until SaveVersionModal resolves, so
+  // navigation only continues if a version was actually created.
   const pendingBlockerRef = useRef<{ proceed?: (() => void) | undefined; reset?: (() => void) | undefined } | null>(null);
   const modalSavedRef = useRef(false);
   const [mappingSource, setMappingSource] = useState<MappingSourceInput | undefined>(undefined);
@@ -163,8 +160,8 @@ export function Workspace() {
   useEffect(() => {
     if (tab !== 'results') return;
     if (!processRecordId) return;
-    // Only hydrate from a file that belongs to the current function — using
-    // process.activeFileId directly would leak another function's file ID.
+    // Only hydrate from a file belonging to the current function; activeFileId
+    // alone would leak another function's file ID.
     const functionFiles = process?.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId) ?? [];
     const targetFileId = functionFiles.find((file) => file.id === process?.activeFileId)?.id ?? functionFiles[0]?.id;
     if (!targetFileId) return;
@@ -196,10 +193,8 @@ export function Workspace() {
   );
   const blocker = useBlocker(shouldBlock);
 
-  // Derived workspace state. All header action handlers below read from
-  // store state refs captured at call time so they stay stable across
-  // renders (§9 of headerfix.md — the header must not re-render on every
-  // keystroke in the workspace).
+  // Header action handlers read store via refs at call-time to stay stable
+  // across renders (header must not re-render on every keystroke).
   const functionFiles = useMemo(
     () => (process ? process.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId) : []),
     [process, functionId],
@@ -221,8 +216,7 @@ export function Workspace() {
   const mappingSourceValid =
     !MAPPING_ENABLED_FUNCTIONS.has(activeFile?.functionId ?? '') || isMappingSourceValid(mappingSource);
   const accessGate = useEffectiveAccess(process?.serverBacked ? process.displayCode ?? process.id : null);
-  // For local-only (non-serverBacked) processes there's no membership row to
-  // consult — the user is the local owner of their browser session, so allow.
+  // Local-only processes have no membership row; the user owns their session.
   const canEditThisFunction = process?.serverBacked
     ? accessGate.canEditFunction(activeFile?.functionId ?? functionId)
     : true;
@@ -521,9 +515,7 @@ export function Workspace() {
         <SaveVersionModal
           process={process}
           onSaved={() => {
-            // Version was actually created — allow the originally-blocked
-            // navigation to continue. If the modal was opened outside the
-            // blocker flow, pendingBlockerRef is null and this no-ops.
+            // Version created; let blocked navigation proceed (no-op if not blocked).
             modalSavedRef.current = true;
           }}
           onClose={() => {
@@ -550,9 +542,7 @@ export function Workspace() {
           blocker.proceed?.();
         }}
         onSaveAsNew={() => {
-          // Hand the blocker to the SaveVersionModal lifecycle. We cannot
-          // proceed or reset yet — the user hasn't saved yet. The modal's
-          // onSaved/onClose handlers will resolve the blocker correctly.
+          // Hand blocker to SaveVersionModal lifecycle; modal resolves it.
           modalSavedRef.current = false;
           pendingBlockerRef.current = {
             proceed: blocker.proceed,

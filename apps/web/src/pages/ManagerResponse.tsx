@@ -4,18 +4,9 @@ import toast from 'react-hot-toast';
 import { usePrompt } from '../components/shared/ConfirmProvider';
 
 /**
- * Public response page loaded from a signed email link.
- *
- * Intentionally minimal:
- *   - No app shell, no auth context, no Zustand store. Just fetch, render,
- *     submit. Keeping this flow in its own component means a manager clicking
- *     the link never triggers the large client bundle of the authenticated
- *     app — faster first paint, lower CPU on old devices.
- *   - Three one-click actions if allowed: Acknowledge, Correct, Dispute.
- *   - Correct reveals inline fields for the three corrections we support
- *     (effort, state, manager reassignment).
- *   - After submit, the whole page becomes a confirmation; there is no
- *     navigation away, because the manager has no session.
+ * Public response page loaded from a signed email link. No app shell / auth /
+ * store, so a manager clicking the link doesn't pay for the authenticated
+ * client bundle. Actions: Acknowledge / Correct / Dispute.
  */
 
 type ViewData = {

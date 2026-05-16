@@ -5,6 +5,19 @@ on:
   pull_request:
 
 jobs:
+  # F1 prevention: block any commit/PR that introduces a secret
+  # (e.g. a real SES_AUTH_SECRET in .env.example) from ever landing.
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
+
   verify:
     runs-on: ubuntu-latest
     services:

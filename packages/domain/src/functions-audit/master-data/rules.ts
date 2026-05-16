@@ -1,21 +1,13 @@
 import type { RuleCatalogEntry } from '../../audit/auditRules';
-// NOTE: keep `import type` — a value import here would create a runtime
-// cycle with auditRules.ts, which imports MASTER_DATA_RULE_CATALOG from us.
+// NOTE: keep `import type` — value import would create a runtime cycle with auditRules.ts.
 import { MD_REQUIRED_COLUMNS } from './columns';
 
-// Every Master Data rule is keyed by a stable ruleCode so audit findings
-// keep their identity across runs and the DB catalog (AuditRule.ruleCode)
-// can foreign-key into it. Adding a column? Append to MD_REQUIRED_COLUMNS
-// in columns.ts — the rule code below is generated deterministically from
-// the column's id.
-
+// ruleCode is stable across runs and FK'd from AuditRule.ruleCode. Add columns via MD_REQUIRED_COLUMNS.
 export function missingFieldRuleCode(columnId: string): string {
   return `RUL-MD-${columnId.toUpperCase()}-MISSING`;
 }
 
-// Project Product has three rules instead of one (see engine.ts for the
-// dispatch). The MISSING code is the auto-generated one above; the two
-// review codes are spelled out here so call sites can import them by name.
+// Project Product has three rules (see engine.ts dispatch); MISSING is auto-generated, these two are named.
 export const MD_REVIEW_OTHERS_RULE_CODE = 'RUL-MD-PROJECT_PRODUCT-REVIEW-OTHERS';
 export const MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE = 'RUL-MD-PROJECT_PRODUCT-NOT-ASSIGNED';
 
