@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MoreVertical } from 'lucide-react';
+import { ChevronRight, MoreVertical } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_IDS } from '@ses/domain';
 import { EnginePill } from './EnginePill';
+import { Badge } from '../shared/Badge';
 import { computePriority, effectiveManagerEmail, suggestNextAction } from './nextAction';
 
 export type SortKey = 'priority' | 'issues' | 'stage' | 'lastContact' | 'sla';
@@ -18,9 +19,9 @@ function slaTone(row: ProcessEscalationManagerRow, now: number): 'green' | 'ambe
 
 function SlaDot({ tone }: { tone: 'green' | 'amber' | 'red' | 'grey' }) {
   const map = {
-    green: 'bg-green-500',
-    amber: 'bg-amber-500',
-    red: 'bg-red-500',
+    green: 'bg-success-500',
+    amber: 'bg-warning-500',
+    red: 'bg-danger-500',
     grey: 'bg-gray-300 dark:bg-gray-600',
   } as const;
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${map[tone]}`} title="SLA" />;
@@ -38,6 +39,13 @@ function slaCountdownLabel(row: ProcessEscalationManagerRow, now: number): strin
   return delta < 0 ? `Overdue ${days}d` : `Due in ${days}d`;
 }
 
+const SLA_BADGE_TONE = {
+  green: 'gray',
+  amber: 'amber',
+  red: 'red',
+  grey: 'gray',
+} as const;
+
 export function ManagerTable({
   rows,
   now,
@@ -49,7 +57,7 @@ export function ManagerTable({
   onOpenPanel,
   sortKey,
   onSortKey,
-  engineFilter,
+  selectedEngines,
   onEngineFromPill,
 }: {
   rows: ProcessEscalationManagerRow[];
@@ -65,7 +73,7 @@ export function ManagerTable({
   onOpenPanel: (row: ProcessEscalationManagerRow) => void;
   sortKey: SortKey;
   onSortKey: (k: SortKey) => void;
-  engineFilter: FunctionId | '';
+  selectedEngines: Set<FunctionId>;
   onEngineFromPill: (engine: FunctionId) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -136,7 +144,7 @@ export function ManagerTable({
   const sortBtn = (key: SortKey, label: string) => (
     <button
       type="button"
-      className={`font-medium hover:text-brand ${sortKey === key ? 'text-brand' : ''}`}
+      className={`font-semibold uppercase tracking-wide hover:text-brand ${sortKey === key ? 'text-brand' : ''}`}
       onClick={() => onSortKey(key)}
     >
       {label}
@@ -144,14 +152,18 @@ export function ManagerTable({
   );
 
   return (
-    <div ref={wrapRef} className="min-h-0 flex-1 overflow-auto rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+    <div
+      ref={wrapRef}
+      className="min-h-0 flex-1 overflow-auto rounded-xl border border-rule bg-white shadow-soft dark:border-gray-700 dark:bg-gray-900"
+    >
       <table className="min-w-full text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-gray-50 text-xs uppercase text-gray-500 dark:bg-gray-800">
-          <tr>
-            <th scope="col" className="px-2 py-2">
+        <thead className="sticky top-0 z-10 bg-surface-app text-[11px] text-ink-3 dark:bg-gray-800 dark:text-gray-400">
+          <tr className="border-b border-rule dark:border-gray-700">
+            <th scope="col" className="px-3 py-2.5">
               <input
                 type="checkbox"
                 aria-label="Select all rows"
+                className="accent-brand"
                 onChange={() => onToggleAllVisible(sorted.map((row) => row.trackingId).filter(Boolean) as string[])}
                 checked={
                   sorted.length > 0 &&
@@ -159,14 +171,14 @@ export function ManagerTable({
                 }
               />
             </th>
-            <th scope="col" className="px-3 py-2">Manager</th>
-            <th scope="col" className="px-3 py-2">{sortBtn('issues', 'Issues')}</th>
-            <th scope="col" className="hidden px-3 py-2 lg:table-cell">Engines</th>
-            <th scope="col" className="hidden px-3 py-2 sm:table-cell">{sortBtn('stage', 'Stage')}</th>
-            <th scope="col" className="hidden px-3 py-2 md:table-cell">{sortBtn('lastContact', 'Last contact')}</th>
-            <th scope="col" className="px-3 py-2">{sortBtn('sla', 'SLA')}</th>
-            <th scope="col" className="hidden px-3 py-2 sm:table-cell">Next action</th>
-            <th scope="col" className="w-10 px-2 py-2" aria-label="Actions" />
+            <th scope="col" className="px-3 py-2.5 font-semibold uppercase tracking-wide">Manager</th>
+            <th scope="col" className="px-3 py-2.5">{sortBtn('issues', 'Issues')}</th>
+            <th scope="col" className="hidden px-3 py-2.5 font-semibold uppercase tracking-wide lg:table-cell">Engines</th>
+            <th scope="col" className="hidden px-3 py-2.5 sm:table-cell">{sortBtn('stage', 'Stage')}</th>
+            <th scope="col" className="hidden px-3 py-2.5 md:table-cell">{sortBtn('lastContact', 'Last contact')}</th>
+            <th scope="col" className="px-3 py-2.5">{sortBtn('sla', 'SLA')}</th>
+            <th scope="col" className="hidden px-3 py-2.5 font-semibold uppercase tracking-wide sm:table-cell">Next action</th>
+            <th scope="col" className="w-10 px-2 py-2.5" aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
@@ -179,21 +191,22 @@ export function ManagerTable({
                 key={row.managerKey}
                 tabIndex={0}
                 aria-selected={selected}
-                className={`cursor-pointer border-t border-gray-100 dark:border-gray-800 ${
+                className={`cursor-pointer border-t border-rule/70 transition-colors dark:border-gray-800 ${
                   row.resolved
                     ? 'bg-green-50 hover:bg-green-100 dark:bg-green-950/30 dark:hover:bg-green-900/40'
                     : selected
-                      ? 'bg-brand/5 hover:bg-brand/10 dark:hover:bg-gray-800/80'
-                      : 'hover:bg-gray-50 dark:hover:bg-gray-800/80'
+                      ? 'bg-brand-subtle hover:bg-brand-subtle dark:bg-brand/10 dark:hover:bg-gray-800/80'
+                      : 'hover:bg-surface-app dark:hover:bg-gray-800/80'
                 } ${selected ? 'ring-1 ring-inset ring-brand/30' : ''}`}
                 onClick={() => {
                   onSelectManagerKey(row.managerKey);
                   onOpenPanel(row);
                 }}
               >
-                <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
+                <td className="px-3 py-2.5" onClick={(event) => event.stopPropagation()}>
                   <input
                     type="checkbox"
+                    className="accent-brand"
                     disabled={!row.trackingId}
                     checked={row.trackingId ? selectedTrackingIds.has(row.trackingId) : false}
                     onChange={() => {
@@ -201,72 +214,72 @@ export function ManagerTable({
                     }}
                   />
                 </td>
-                <td className="px-3 py-2">
-                  <div className="font-medium text-gray-900 dark:text-white">{row.managerName}</div>
+                <td className="px-3 py-2.5">
+                  <div className="font-semibold text-ink dark:text-white">{row.managerName}</div>
                   {managerEmail ? (
-                    <div className="text-xs text-gray-500">{managerEmail}</div>
+                    <div className="font-mono text-[11px] text-ink-3">{managerEmail}</div>
                   ) : (
-                    <div className="mt-0.5 inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-                      Missing email — add to directory
+                    <div className="mt-0.5 inline-flex">
+                      <Badge tone="amber">Missing email — add to directory</Badge>
                     </div>
                   )}
                 </td>
-                <td className="px-3 py-2 tabular-nums">{row.totalIssues}</td>
-                <td className="hidden px-3 py-2 lg:table-cell">
+                <td className="px-3 py-2.5 tabular-nums text-ink dark:text-gray-200">{row.totalIssues}</td>
+                <td className="hidden px-3 py-2.5 lg:table-cell">
                   <div className="flex flex-wrap gap-1">
                     {FUNCTION_IDS.map((fid) => (
                       <EnginePill
                         key={fid}
                         engine={fid}
                         count={row.countsByEngine[fid] ?? 0}
-                        active={engineFilter === fid}
+                        active={selectedEngines.has(fid)}
                         onClick={() => onEngineFromPill(fid)}
                       />
                     ))}
                   </div>
                 </td>
-                <td className="hidden px-3 py-2 sm:table-cell">
+                <td className="hidden px-3 py-2.5 sm:table-cell">
                   <div className="flex flex-wrap items-center gap-1">
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">{row.stage ?? '—'}</span>
+                    <Badge tone="gray">{row.stage ?? '—'}</Badge>
                     {row.stage === 'RESOLVED' && !row.verifiedAt ? (
-                      <span
-                        className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100"
-                        title="Manager marked resolved — needs auditor verification"
-                      >
-                        Awaiting verification
-                      </span>
+                      <Badge tone="amber">Awaiting verification</Badge>
                     ) : null}
                   </div>
                 </td>
-                <td className="hidden px-3 py-2 text-xs text-gray-600 md:table-cell">
+                <td className="hidden px-3 py-2.5 text-xs text-ink-3 md:table-cell">
                   {row.lastContactAt ? new Date(row.lastContactAt).toLocaleDateString() : '—'}
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-3 py-2.5">
                   <div className="flex items-center gap-2">
                     <SlaDot tone={tone} />
-                    <span className="text-xs text-gray-600 dark:text-gray-300">{slaCountdownLabel(row, now)}</span>
+                    <Badge tone={SLA_BADGE_TONE[tone]}>{slaCountdownLabel(row, now)}</Badge>
                   </div>
                 </td>
-                <td className="hidden px-3 py-2 sm:table-cell">
+                <td className="hidden px-3 py-2.5 sm:table-cell">
                   <NextActionChip row={row} now={now} />
                 </td>
-                <td className="relative px-2 py-2">
-                  <button
-                    type="button"
-                    className="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                    aria-label="Row menu"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setMenuRow(menuRow === idx ? null : idx);
-                    }}
-                  >
-                    <MoreVertical size={16} />
-                  </button>
+                <td className="relative px-2 py-2.5">
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="hidden items-center gap-0.5 text-xs font-medium text-ink-3 group-hover:text-brand lg:inline-flex">
+                      Open <ChevronRight size={13} />
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded-md p-1 text-ink-3 transition-colors hover:bg-gray-100 hover:text-ink dark:hover:bg-gray-800"
+                      aria-label="Row menu"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuRow(menuRow === idx ? null : idx);
+                      }}
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+                  </div>
                   {menuRow === idx ? (
-                    <div className="absolute right-0 top-9 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-700 dark:bg-gray-900">
+                    <div className="absolute right-0 top-9 z-20 w-44 rounded-lg border border-rule bg-white py-1 text-xs shadow-soft-lg dark:border-gray-700 dark:bg-gray-900">
                       <button
                         type="button"
-                        className="block w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                        className="block w-full px-3 py-2 text-left hover:bg-surface-app dark:hover:bg-gray-800"
                         onClick={(e) => {
                           e.stopPropagation();
                           const em = effectiveManagerEmail(row);
@@ -279,7 +292,7 @@ export function ManagerTable({
                       </button>
                       <button
                         type="button"
-                        className="block w-full px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                        className="block w-full px-3 py-2 text-left hover:bg-surface-app dark:hover:bg-gray-800"
                         onClick={(e) => {
                           e.stopPropagation();
                           onOpenPanel(row);

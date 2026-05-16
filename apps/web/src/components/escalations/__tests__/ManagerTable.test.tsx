@@ -41,7 +41,7 @@ describe('ManagerTable', () => {
         onOpenPanel={vi.fn()}
         sortKey="issues"
         onSortKey={onSortKey}
-        engineFilter=""
+        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
@@ -69,7 +69,7 @@ describe('ManagerTable', () => {
         onOpenPanel={vi.fn()}
         sortKey="issues"
         onSortKey={vi.fn()}
-        engineFilter=""
+        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
@@ -101,7 +101,7 @@ describe('ManagerTable', () => {
         onOpenPanel={onOpenPanel}
         sortKey="issues"
         onSortKey={vi.fn()}
-        engineFilter=""
+        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
@@ -131,7 +131,7 @@ describe('ManagerTable', () => {
         onOpenPanel={vi.fn()}
         sortKey="priority"
         onSortKey={vi.fn()}
-        engineFilter=""
+        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
@@ -157,7 +157,7 @@ describe('ManagerTable', () => {
         onOpenPanel={vi.fn()}
         sortKey="priority"
         onSortKey={vi.fn()}
-        engineFilter=""
+        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );

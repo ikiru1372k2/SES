@@ -3,10 +3,11 @@ import { onRealtimeEvent } from '../realtime/socket';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCoalescedInvalidator } from '../hooks/useCoalescedInvalidator';
 import { Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { Megaphone, RefreshCw } from 'lucide-react';
+import { Megaphone, RefreshCw, Send, X } from 'lucide-react';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
 import { FUNCTION_REGISTRY } from '@ses/domain';
 import { AppShell } from '../components/layout/AppShell';
+import { Button } from '../components/shared/Button';
 import { usePageHeader } from '../components/layout/usePageHeader';
 import { EscalationFilters, type SlaFilter } from '../components/escalations/EscalationFilters';
 import { EscalationPanel } from '../components/escalations/EscalationPanel';
@@ -37,6 +38,22 @@ function parseStagesParam(raw: string | null): Set<string> {
 }
 
 function serializeStagesParam(s: Set<string>): string {
+  return [...s].sort().join(',');
+}
+
+// Engine filter is multi-select (checkbox group), serialized into the same
+// comma-separated `engine` URL param the Stage filter already uses.
+function parseEnginesParam(raw: string | null): Set<FunctionId> {
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean) as FunctionId[],
+  );
+}
+
+function serializeEnginesParam(s: Set<FunctionId>): string {
   return [...s].sort().join(',');
 }
 
@@ -71,13 +88,13 @@ export function EscalationCenter() {
   const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   const sortKey = (search.get('sort') as SortKey) || 'priority';
-  const engine = (search.get('engine') as FunctionId) || '';
   const sla = (search.get('sla') as SlaFilter) || 'all';
   const assignedToMe = search.get('mine') === '1';
   // #76: surface RESOLVED-but-unverified rows for the verification step.
   const needsVerification = search.get('needsVerification') === '1';
 
   const selectedStages = useMemo(() => parseStagesParam(search.get('stages')), [search]);
+  const selectedEngines = useMemo(() => parseEnginesParam(search.get('engine')), [search]);
 
   const setParam = useCallback(
     (patch: Record<string, string | null>) => {
@@ -161,7 +178,12 @@ export function EscalationCenter() {
   const filteredRows = useMemo(() => {
     const rows = q.data?.rows ?? [];
     return rows.filter((row) => {
-      if (engine && (row.countsByEngine[engine] ?? 0) === 0) return false;
+      if (
+        selectedEngines.size > 0 &&
+        ![...selectedEngines].some((fid) => (row.countsByEngine[fid] ?? 0) > 0)
+      ) {
+        return false;
+      }
       if (assignedToMe && currentUser?.email) {
         const em = (effectiveManagerEmail(row) ?? '').toLowerCase();
         if (em !== currentUser.email.toLowerCase()) return false;
@@ -174,13 +196,20 @@ export function EscalationCenter() {
       if (needsVerification && !(row.stage === 'RESOLVED' && !row.verifiedAt)) return false;
       return true;
     });
-  }, [assignedToMe, currentTime, currentUser, engine, needsVerification, q.data?.rows, selectedStages, sla]);
+  }, [assignedToMe, currentTime, currentUser, selectedEngines, needsVerification, q.data?.rows, selectedStages, sla]);
 
   const toggleStage = (stage: string) => {
     const next = new Set(selectedStages);
     if (next.has(stage)) next.delete(stage);
     else next.add(stage);
     setParam({ stages: next.size ? serializeStagesParam(next) : null });
+  };
+
+  const toggleEngine = (fid: FunctionId) => {
+    const next = new Set(selectedEngines);
+    if (next.has(fid)) next.delete(fid);
+    else next.add(fid);
+    setParam({ engine: next.size ? serializeEnginesParam(next) : null });
   };
 
   useEffect(() => {
@@ -242,61 +271,62 @@ export function EscalationCenter() {
     <AppShell process={process}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 px-4 py-6 sm:py-8 lg:flex-row lg:px-6">
         <div className="min-w-0 flex-1">
-          <div className="mb-4 flex flex-wrap items-center gap-2 sm:gap-3">
-            <h1 className="text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Escalation Center</h1>
+          <div className="mb-5 flex flex-wrap items-center gap-2 sm:gap-3">
+            <h1 className="section-title text-xl sm:text-2xl">Escalation Center</h1>
             <span className="flex-1" />
-            <button
+            <Button
               type="button"
+              size="sm"
+              variant={needsVerification ? 'primary' : 'secondary'}
               onClick={() => setParam({ needsVerification: needsVerification ? null : '1' })}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium ${
-                needsVerification
-                  ? 'border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100'
-                  : 'border border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-300'
-              }`}
               title="Show only rows marked RESOLVED that still need auditor verification"
             >
               Needs verification
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              size="sm"
+              variant="secondary"
               onClick={() => {
                 void q.refetch();
                 void queryClient.invalidateQueries({ queryKey: ['directory-suggestions'] });
               }}
               disabled={q.isFetching}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs text-gray-600 hover:border-gray-300 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"
+              leading={<RefreshCw size={14} className={q.isFetching ? 'animate-spin' : ''} />}
               title="Force a refresh — only needed if the live feed has dropped"
             >
-              <RefreshCw size={14} className={q.isFetching ? 'animate-spin' : ''} /> Refresh
-            </button>
-            <button
+              Refresh
+            </Button>
+            <Button
               type="button"
+              size="sm"
               onClick={() => setBroadcastOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
+              leading={<Megaphone size={14} />}
               title="Send one message to every manager with open findings"
             >
-              <Megaphone size={14} /> Broadcast
-            </button>
+              Broadcast
+            </Button>
           </div>
 
           {q.isError ? (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            <div className="mb-4 rounded-xl border border-danger-500/40 bg-danger-50 p-3.5 text-sm text-danger-700 shadow-soft dark:border-red-900 dark:bg-red-950 dark:text-red-200">
               {(q.error as Error).message}
             </div>
           ) : null}
 
           {unmapped > 0 ? (
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning-500/40 bg-warning-50 p-3.5 text-sm text-warning-700 shadow-soft dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
               <span>
                 {unmapped} manager{unmapped === 1 ? '' : 's'} in these findings aren&apos;t in the directory. Notifications can&apos;t be sent until they&apos;re resolved.
               </span>
-              <button
+              <Button
                 type="button"
-                className="rounded border border-amber-300 px-2 py-1 text-xs font-medium hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900"
+                size="sm"
+                variant="secondary"
                 onClick={() => setResolveOpen(true)}
               >
-                Resolve
-              </button>
+                Resolve owners
+              </Button>
             </div>
           ) : null}
 
@@ -305,50 +335,55 @@ export function EscalationCenter() {
           {summary ? <EscalationSummaryBar summary={summary} /> : null}
 
           {selectedTrackingIds.size > 0 ? (
-            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm">
-              <span className="font-medium text-brand">
+            <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-brand-300 bg-brand-subtle px-3.5 py-2.5 text-sm shadow-soft dark:border-brand/40 dark:bg-brand/10">
+              <span className="font-semibold text-brand">
                 {selectedTrackingIds.size} selected
               </span>
-              <span className="text-[11px] text-gray-500">
-                Shortcuts: <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">c</kbd> compose ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">a</kbd> ack ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">s</kbd> snooze ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">e</kbd> escalate ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">r</kbd> resolve ·{' '}
-                <kbd className="rounded bg-gray-200 px-1 dark:bg-gray-700">esc</kbd> clear
+              <span className="hidden text-[11px] text-ink-3 sm:inline">
+                Shortcuts: <kbd className="rounded-sm border border-rule bg-white px-1 font-mono text-[10px] dark:border-gray-700 dark:bg-gray-800">c</kbd> compose ·{' '}
+                <kbd className="rounded-sm border border-rule bg-white px-1 font-mono text-[10px] dark:border-gray-700 dark:bg-gray-800">a</kbd> ack ·{' '}
+                <kbd className="rounded-sm border border-rule bg-white px-1 font-mono text-[10px] dark:border-gray-700 dark:bg-gray-800">s</kbd> snooze ·{' '}
+                <kbd className="rounded-sm border border-rule bg-white px-1 font-mono text-[10px] dark:border-gray-700 dark:bg-gray-800">e</kbd> escalate ·{' '}
+                <kbd className="rounded-sm border border-rule bg-white px-1 font-mono text-[10px] dark:border-gray-700 dark:bg-gray-800">r</kbd> resolve ·{' '}
+                <kbd className="rounded-sm border border-rule bg-white px-1 font-mono text-[10px] dark:border-gray-700 dark:bg-gray-800">esc</kbd> clear
               </span>
               <span className="flex-1" />
-              <button
+              <Button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
+                size="sm"
                 onClick={() => setBulkComposerOpen(true)}
+                leading={<Send size={13} />}
               >
                 Compose
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
+                size="sm"
+                variant="secondary"
                 onClick={() => setAckOpen(true)}
               >
                 Acknowledge
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
+                size="sm"
+                variant="secondary"
                 onClick={() => setSnoozeOpen(true)}
               >
                 Snooze
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+                size="sm"
+                variant="danger"
                 onClick={() => setReescOpen(true)}
               >
                 Re-escalate
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
+                size="sm"
+                variant="danger"
                 onClick={() => {
                   void bulkResolve([...selectedTrackingIds])
                     .then((res) => {
@@ -359,15 +394,17 @@ export function EscalationCenter() {
                 }}
               >
                 Resolve
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-500 hover:bg-white dark:border-gray-700 dark:hover:bg-gray-800"
+                size="sm"
+                variant="ghost"
                 onClick={() => setSelectedTrackingIds(new Set())}
                 aria-label="Clear selection"
+                leading={<X size={13} />}
               >
                 Clear
-              </button>
+              </Button>
             </div>
           ) : null}
 
@@ -378,8 +415,8 @@ export function EscalationCenter() {
               stages={stages}
               selectedStages={selectedStages}
               onToggleStage={toggleStage}
-              engine={engine}
-              onEngine={(v) => setParam({ engine: v || null })}
+              selectedEngines={selectedEngines}
+              onToggleEngine={toggleEngine}
               sla={sla}
               onSla={(v) => setParam({ sla: v === 'all' ? null : v })}
               assignedToMe={assignedToMe}
@@ -425,8 +462,8 @@ export function EscalationCenter() {
                 }}
                 sortKey={sortKey}
                 onSortKey={(k) => setParam({ sort: k === 'priority' ? null : k })}
-                engineFilter={engine}
-                onEngineFromPill={(fid) => setParam({ engine: engine === fid ? null : fid })}
+                selectedEngines={selectedEngines}
+                onEngineFromPill={toggleEngine}
               />
             </div>
           </div>

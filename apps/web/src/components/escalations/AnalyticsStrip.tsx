@@ -134,17 +134,19 @@ function Tile({
 }) {
   const classes = TONE[tone];
   return (
-    <div className={`rounded-xl border border-gray-200 p-3 shadow-sm dark:border-gray-800 ${classes.bg}`}>
+    <div
+      className={`rounded-xl border border-rule p-3.5 shadow-soft transition-shadow duration-150 ease-soft hover:shadow-soft-md dark:border-gray-800 ${classes.bg}`}
+    >
       <div className="flex items-center justify-between gap-2">
         <span className={`text-[11px] font-semibold uppercase tracking-wide ${classes.text}`}>
           {label}
         </span>
         <Icon size={14} className={classes.text} />
       </div>
-      <div className="mt-1 flex items-end gap-2">
-        <span className={`text-2xl font-bold tabular-nums ${classes.text}`}>{value}</span>
+      <div className="mt-1.5 flex items-end gap-2">
+        <span className={`text-2xl font-bold tabular-nums tracking-tight ${classes.text}`}>{value}</span>
       </div>
-      <div className={`mt-1 inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-medium ${classes.chip}`}>
+      <div className={`mt-1.5 inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-medium ${classes.chip}`}>
         {hint}
       </div>
     </div>
