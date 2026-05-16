@@ -1,7 +1,5 @@
-// Lightweight wrappers over @ses/domain's compareResults, shaped for the
-// UI surfaces that need a summary (Save split button, UnsavedAuditDialog,
-// VersionCompare, post-run toast). Centralising here means we stop forking
-// the "what changed" phrasing across three components.
+// Wrappers over @ses/domain compareResults, shaped for UI summary surfaces.
+// Centralised so "what changed" phrasing isn't forked across components.
 
 import { compareResults } from '../domain/auditEngine';
 import type { AuditResult, AuditVersion } from '../domain/types';

@@ -1,9 +1,4 @@
-/**
- * ChartSpec — what the analytics agent emits and what ChartRenderer
- * consumes. Discriminated union by `type`. Every spec carries a
- * `source` block so auditors can trace any chart back to the SQL
- * that produced it.
- */
+/** ChartSpec: discriminated union by `type` emitted by the analytics agent. `source` traces chart back to its SQL. */
 
 export type ChartType =
   | 'kpi'

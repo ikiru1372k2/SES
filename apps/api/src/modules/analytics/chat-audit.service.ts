@@ -74,4 +74,24 @@ export class ChatAuditService {
     );
     return rows;
   }
+
+  /**
+   * F11: retention. ai_chat_audit holds raw prompts + generated SQL +
+   * answers, which can be business-confidential. Delete rows older than the
+   * configured window (default 90 days) so the table doesn't retain
+   * sensitive content indefinitely. Called by AnalyticsRetentionCron.
+   */
+  async purgeOlderThan(retentionDays: number): Promise<number> {
+    const days = Number.isFinite(retentionDays) && retentionDays > 0 ? Math.floor(retentionDays) : 90;
+    const rows = await this.pg.query<{ deleted: number }>(
+      `WITH del AS (
+         DELETE FROM ai_chat_audit
+          WHERE created_at < now() - ($1 || ' days')::interval
+         RETURNING 1
+       )
+       SELECT COUNT(*)::int AS deleted FROM del`,
+      [String(days)],
+    );
+    return rows[0]?.deleted ?? 0;
+  }
 }

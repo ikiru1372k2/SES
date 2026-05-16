@@ -1,15 +1,8 @@
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-// Split-button primitive: primary action on the left, caret on the right
-// that opens a single-column menu of secondary actions. Extracted from the
-// workspace Save flow but deliberately generic so future dual-action
-// buttons (Send: Outlook | Teams) can reuse it.
-//
-// The primary button stays clickable when the menu is open — matching the
-// behaviour of GMail's Send split button — so a user who caret-opened the
-// menu, changed their mind, and now wants the fast path never has to first
-// close the menu.
+// Split-button: primary action + caret-opened menu of secondary actions.
+// Primary stays clickable while the menu is open (Gmail Send behaviour).
 
 export type SplitButtonMenuItem = {
   label: string;

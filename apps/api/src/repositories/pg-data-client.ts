@@ -81,10 +81,8 @@ function compileConditions(
       continue;
     }
 
-    // Composite-key shorthand: `where: { a_b: { a, b } }`. Only when
-    // the value is itself an object — single-column unique aliases
-    // (e.g. `where: { ruleCode: '...' }`) fall through to the normal
-    // column path below.
+    // Composite-key shorthand `where: { a_b: { a, b } }` — only when the
+    // value is an object; single-column unique aliases fall through below.
     if (
       ctx.meta.uniques[key] &&
       raw !== null &&
@@ -94,9 +92,7 @@ function compileConditions(
       !Buffer.isBuffer(raw)
     ) {
       const cols = ctx.meta.uniques[key];
-      // If the shape doesn't match (the object lacks any of the
-      // composite columns), treat as operator object on a real column
-      // instead of a composite key.
+      // If the shape lacks any composite column, treat as an operator object.
       const obj = raw as Record<string, unknown>;
       const looksLikeComposite = cols.every((c) => c in obj);
       if (looksLikeComposite) {
@@ -132,9 +128,7 @@ function compileConditions(
       !Buffer.isBuffer(raw)
     ) {
       const relMeta = MODELS[rel.target]!;
-      // ctx.alias is the quoted table identifier (e.g. "Process"). For
-      // sub-relations we build a clean alias from the relation name plus
-      // a counter so nested filters don't collide.
+      // Counter-suffixed alias so nested relation filters don't collide.
       const subAlias = `r_${key}_${++ctx.aliasSeq.n}`;
       const localKey = rel.localKey ?? ctx.meta.id[0]!;
       const fk =
@@ -145,9 +139,8 @@ function compileConditions(
           ? `${ctx.alias}.${QC(localKey)} = ${subAlias}.${QC(rel.foreignKey ?? relMeta.id[0]!)}`
           : `${ctx.alias}.${QC(localKey)} = ${subAlias}.${QC(fk)}`;
 
-      // Detect a relation-filter wrapper. If found, the inner condition is
-      // applied to the related table (without re-entering the relation
-      // resolver, which would loop on these names).
+      // Relation-filter wrapper: apply inner conditions to the related table
+      // directly (re-entering the relation resolver would loop).
       const wrap = raw as Record<string, unknown>;
       let mode: 'some' | 'every' | 'none' | 'is' | 'isNot' | 'direct' = 'direct';
       let inner: Record<string, unknown> | undefined;
@@ -277,8 +270,7 @@ function compileOrderBy(orderBy: unknown, alias: string): string {
   for (const item of items) {
     if (!item || typeof item !== 'object') continue;
     for (const [k, v] of Object.entries(item as Record<string, unknown>)) {
-      // v may be a plain string ('asc'|'desc') or a Prisma object
-      // ({ sort: 'asc'|'desc', nulls: 'first'|'last' }).
+      // v may be 'asc'|'desc' or { sort, nulls } per Prisma's API.
       let dir = 'ASC';
       let nulls = '';
       if (v && typeof v === 'object' && !Array.isArray(v)) {
@@ -349,10 +341,8 @@ function compileInsertCols(
     cols.push(k);
     values.push(toDb(meta, k, v));
   }
-  // Prisma's `@updatedAt` semantics: if the table has an `updatedAt`
-  // column and the caller didn't set it, fill in `now()`. Some Prisma-
-  // generated schemas declared the column as NOT NULL without a DB
-  // default, so this is required for inserts to succeed.
+  // Prisma `@updatedAt`: fill now() when column exists; some schemas have
+  // it NOT NULL without a DB default, so inserts otherwise fail.
   if (meta.columns.has('updatedAt') && !cols.includes('updatedAt')) {
     cols.push('updatedAt');
     values.push(new Date());
@@ -366,8 +356,7 @@ function compileUpdateSets(
   values: unknown[],
 ): string[] {
   const sets: string[] = [];
-  // Prisma's `@updatedAt` semantics: bump on every update unless the
-  // caller is explicitly setting it themselves.
+  // Prisma `@updatedAt`: bump unless caller is setting it explicitly.
   if (meta.columns.has('updatedAt') && !('updatedAt' in data)) {
     sets.push(`"updatedAt" = ${nextParam(values, new Date())}`);
   }
@@ -555,10 +544,8 @@ async function findManyImpl(
   const select = compileSelect(opts.select, meta.columns);
   const subInclude = mergeIncludes(opts.include, extractIncludesFromSelect(opts.select));
 
-  // When `select` is supplied but only references relations (e.g. `{ issues: { select: ... } }`),
-  // `compileSelect` returns []. We still need the PK + foreign-key columns so
-  // the relation loader can bind children to parents. Always include all
-  // primary-key columns + any local key referenced by an include.
+  // When `select` references only relations, still include PK and any
+  // local-key columns referenced by an include so the relation loader can bind.
   const effectiveScalarCols = (() => {
     if (!select) return null;
     const required = new Set<string>(select);
@@ -822,10 +809,8 @@ async function createManyImpl(
   const cols = Array.from(
     new Set(data.flatMap((row) => Object.keys(row).filter((k) => meta.columns.has(k)))),
   );
-  // Match the createImpl path: Prisma's `@updatedAt` semantics expect us
-  // to fill `updatedAt` when the column exists and the caller didn't.
-  // Some Prisma-emitted tables declared the column NOT NULL with no DB
-  // default, so a bulk insert without it fails.
+  // Match createImpl: fill `updatedAt` when column exists. Some tables are
+  // NOT NULL with no DB default, so a bulk insert without it fails.
   if (meta.columns.has('updatedAt') && !cols.includes('updatedAt')) {
     cols.push('updatedAt');
   }

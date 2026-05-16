@@ -20,6 +20,14 @@ RUN pip install --no-cache-dir \
 
 COPY . .
 
+# F16/F3: run as an unprivileged user. The sandbox dir must be writable by
+# that user (uploads land there); nothing else needs write access.
+ENV SANDBOX_DIR=/home/appuser/ses-ai-sandbox
+RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p "$SANDBOX_DIR" \
+    && chown -R appuser:appuser "$SANDBOX_DIR" /app
+USER appuser
+
 EXPOSE 8000
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

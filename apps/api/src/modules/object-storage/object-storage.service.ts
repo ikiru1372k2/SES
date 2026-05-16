@@ -25,11 +25,7 @@ export interface PutObjectInput {
   contentLength?: number;
   /** Pre-computed sha256 of the body — used to set x-amz-checksum-sha256. Optional. */
   checksumSha256?: string;
-  /**
-   * Which logical bucket to write to. Defaults to the legacy single
-   * bucket (== ai-pilot under the new layout) so existing callers that
-   * don't pass this still work.
-   */
+  /** Logical bucket; defaults to the legacy single bucket. */
   bucket?: BucketPurpose;
 }
 
@@ -49,10 +45,7 @@ export interface PresignDownloadInput {
   ttlSeconds?: number;
   /** Which logical bucket the object lives in. Defaults to the legacy single bucket. */
   bucket?: BucketPurpose;
-  /**
-   * Bypass the purpose lookup and use this exact bucket name. Useful
-   * when the bucket is already known from a stored metadata row.
-   */
+  /** Explicit bucket name; bypasses the purpose lookup. */
   bucketName?: string;
 }
 
@@ -85,10 +78,8 @@ export class ObjectStorageService implements OnModuleInit {
   private cfg: ObjectStorageConfig | undefined;
   private client: S3Client | undefined;
 
-  // Decorator-free zero-arg constructor: keeps Nest DI happy without
-  // needing a parameter decorator (which `tsx` chokes on under
-  // experimentalDecorators=false in test mode). Tests that need a
-  // custom config call `ObjectStorageService.fromConfig(cfg, client)`.
+  // Zero-arg constructor avoids parameter decorators which tsx chokes on
+  // under experimentalDecorators=false. Tests use fromConfig().
   constructor() {}
 
   static fromConfig(cfg: ObjectStorageConfig, client?: S3Client): ObjectStorageService {
@@ -115,10 +106,7 @@ export class ObjectStorageService implements OnModuleInit {
     return this.client;
   }
 
-  /**
-   * Default bucket — historical AI Pilot bucket. New code should pass
-   * a `bucket` purpose explicitly to `putObject`/`presign` etc.
-   */
+  /** Default bucket; new code should pass `bucket` purpose explicitly. */
   get bucket(): string {
     return this.config().bucket;
   }
@@ -135,10 +123,7 @@ export class ObjectStorageService implements OnModuleInit {
     return 's3';
   }
 
-  /**
-   * Resolve the SDK-level Bucket parameter from a purpose, an explicit
-   * bucket name, or the default. Internal helper.
-   */
+  /** Resolve a Bucket name from purpose, explicit name, or default. */
   private resolveBucketName(input: { bucket?: BucketPurpose; bucketName?: string }): string {
     if (input.bucketName) return input.bucketName;
     const cfg = this.config();
@@ -146,10 +131,7 @@ export class ObjectStorageService implements OnModuleInit {
     return cfg.bucket;
   }
 
-  /**
-   * Streamed upload via @aws-sdk/lib-storage. The body may be a Buffer
-   * or a Readable; large bodies are multipart-uploaded automatically.
-   */
+  /** Streamed upload; large bodies are multipart-uploaded automatically. */
   async putObject(input: PutObjectInput): Promise<PutObjectResult> {
     const checksum =
       input.checksumSha256 ?? (Buffer.isBuffer(input.body) ? sha256Hex(input.body) : '');
@@ -244,10 +226,7 @@ export class ObjectStorageService implements OnModuleInit {
     );
   }
 
-  /**
-   * Pre-signed GET URL. The AI sidecar (or browser) can fetch the object
-   * directly without seeing our credentials.
-   */
+  /** Pre-signed GET URL so consumers fetch directly without credentials. */
   async presignDownloadUrl(input: PresignDownloadInput): Promise<string> {
     const ttl = clampTtl(input.ttlSeconds ?? this.config().presignTtlSeconds);
     const bucketName = this.resolveBucketName(input);

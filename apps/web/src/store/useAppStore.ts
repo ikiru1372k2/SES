@@ -68,11 +68,8 @@ type AppStore = {
   currentAuditResult: AuditResult | null;
   isAuditRunning: boolean;
   auditProgressText: string;
-  // Monotonic run identifier. Incremented every time runAudit starts.
-  // Each in-flight run captures its own id and drops the final set()
-  // if the store has moved on (user started a new audit, navigated
-  // away, or called cancelAudit). Prevents zombie results from an
-  // abandoned promise clobbering a newer one.
+  // Per-run id; in-flight runs drop their final set() if this has changed.
+  // Prevents zombie results from an abandoned promise clobbering a newer one.
   auditRunKey: string | null;
   uploads: Record<string, UploadState>;
   fileDrafts: Record<string, FileDraftMetadata>;
@@ -96,22 +93,14 @@ type AppStore = {
   resetAuditPolicy: (processId: string) => void;
   runAudit: (processId: string, fileId: string, runOptions?: { mappingSource?: MappingSourceInput }) => Promise<void>;
   cancelAudit: () => void;
-  // Pull the latest completed audit run for (processId, fileId) from the
-  // server and hydrate `currentAuditResult` from it. Used when the user
-  // arrives on the Audit Results tab from a deep link (Escalation Center
-  // "Open evidence", a bookmarked URL, a hard refresh, etc.) and the
-  // in-session result was wiped by a navigation.
+  // Re-hydrates currentAuditResult from server on deep-link arrival when the
+  // in-session result was wiped by navigation.
   hydrateLatestAuditResult: (processId: string, fileId: string, opts?: { force?: boolean }) => Promise<void>;
   saveVersion: (processId: string, details: { versionName: string; notes: string }) => AuditProcess | undefined;
-  // Overwrite the head version's result with the current audit run, preserving
-  // the version name / notes / createdAt. Creates V1 if no version exists.
-  // Returns the updated process so callers can read the new versionName for
-  // the success toast. Local-state only — mirrors saveVersion's scope.
+  // Overwrite head version's result preserving name/notes/createdAt; creates V1 if none.
   saveOverCurrentVersion: (processId: string) => AuditProcess | undefined;
-  // Cross-component signal for "open the Save-as-new modal". The Workspace's
-  // UnsavedAuditDialog has a "Save as new version…" button but the modal
-  // itself lives inside the TopBar. Rather than thread refs up, we bump an
-  // integer here and TopBar opens its modal whenever it changes.
+  // Cross-component signal so UnsavedAuditDialog (in Workspace) can trigger the
+  // Save-as-new modal that lives inside TopBar without prop-drilling refs.
   saveAsNewRequestCount: number;
   requestSaveAsNewVersion: () => void;
   loadVersion: (processId: string, versionId: string) => void;
@@ -170,14 +159,10 @@ function patchProcess(processes: AuditProcess[], processId: string, updater: (pr
 }
 
 /**
- * Resolve a process by id at call-time and only return it if it is
- * server-backed. Returns `null` if the process has been archived,
- * deleted, or was never server-backed — in which case the caller
- * should skip the API mirror silently (the optimistic local patch
- * remains).
- *
- * Prevents the "captured `proc` before await, process went away"
- * race that existed in every fire-and-forget issue/tracking mutator.
+ * Resolve a server-backed process by id at call-time. Returns null if archived,
+ * deleted, or never server-backed — caller skips the API mirror silently.
+ * Prevents the "captured `proc` before await, process went away" race in
+ * fire-and-forget issue/tracking mutators.
  */
 function serverBackedProcess(
   processes: AuditProcess[],
@@ -194,17 +179,9 @@ function patchFile(process: AuditProcess, fileId: string, updater: (file: Workbo
 
 /**
  * Convert the backend's audit-run summary + issues into the `AuditResult`
- * shape the UI already speaks. Kept flat so the downstream Results / Tracking
- * / Notifications tabs render identically whether the audit ran locally or on
- * the server.
- *
- * The backend uses `ruleCode` / `displayCode`; the UI uses `ruleId` / `id`.
- * We map both directions so saved versions keep working.
+ * shape the UI speaks. Backend uses ruleCode/displayCode; UI uses ruleId/id —
+ * map both so saved versions keep working.
  */
-// localFindingsSignature lives in ./selectors.ts so both the autosave dedup
-// and the hasUnsavedAudit selector use the identical function — keeps those
-// two pieces of logic from drifting apart when one is edited.
-
 function mapApiAuditToResult(
   fileId: string,
   run: ApiAuditRunSummary,
@@ -212,11 +189,8 @@ function mapApiAuditToResult(
 ): AuditResult {
   const mapped = issues.map((issue) => ({
     id: issue.displayCode,
-    // issueKey is the stable cross-run identity (IKY-xxxxxx) used by the
-    // Escalation Center's deep-link highlight and by the issue-comments /
-    // corrections / acknowledgments stores. Without this line,
-    // issue.issueKey is undefined on the client and ?issue=... URL params
-    // silently find nothing.
+    // Stable cross-run identity (IKY-xxxxxx) used for ?issue= deep-links and
+    // comments/corrections/acknowledgments lookups.
     issueKey: issue.issueKey,
     projectNo: issue.projectNo ?? '',
     projectName: issue.projectName ?? '',
@@ -251,9 +225,8 @@ function mapApiAuditToResult(
 
 async function mapApiFileToWorkbookFile(file: ApiFileSummary): Promise<WorkbookFile> {
   const rawData = (await getWorkbookRawData(file.id)) ?? {};
-  // Re-derive sheet statuses from local rawData when available so that parser
-  // improvements (e.g. threshold fixes) take effect without a re-upload.
-  // Preserve the user's per-sheet isSelected choice from the API.
+  // Re-derive sheet statuses from local rawData so parser improvements take
+  // effect without re-upload; preserve per-sheet isSelected from API.
   const hasRawData = Object.keys(rawData).length > 0;
   const freshSheets = hasRawData ? detectWorkbookSheets(rawData) : null;
   const apiSheetMap = new Map(file.sheets.map((s) => [s.name, s]));
@@ -446,13 +419,10 @@ export const useAppStore = create<AppStore>()(
         set((state) => ({ uploads: { ...state.uploads, [uploadId]: { fileName: file.name, progress: 20, status: 'uploading' } } }));
         try {
           if (target?.serverBacked && target.displayCode) {
-            // Parse locally first so the client has a deterministic temp id
-            // for the IndexedDB cache — the server echoes `clientTempId` back
-            // so we can rekey the raw-data cache to the server id after upload.
+            // Parse locally first for a deterministic temp id; server echoes
+            // clientTempId so we can rekey the IDB cache to the server id.
             const parsed = await parseWorkbook(file);
             await putWorkbookRawData(parsed.id, parsed.rawData);
-            // Server-backed: POST the bytes; backend parses + stores + emits
-            // file.uploaded over the realtime channel so other members see it.
             const apiFile = await uploadFileToApi(target.displayCode, fid, file, {
               clientTempId: parsed.id,
             });
@@ -461,7 +431,6 @@ export const useAppStore = create<AppStore>()(
             if (apiFile.id !== parsed.id) {
               await renameWorkbookRawDataKey(parsed.id, apiFile.id);
             }
-            // Merge server metadata (displayCode, sheet codes) onto local shape
             const mergedSheets = parsed.sheets.map((s) => {
               const api = apiFile.sheets.find((x) => x.name === s.name);
               return api
@@ -487,7 +456,7 @@ export const useAppStore = create<AppStore>()(
               })),
             }));
           } else {
-            // Local-only path (legacy): everything stays in the browser.
+            // Local-only legacy path: everything stays in the browser.
             const workbookFile = await parseWorkbook(file);
             await putWorkbookRawData(workbookFile.id, workbookFile.rawData);
             set((state) => ({
@@ -553,13 +522,10 @@ export const useAppStore = create<AppStore>()(
       deleteFile: (processId, fileId) => {
         const target = get().processes.find((p) => p.id === processId);
         const file = target?.files.find((f) => f.id === fileId);
-        // Fire-and-forget server delete; local state is updated regardless so
-        // the UI stays responsive. If the server delete fails the next page
-        // reload will reveal the file is still there.
+        // Fire-and-forget server delete; if it fails the file reappears on reload.
         if (target?.serverBacked && file) {
           const ref = (file as { displayCode?: string }).displayCode ?? fileId;
           void deleteFileOnApi(ref).catch((err) => {
-            // Recovery: local state is already updated; server file will reappear on next reload.
             toast.error(err instanceof Error ? `File not deleted on server: ${err.message}` : 'File not deleted on server');
           });
         }
@@ -625,23 +591,18 @@ export const useAppStore = create<AppStore>()(
         const process = get().processes.find((item) => item.id === processId);
         const file = process?.files.find((item) => item.id === fileId);
         if (!process || !file) {
-          // Resource vanished from state between action dispatch and handler
-          // execution (e.g. file deleted, process navigation mid-flight). Silent
-          // is the right call here — there is literally nothing to audit, and
-          // button-gating should have prevented this path already.
+          // Resource vanished between dispatch and handler (file deleted /
+          // navigation mid-flight). Button-gating should have prevented this.
           return;
         }
         const selected = file.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected);
         if (!selected.length) {
-          // Explicit throw so call sites can surface a toast. Previously this
-          // returned silently, which let callers report "Settings saved and
-          // audit re-run" even though the run was a no-op — the source of the
-          // "Re-run does nothing / UI stays static" bug.
+          // Explicit throw so callers can toast — previously a silent return
+          // caused the "Re-run does nothing / UI stays static" bug.
           throw new Error('No sheets selected for audit. Select at least one sheet and try again.');
         }
 
-        // Claim this run with a fresh key. Any earlier in-flight run with
-        // a different key will refuse to commit its result at the end.
+        // Claim this run; earlier in-flight runs with a different key bail.
         const runKey = createId();
         set({
           isAuditRunning: true,
@@ -649,38 +610,26 @@ export const useAppStore = create<AppStore>()(
           auditRunKey: runKey,
         });
 
-        // Guard helper: returns true iff this is still the active run. If
-        // the user started a new audit, called cancelAudit, or navigated
-        // to a different process, this returns false and the caller drops
-        // the result without touching state.
+        // True iff this is still the active run; on false, drop the result.
         const stillActive = () => get().auditRunKey === runKey;
 
         const fileDisplayCode = (file as { displayCode?: string }).displayCode;
         const useServer = Boolean(process.serverBacked && process.displayCode && fileDisplayCode);
 
-        // Autosave creates V1 once — the silent first save so users always
-        // have an anchor to compare against. After V1 exists, we do NOT
-        // autosave: subsequent runs flip hasUnsavedAudit on until the user
-        // explicitly clicks Save (updates V1) or "Save as new version"
-        // (creates V2).
-        //
-        // L7: autosave only if the result we're about to anchor is still the
-        // one this run produced. A user-cancelled or superseded run lost its
-        // runKey before set(), but could still make it here in theory — the
-        // anchorFileId comparison catches the case where another run
-        // committed first and we'd otherwise save the wrong findings.
+        // Autosave creates V1 once as a silent anchor. After V1 exists, runs
+        // flip hasUnsavedAudit until the user clicks Save (updates V1) or
+        // Save-as-new (creates V2). The anchor comparison guards against a
+        // stale run committing over a newer one's findings.
         const autoSaveAfterRun = (anchorResult: AuditResult) => {
           const current = get().processes.find((p) => p.id === processId);
           if (!current) return;
           const latest = current.latestAuditResult;
           if (!latest || latest.runAt !== anchorResult.runAt || latest.fileId !== anchorResult.fileId) {
-            // A newer run already committed; this stale completion shouldn't
-            // overwrite the version anchor.
+            // Newer run already committed; don't overwrite the anchor.
             return;
           }
           if (current.versions.length > 0) {
-            // Anchor already exists. Leave it — the Save split button surfaces
-            // the diff and lets the user pick Update / Save-as-new / Leave.
+            // Anchor exists; Save split button handles Update / Save-as-new.
             return;
           }
           get().saveVersion(processId, {
@@ -712,7 +661,7 @@ export const useAppStore = create<AppStore>()(
             autoSaveAfterRun(mapped);
             return;
           }
-          // Local-only processes run the per-function dispatcher in-browser.
+          // Local-only: run the per-function dispatcher in-browser.
           const result = await runAuditAsync(file, file.functionId, process.auditPolicy);
           if (!stillActive()) return;
           set((state) => ({
@@ -731,8 +680,7 @@ export const useAppStore = create<AppStore>()(
           }));
           autoSaveAfterRun(result);
         } catch (err) {
-          // Only clear the in-flight flag if this is still the active run;
-          // otherwise we'd stomp a newer run's progress state.
+          // Only clear in-flight flag for the active run; else we'd stomp a newer one.
           if (stillActive()) {
             set({ isAuditRunning: false, auditProgressText: '', auditRunKey: null });
           }
@@ -741,8 +689,7 @@ export const useAppStore = create<AppStore>()(
       },
 
       cancelAudit: () => {
-        // Moving the key forward is enough: any in-flight run will see its
-        // captured key mismatch at the next checkpoint and bail.
+        // Clearing the key is enough: in-flight runs see a mismatch and bail.
         set({ isAuditRunning: false, auditProgressText: '', auditRunKey: null });
       },
 
@@ -750,22 +697,19 @@ export const useAppStore = create<AppStore>()(
         const process = get().processes.find((item) => item.id === processId || item.displayCode === processId);
         const file = process?.files.find((item) => item.id === fileId);
         if (!process || !file) return;
-        // Only meaningful for server-backed processes — local-only audits
-        // already hold their result in memory (or it's gone after a reload,
-        // which is expected for that mode).
+        // Only server-backed processes hydrate from server.
         if (!process.serverBacked) return;
         const fileDisplayCode = (file as { displayCode?: string }).displayCode ?? file.id;
         const processRef = process.displayCode ?? process.id;
 
-        // If we already have a fresh in-session result for this file, no
-        // need to re-fetch — keep what runAudit produced (it has live
-        // post-audit hooks like directory resolution applied).
+        // Skip re-fetch if we already have an in-session result (runAudit's
+        // post-audit hooks like directory resolution are already applied).
         const existing = get().currentAuditResult;
         if (!opts?.force && existing && existing.fileId === fileId) return;
 
         try {
           const apiResult = await fetchLatestAuditRunForFile(processRef, fileDisplayCode);
-          if (!apiResult) return; // No completed run yet — leave currentAuditResult null.
+          if (!apiResult) return;
           const apiIssues = await fetchAuditIssues(apiResult.displayCode);
           const mapped = mapApiAuditToResult(file.id, apiResult, apiIssues);
           set((state) => ({
@@ -776,8 +720,7 @@ export const useAppStore = create<AppStore>()(
             })),
           }));
         } catch {
-          // Non-fatal — the tab will just show "No audit run yet". Don't
-          // toast: this is invoked on navigation, not a user-driven action.
+          // Non-fatal — invoked on navigation, don't toast.
         }
       },
 
@@ -839,9 +782,7 @@ export const useAppStore = create<AppStore>()(
         const result = get().currentAuditResult ?? current?.latestAuditResult;
         if (!result) return undefined;
         if (!current || current.versions.length === 0) {
-          // No head version yet — delegate to saveVersion with a default
-          // name. This is the "first save" path when autosave hasn't
-          // created V1 yet (e.g. legacy process state or edge case).
+          // First-save path when autosave hasn't created V1 (legacy state).
           return get().saveVersion(processId, {
             versionName: `${current?.name ?? 'Audit'} - V1`,
             notes: '',
@@ -854,9 +795,8 @@ export const useAppStore = create<AppStore>()(
             if (!head) return process;
             const refreshed = {
               ...head,
-              // Keep the version's identity fields (name, notes, createdAt,
-              // versionNumber, versionId). Only swap the result payload and
-              // the policy snapshot so the anchor reflects the current run.
+              // Keep identity fields (name, notes, createdAt, versionNumber,
+              // versionId); swap only result + policy snapshot.
               result,
               auditPolicy: result.policySnapshot ?? head.auditPolicy ?? process.auditPolicy,
             };
@@ -879,10 +819,8 @@ export const useAppStore = create<AppStore>()(
 
       recordTrackingEvent: (processId, managerName, managerEmail, flaggedProjectCount, channel, note) => {
         const now = new Date().toISOString();
-        // Snapshot the entry we're about to mutate so we can roll back if
-        // the server upsert fails. The previous implementation swallowed
-        // the error to a console.warn, which left the local state out of
-        // sync with the server forever until a page reload.
+        // Snapshot for rollback if server upsert fails; previously this was
+        // swallowed and left local state out of sync until reload.
         const key = trackingKey(processId, managerEmail);
         const prior = get().processes.find((p) => p.id === processId)?.notificationTracking[key];
         const server = serverBackedProcess(get().processes, processId);
@@ -890,9 +828,7 @@ export const useAppStore = create<AppStore>()(
           const managerKey = managerEmail.toLowerCase().trim();
           void (async () => {
             try {
-              // Re-resolve displayCode at send-time in case the process was
-              // replaced between the optimistic patch and now. If it's gone,
-              // fail soft — the catch will roll back and toast.
+              // Re-resolve at send-time in case the process was replaced.
               const fresh = serverBackedProcess(get().processes, processId);
               if (!fresh) throw new Error('Process is no longer available');
               const row = await upsertTrackingOnApi(fresh.displayCode, {
@@ -902,7 +838,7 @@ export const useAppStore = create<AppStore>()(
               });
               await addTrackingEventOnApi(row.displayCode, { channel, note });
             } catch (err) {
-              // Roll back the optimistic append so the UI reflects reality.
+              // Roll back the optimistic append.
               set((state) => ({
                 processes: patchProcess(state.processes, processId, (process) => ({
                   ...process,
@@ -948,7 +884,7 @@ export const useAppStore = create<AppStore>()(
 
       setTrackingStage: (processId, managerName, managerEmail, flaggedProjectCount, stage) => {
         const now = new Date().toISOString();
-        // Snapshot before the optimistic set so we can roll back on failure.
+        // Snapshot for rollback on failure.
         const key = trackingKey(processId, managerEmail);
         const prior = get().processes.find((p) => p.id === processId)?.notificationTracking[key];
         const server = serverBackedProcess(get().processes, processId);
@@ -1324,7 +1260,7 @@ export const useAppStore = create<AppStore>()(
       reconcileProcessesFromServer: (remote) => {
         set((state) => {
           const remoteById = new Map(remote.map((p) => [p.id, p]));
-          // Merge: keep local files/versions for known processes; drop server-backed ones absent from remote.
+          // Keep local files/versions for known; drop server-backed absent from remote.
           const merged = state.processes
             .filter((local) => !local.serverBacked || remoteById.has(local.id))
             .map((local) => {
@@ -1343,7 +1279,7 @@ export const useAppStore = create<AppStore>()(
                 savedTemplates: local.savedTemplates,
               } satisfies AuditProcess;
             });
-          // Append server-backed processes not yet in local store.
+          // Append remote processes not yet in local store.
           for (const p of remote) {
             if (!merged.some((m) => m.id === p.id)) {
               merged.push(p);

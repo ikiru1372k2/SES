@@ -48,10 +48,7 @@ export function normalizeForRateMatch(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// A column is a rate column if its normalized form contains "rate" AND a
-// month or year indicator. Matches "External Rate Apr 30 2026", "Ext Rate Apr",
-// "Rate Jan 2026", "Apr 2026 Rate". Rejects "Rate" alone, "Estimate", labels
-// without a month/year token.
+// Rate column = normalized form contains "rate" AND a month/year indicator. Rejects "Rate" alone.
 export function isRateColumn(header: string): boolean {
   const n = normalizeForRateMatch(header);
   if (!/\brate\b/.test(n)) return false;
@@ -67,17 +64,8 @@ export interface RateColumnInfo {
   label: string;
 }
 
-// Two-strategy header detection:
-//   A: single-row scan — pick the header row with the most isRateColumn matches.
-//   B: two-row merge — for pairs (i, i+1), concatenate cells column-by-column
-//      and check the merged label. Handles the sample file layout where
-//      row[0]="External Rate" (category) and row[1]="Apr 30 2026" (period).
-// Strategy B wins **only when it finds more matches** than A. On ties we
-// prefer A because its labels are cleaner: strategy B merges with whatever
-// row follows the header, which in a workbook with only one header row is
-// the first data row — that would contaminate the labels with numeric rate
-// values. In a real multi-row-header file strategy A yields 0 matches
-// against "External Rate" alone (no month token), so B wins by count.
+// Single-row vs two-row-merge header detection. Merge wins only on strictly higher match count
+// (ties prefer single-row to avoid contaminating labels with first-data-row values).
 export function detectRateColumns(rawRows: unknown[][], maxHeaderScan = 4): RateColumnInfo[] {
   if (rawRows.length === 0) return [];
 
@@ -121,9 +109,7 @@ export function detectRateColumns(rawRows: unknown[][], maxHeaderScan = 4): Rate
   return bestSingle;
 }
 
-// Only exactly-zero cells are flagged. Blanks, non-numeric text, positive and
-// negative values all collapse to 'ignore'. "0", "0.0", "  0  " all parse to
-// 0 and count as 'zero'; "n/a", "", null, 125, -5 all classify as 'ignore'.
+// Only exactly-zero numeric cells are flagged; blanks, non-numeric, +/- values all collapse to 'ignore'.
 export type RateCellState = 'zero' | 'ignore';
 
 export function classifyRateCell(

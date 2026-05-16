@@ -99,8 +99,11 @@ services:
     build:
       context: ./services/ai-sidecar
     container_name: ses-ai-sidecar
+    # F2/F20: bind to loopback only. The sidecar has no auth yet (Phase 1.2),
+    # so it must not be reachable from the LAN/other containers' host iface.
+    # Local smoke tests still reach it via 127.0.0.1:8000.
     ports:
-      - '8000:8000'
+      - '127.0.0.1:8000:8000'
     environment:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       AI_AGENT_MODEL: ${AI_AGENT_MODEL:-qwen2.5-coder:7b-instruct}

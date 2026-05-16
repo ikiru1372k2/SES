@@ -61,8 +61,7 @@ export function EscalationPanel({
   const qc = useQueryClient();
   const trackingRef = row?.trackingId ?? row?.trackingDisplayCode ?? null;
 
-  // Reset to the Findings tab whenever the user switches to a different manager row
-  // so they don't land on Composer or Activity for a row they just opened.
+  // Reset to Findings when switching manager so we don't land on stale Composer/Activity.
   const prevManagerKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const key = row?.managerKey ?? null;
@@ -73,9 +72,7 @@ export function EscalationPanel({
     prevManagerKeyRef.current = key;
   }, [row?.managerKey]);
 
-  // Live-refresh: when the API broadcasts a tracking.updated event for this
-  // process via the Socket.IO gateway, invalidate the relevant query keys so
-  // the Activity feed and escalation list stay current without polling.
+  // Live-refresh on tracking.updated for this process; no polling.
   useEffect(() => {
     if (!processDisplayCode) return;
     return onRealtimeEvent((envelope) => {
@@ -105,10 +102,8 @@ export function EscalationPanel({
       stage &&
       canTransition(stage, 'RESOLVED'),
   );
-  // B14: only surface the Verify action when it's actually meaningful — the
-  // row is RESOLVED but an auditor hasn't closed the loop yet. Previously
-  // the button showed on every row that simply lacked a verifiedAt, which
-  // invited verification of work that never went through escalation.
+  // Only surface Verify when row is RESOLVED but unverified; previously it
+  // showed on any unverified row and invited bogus verifications.
   const canVerify = awaitingVerification;
 
   const verifyMut = useMutation({

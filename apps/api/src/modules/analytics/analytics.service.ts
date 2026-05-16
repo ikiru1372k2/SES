@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -14,6 +15,31 @@ import { ChatCacheService } from './chat-cache.service';
 import { ChatAuditService } from './chat-audit.service';
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL ?? 'http://localhost:8000';
+
+/**
+ * F9: minimise PII that leaves the API boundary toward the AI sidecar.
+ * The analytics agent groups/counts by manager but never needs the raw
+ * email, and a stable pseudonym is enough for "manager X has N issues"
+ * style answers. We drop `email` entirely and replace `projectManager`
+ * with a short deterministic token so cross-question grouping still works
+ * without shipping the real name into the sidecar's in-memory cache.
+ */
+function pseudonymizeRowsForSidecar(
+  rows: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  return rows.map((r) => {
+    const { email: _email, projectManager, ...rest } = r;
+    const mgr =
+      typeof projectManager === 'string' && projectManager.trim()
+        ? 'mgr_' +
+          createHash('sha256')
+            .update(projectManager.trim().toLowerCase())
+            .digest('hex')
+            .slice(0, 10)
+        : projectManager ?? null;
+    return { ...rest, projectManager: mgr };
+  });
+}
 
 @Injectable()
 export class AnalyticsService {
@@ -224,7 +250,7 @@ export class AnalyticsService {
     }
     return {
       ruleViolations,
-      mlOverlay: [], // Phase 4: IsolationForest results
+      mlOverlay: [], // reserved for Phase 4 IsolationForest
     };
   }
 
@@ -242,7 +268,7 @@ export class AnalyticsService {
 
     const rows: Array<Record<string, unknown>> = [];
     for (const fn of targets) {
-      // If versionRef is set AND scope is single-function, pull the saved version's run.
+      // single-function + versionRef: pull that saved version's run.
       const run = versionRef && functionId
         ? await this.prisma.auditRun.findFirst({
             where: {
@@ -331,6 +357,8 @@ export class AnalyticsService {
 
     const cacheKey = this.cache.key({
       question: body.question,
+      // F9: sentinel prevents tenant-bound/tenantless cache key collisions.
+      tenantId: user.tenantId ?? 'no-tenant',
       processCode,
       functionId: body.functionId ?? null,
       datasetVersion,
@@ -378,7 +406,8 @@ export class AnalyticsService {
             version_ref: body.versionRef ?? null,
             compare_to: body.compareTo ?? null,
             question: body.question,
-            rows,
+            // F9: never ship raw email / manager names to the sidecar.
+            rows: pseudonymizeRowsForSidecar(rows),
             use_stub: body.useStub ?? true,
           },
           { responseType: 'stream', timeout: 120_000 },

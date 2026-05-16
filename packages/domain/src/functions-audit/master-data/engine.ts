@@ -116,20 +116,8 @@ function pushIssue(
   });
 }
 
-// Project Product is the only column with three possible findings:
-//   - MISSING       — empty cell, or a generic placeholder like "n/a"/"tbd"
-//   - NOT-ASSIGNED  — any comma-separated token equals "not assigned"
-//                     ("Not assigned" alone, or "Not assigned, SAP X")
-//   - REVIEW-OTHERS — any comma-separated token equals "other" / "others"
-//                     ("Other" alone, or "Other, SAP Emarsys")
-//
-// A value can fire both NOT-ASSIGNED and REVIEW-OTHERS (e.g. "Not assigned,
-// Other, SAP X") — both findings are emitted because they reflect distinct
-// review questions for the auditor. A blank cell only fires MISSING; the
-// review checks are skipped to avoid double-counting.
-//
-// "Other industries" does NOT fire REVIEW-OTHERS — comma-split returns a
-// single token "other industries" which is not equal to "other".
+// Project Product can fire three rules: MISSING, NOT-ASSIGNED, REVIEW-OTHERS.
+// Comma-tokenised; NOT-ASSIGNED + REVIEW-OTHERS can co-fire on multi-token values. Blank => MISSING only.
 function auditProjectProduct(args: {
   file: WorkbookFile;
   sheetName: string;
@@ -177,9 +165,7 @@ function auditProjectProduct(args: {
   }
 
   if (!flagged && isBadValue(text)) {
-    // Generic placeholder like "n/a", "tbd", "?", "null", "none" — fall
-    // through to MISSING so we don't silently ignore the row. (Note: pure
-    // "not assigned" is intercepted above, not here.)
+    // Generic placeholder (n/a, tbd, ?, null, none) falls through to MISSING.
     flagged = true;
     pushProductIssue(
       missingFieldRuleCode(MD_COLUMNS.projectProduct.id),
@@ -203,8 +189,7 @@ function auditRow(args: {
   let flagged = false;
 
   for (const column of MD_REQUIRED_COLUMNS) {
-    // Project Product is handled by `auditProjectProduct` below — three
-    // possible rule codes vs. one for every other required field.
+    // Project Product is handled by `auditProjectProduct` below (three rule codes).
     if (column.id === MD_COLUMNS.projectProduct.id) continue;
 
     const raw = readCell(row, column.aliases);

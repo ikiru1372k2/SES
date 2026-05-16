@@ -1,20 +1,6 @@
-"""
-SES AI Service — v1
-====================
-FastAPI app that wraps Docling + Qwen2.5:7b for SES.
+"""SES AI sidecar — FastAPI wrapping Docling + Qwen2.5:7b. Called server-to-server by the NestJS API."""
 
-Endpoints:
-  GET  /health                  Liveness check
-  POST /pilot/upload            Upload Excel to sandbox, get session_id + columns
-  POST /pilot/generate          Generate rule JSON from English description
-  POST /pilot/preview           Apply generated rule to sandbox Excel, return flagged rows
-  POST /pilot/cleanup           Delete sandbox file when admin done
-  POST /chat/ask                Ask a question about an uploaded Excel (no RAG yet)
-
-Runs at: http://localhost:8000
-SES (NestJS) calls these endpoints over HTTP.
-"""
-
+import hmac
 import os
 import uuid
 import json
@@ -22,38 +8,91 @@ from pathlib import Path
 
 import ollama
 import pandas as pd
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from docling.document_converter import DocumentConverter
 
-# ── CONFIG ─────────────────────────────────────────────────────────
 SANDBOX_DIR = Path(os.getenv("SANDBOX_DIR", "/tmp/ses-ai-sandbox"))
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODEL = os.getenv("AI_MODEL", "qwen2.5:7b")
 # Smaller, snappier instruction-follower for the prompt enhancer.
-# Falls back to MODEL if the env var is unset.
 ENHANCE_MODEL = os.getenv("AI_ENHANCE_MODEL", "llama3:latest")
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "20"))
 
 SANDBOX_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── INIT ───────────────────────────────────────────────────────────
+# F2: shared-secret gate. The NestJS API is the only legitimate caller; it
+# sends X-Internal-Token. Health endpoints stay open so Docker/Compose
+# healthchecks (which can't carry the secret) keep working.
+SIDECAR_SHARED_SECRET = os.getenv("SIDECAR_SHARED_SECRET", "").strip()
+_PUBLIC_PATHS = frozenset({"/health", "/analytics/health"})
+
 app = FastAPI(title="SES AI Service", version="1.0.0")
 
+
+@app.middleware("http")
+async def _require_internal_token(request: Request, call_next):
+    path = request.url.path.rstrip("/") or "/"
+    if path in _PUBLIC_PATHS:
+        return await call_next(request)
+    if not SIDECAR_SHARED_SECRET:
+        # Fail closed: an unconfigured secret must not mean "open to all".
+        return JSONResponse(
+            {"detail": "Sidecar auth not configured (SIDECAR_SHARED_SECRET unset)"},
+            status_code=503,
+        )
+    provided = request.headers.get("x-internal-token", "")
+    if not hmac.compare_digest(provided, SIDECAR_SHARED_SECRET):
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
+# F2: the API reaches the sidecar server-to-server only. No browser origin
+# ever calls it directly, so CORS is locked down (no wildcard).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[],
+    allow_methods=["POST", "GET"],
+    allow_headers=["X-Internal-Token", "Content-Type"],
 )
 
 converter = DocumentConverter()
 ollama_client = ollama.Client(host=OLLAMA_URL)
 
 
-# ── HELPERS ────────────────────────────────────────────────────────
+# F22: only these extensions are ever written to / read from the sandbox.
+_ALLOWED_EXTS = frozenset({"xlsx", "xlsm", "xls", "csv"})
+
+
+def _validated_session_id(session_id: str) -> str:
+    """F17: session ids are server-minted uuid4. Reject anything else BEFORE
+    it reaches a glob — `*`, `..`, path separators, etc. would otherwise
+    bleed across sessions or escape SANDBOX_DIR."""
+    try:
+        # uuid.UUID round-trip rejects globs, traversal, wrong length.
+        canonical = str(uuid.UUID(str(session_id)))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(400, "Invalid session id")
+    return canonical
+
+
+def _safe_ext(filename: str | None) -> str:
+    """F22: derive a sandbox file extension from an allowlist only. Never
+    let the client's filename steer the write path (no separators, no `..`)."""
+    ext = ""
+    if filename and "." in filename:
+        ext = filename.rsplit(".", 1)[-1].strip().lower()
+    if ext not in _ALLOWED_EXTS:
+        raise HTTPException(
+            400, f"Unsupported file type '{ext or '(none)'}'. Allowed: {sorted(_ALLOWED_EXTS)}"
+        )
+    return ext
+
+
 def _find_session_file(session_id: str) -> Path:
+    session_id = _validated_session_id(session_id)
     matches = list(SANDBOX_DIR.glob(f"{session_id}.*"))
     if not matches:
         raise HTTPException(404, f"Session {session_id} not found or expired")
@@ -94,9 +133,7 @@ def _ask_qwen(prompt: str, temperature: float = 0.1) -> str:
 
 
 def _ask_enhancer(prompt: str, temperature: float = 0.2) -> str:
-    """Same as _ask_qwen but uses ENHANCE_MODEL (default llama3:latest).
-    The enhancer is a short rewrite task — different model, different prompt
-    style than the JSON-generation task that qwen2.5:7b owns."""
+    """Same as _ask_qwen but uses ENHANCE_MODEL (default llama3:latest) for the rewrite task."""
     resp = ollama_client.chat(
         model=ENHANCE_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -115,11 +152,8 @@ def _strip_json_fences(text: str) -> str:
     return text.strip()
 
 
-# ── REQUEST MODELS ─────────────────────────────────────────────────
 class GenerateRuleReq(BaseModel):
-    # session_id is now optional — SES passes columns directly to avoid
-    # double-tracking sessions on both sides. Standalone smoke test still
-    # uses the session-lookup path.
+    # session_id is optional — SES passes columns directly; smoke test uses session lookup.
     session_id: str | None = None
     engine: str
     description: str
@@ -140,7 +174,6 @@ class AskReq(BaseModel):
     question: str
 
 
-# ── ENDPOINTS ──────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {
@@ -159,8 +192,12 @@ async def pilot_upload(file: UploadFile = File(...)):
         raise HTTPException(413, f"File too large: {size_mb:.1f}MB (max {MAX_UPLOAD_MB}MB)")
 
     session_id = str(uuid.uuid4())
-    ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "xlsx"
+    # F22: extension comes from an allowlist, never raw from file.filename.
+    ext = _safe_ext(file.filename)
     file_path = SANDBOX_DIR / f"{session_id}.{ext}"
+    # F22 defence-in-depth: the resolved path must stay inside SANDBOX_DIR.
+    if SANDBOX_DIR.resolve() not in file_path.resolve().parents:
+        raise HTTPException(400, "Invalid upload path")
     file_path.write_bytes(contents)
 
     try:
@@ -270,9 +307,6 @@ async def pilot_enhance(req: EnhancePromptReq):
         raise HTTPException(400, "Either `columns` or `session_id` is required")
 
     available = "\n".join(f"  - {c}" for c in columns)
-    # Tight template: one-shot example, forbid severity in output, force
-    # the model to literally pick from the column list (with a "best match"
-    # instruction so a near-miss like "PSU" → "PSU Relevant" still works).
     p = f"""Rewrite the user's audit-rule idea as ONE clear sentence.
 
 RULES:
@@ -299,7 +333,7 @@ User: {req.prompt}
 Output:"""
 
     enhanced = _ask_enhancer(p, temperature=0.2).strip()
-    # Strip surrounding quotes / common preambles if the model ignored instructions.
+    # Strip preambles/quotes if the model ignored instructions.
     for prefix in ("Output:", "output:", "Rewritten:", "Rewrite:"):
         if enhanced.lower().startswith(prefix.lower()):
             enhanced = enhanced[len(prefix):].strip()
@@ -307,7 +341,6 @@ Output:"""
         enhanced.startswith("'") and enhanced.endswith("'")
     ):
         enhanced = enhanced[1:-1].strip()
-    # If the model returned multiple lines, take the first non-empty one.
     enhanced = next((line.strip() for line in enhanced.splitlines() if line.strip()), enhanced)
     return {"enhanced_prompt": enhanced, "model": ENHANCE_MODEL}
 
@@ -398,16 +431,12 @@ Answer:"""
     return {"question": req.question, "answer": answer.strip()}
 
 
-# ── ANALYTICS (NEW) ────────────────────────────────────────────────
-# These routes serve the in-app Analytics Workbench. The API ships rows
-# (filtered by user's process scope) with each request — the sidecar never
-# reaches into the SES database directly.
+# Analytics routes: API ships scope-filtered rows per request; sidecar never touches the SES DB.
 
 import asyncio
 from typing import List, Optional, Dict, Any
 
-# We import the agent module lazily so the existing /pilot routes still work
-# even when the new dependencies (duckdb) are missing during a partial install.
+# Lazy import so /pilot routes still work if duckdb is missing.
 try:
     from agent import stream_chat, query_sql  # type: ignore[import-not-found]
     _AGENT_OK = True

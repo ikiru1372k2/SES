@@ -57,8 +57,8 @@ export function EscalationCenter() {
 
   const [panelRow, setPanelRow] = useState<ProcessEscalationManagerRow | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  // L4: track selection by managerKey, not row index — realtime reorders
-  // were previously jumping the keyboard cursor to a different manager.
+  // Selection by managerKey (not row index): realtime reorders previously
+  // jumped the keyboard cursor to a different manager.
   const [selectedManagerKey, setSelectedManagerKey] = useState<string | null>(null);
   const [resolveOpen, setResolveOpen] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
@@ -74,8 +74,7 @@ export function EscalationCenter() {
   const engine = (search.get('engine') as FunctionId) || '';
   const sla = (search.get('sla') as SlaFilter) || 'all';
   const assignedToMe = search.get('mine') === '1';
-  // Issue #76: surface RESOLVED-but-unverified rows so auditors can finish
-  // the verification step without hunting for them.
+  // #76: surface RESOLVED-but-unverified rows for the verification step.
   const needsVerification = search.get('needsVerification') === '1';
 
   const selectedStages = useMemo(() => parseStagesParam(search.get('stages')), [search]);
@@ -119,14 +118,8 @@ export function EscalationCenter() {
     staleTime: 15_000,
   });
 
-  // Live refresh. The realtime gateway emits whenever anyone (another
-  // user, the SLA cron, a bulk-action endpoint) changes tracking state
-  // on this process. Previously the EscalationCenter only refetched on
-  // user interaction; now it refetches quietly in the background so the
-  // page always reflects the current system state.
-  // L10/E2: realtime bursts (bulk actions, SLA cron cascades) can emit
-  // many events per second. Coalesce per-key invalidations to 250ms so
-  // we do one refetch per key per burst instead of N.
+  // Live refresh via realtime gateway. Coalesce 250ms so bursts (bulk
+  // actions, SLA cron cascades) trigger one refetch per key, not N.
   const invalidate = useCoalescedInvalidator(queryClient, 250);
   useEffect(() => {
     if (!processId) return;
@@ -138,16 +131,12 @@ export function EscalationCenter() {
         envelope.event === 'version.saved'
       ) {
         invalidate(['escalations', processId]);
-        // Invalidate any open tracking-events queries too so the timeline
-        // auto-advances when the SLA cron transitions a stage.
+        // Refresh timeline when SLA cron transitions a stage.
         invalidate(['tracking-events']);
-        // Issue #77: attachments list rides on the same tracking.updated
-        // channel so a sibling auditor's upload shows up live.
+        // #77: attachments ride on tracking.updated for live sibling uploads.
         invalidate(['tracking-attachments']);
       } else if (envelope.event === 'directory.updated') {
-        // Issue #74: a Manager Directory mutation (inline-add, alias,
-        // merge, archive, delete) invalidates the "unmapped manager"
-        // banner and may free a previously-blocked escalation for send.
+        // #74: directory mutations may unblock previously-blocked escalations.
         invalidate(['escalations', processId]);
         invalidate(['directory-suggestions']);
       }
@@ -207,8 +196,7 @@ export function EscalationCenter() {
         event.preventDefault();
         setShortcutOpen(true);
       } else if (event.key === 'Escape' && selectedTrackingIds.size > 0) {
-        // Predictable get-me-out-of-here: clears the current bulk selection
-        // only when nothing more modal is already open.
+        // Clear bulk selection only when no modal is open.
         if (!ackOpen && !snoozeOpen && !reescOpen && !bulkComposerOpen) {
           setSelectedTrackingIds(new Set());
         }
@@ -383,13 +371,8 @@ export function EscalationCenter() {
             </div>
           ) : null}
 
-          {/* Fixed-height panel so the ManagerTable's existing
-              `overflow-auto` scrolls internally instead of growing
-              unbounded. The page itself still scrolls normally for
-              everything above and below — this just caps the manager
-              list at ~560px so users can see several rows and scroll
-              the rest within the panel rather than losing the summary
-              cards when paging through 15+ managers. */}
+          {/* Cap the manager list at ~560px so ManagerTable's overflow-auto
+              scrolls internally; the surrounding page still scrolls. */}
           <div className="flex flex-col gap-4 md:h-[560px] md:flex-row">
             <EscalationFilters
               stages={stages}

@@ -6,10 +6,44 @@ already authorised to read.
 """
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 from typing import Any, Iterable
 
 import duckdb
+
+
+def _lock_connection(con: duckdb.DuckDBPyConnection) -> None:
+    """F3: forbid any host filesystem / network access from this connection.
+    DuckDB SELECTs can otherwise call read_csv('/etc/passwd'), read_text(),
+    glob(), httpfs, etc. We disable external access and then lock the config
+    so a query cannot turn it back on. Best-effort per setting so an older
+    DuckDB that lacks one PRAGMA still gets the others."""
+    for stmt in (
+        "SET enable_external_access=false",
+        "SET enable_fsst_vectors=false",
+        "SET lock_configuration=true",
+    ):
+        try:
+            con.execute(stmt)
+        except Exception:
+            pass
+
+
+# F3: even with external access disabled, reject SQL that names a
+# file/network table function or PRAGMA outright — fail loud, not silently.
+_FORBIDDEN_TOKENS = re.compile(
+    r"\b("
+    r"read_csv|read_csv_auto|read_parquet|read_json|read_json_auto|read_text|"
+    r"read_blob|read_ndjson|glob|parquet_scan|csv_scan|"
+    r"attach|detach|copy|install|load|pragma|set|reset|"
+    r"httpfs|http_get|url|sniff_csv|delta_scan|iceberg_scan|"
+    r"to_csv|to_parquet|to_json|export|import|"
+    r"system|getenv|which_secret"
+    r")\b",
+    re.IGNORECASE,
+)
+_STATEMENT_START = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
 
 
 class DuckCache:
@@ -56,6 +90,9 @@ class DuckCache:
         else:
             # empty schema fallback so SELECTs don't blow up
             con.execute("CREATE TABLE issues (placeholder INT)")
+        # F3: lock the connection AFTER loading data — the config lock would
+        # otherwise block our own CREATE VIEW / register above.
+        _lock_connection(con)
         self._entries[key] = con
         if len(self._entries) > self._max:
             _, evicted = self._entries.popitem(last=False)
@@ -69,14 +106,26 @@ class DuckCache:
 
 
 def safe_query(con: duckdb.DuckDBPyConnection, sql: str) -> list[dict[str, Any]]:
-    """Run a read-only query. Strips trailing semicolons; rejects DDL/DML."""
-    s = sql.strip().rstrip(";").strip()
-    lower = s.lower()
-    forbidden = ("insert ", "update ", "delete ", "drop ", "alter ", "create ", "attach ", "copy ")
-    if any(lower.startswith(f) for f in forbidden) or any(f" {f}" in lower for f in forbidden):
-        raise ValueError("Only SELECT queries are allowed in the sql tool")
-    if not lower.startswith("select") and not lower.startswith("with"):
+    """F3: run a single read-only query over the in-memory `issues` view.
+
+    Hardening (allowlist, fail-loud), not the old keyword denylist:
+      * exactly ONE statement (no `;`-chained second statement),
+      * must START with SELECT or WITH,
+      * must NOT name any file/network/PRAGMA table function or admin verb,
+      * the connection itself is already locked (enable_external_access=false,
+        lock_configuration=true) at materialize() time, so even a bypass of
+        the textual check cannot reach the host filesystem or network.
+    """
+    s = sql.strip()
+    # Reject multi-statement payloads (strip a single trailing `;` only).
+    if s.endswith(";"):
+        s = s[:-1].strip()
+    if ";" in s:
+        raise ValueError("Only a single SELECT statement is allowed")
+    if not _STATEMENT_START.match(s):
         raise ValueError("Query must start with SELECT or WITH")
+    if _FORBIDDEN_TOKENS.search(s):
+        raise ValueError("Query references a disallowed function or statement")
     rows = con.execute(s).fetchall()
     cols = [d[0] for d in con.description] if con.description else []
     return [dict(zip(cols, r)) for r in rows]

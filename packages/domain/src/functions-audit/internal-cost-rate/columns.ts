@@ -59,10 +59,7 @@ export function normalizeForIcrMonthMatch(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// A column is a monthly cost-rate column if its normalized form contains a
-// month token AND a 4-digit year. Accepts "Jan 31, 2026", "Feb 28 2026",
-// "January 2026", "2026 January", "Jan-2026". Rejects bare month ("Jan"),
-// bare year ("2026"), "Cost Rate" (no year/month), "Function", "Project ID".
+// Monthly cost-rate column = normalized form contains a month token AND a 4-digit year.
 export function isCostRateMonthColumn(header: string): boolean {
   const n = normalizeForIcrMonthMatch(header);
   if (!/\b(19|20)\d{2}\b/.test(n)) return false;
@@ -74,14 +71,7 @@ export interface CostRateColumnInfo {
   label: string;
 }
 
-// Two-strategy header detection, mirroring function-rate's detectRateColumns:
-//   A: single-row scan — pick the header row with the most matches.
-//   B: two-row merge — for pairs (i, i+1), concatenate cells column-by-column
-//      and check the merged label. Handles the real ICR sample's layout where
-//      row[0]="Effort Month" (banner) and row[1]="Jan 31, 2026" (period).
-// Strategy B wins ONLY on strict count — on ties we prefer A because merging
-// with a data row (one-row-header files) would contaminate labels with
-// numeric cost values.
+// Mirrors function-rate detectRateColumns: single-row vs two-row merge; merge wins only on strictly higher count.
 export function detectCostRateColumns(
   rawRows: unknown[][],
   maxHeaderScan = 4,
@@ -129,11 +119,7 @@ export function detectCostRateColumns(
   return bestSingle;
 }
 
-// Only exactly-zero cells are flagged. Blanks, non-numeric text, positive and
-// negative values all collapse to 'ignore'. "0", "0.0", "  0  " all parse to
-// 0 and count as 'zero'; "n/a", "TBD", "", null, 125, -5 all classify as
-// 'ignore'. JS numeric -0 flags because -0 === 0. Formula cells evaluated
-// to 0 also flag (the parser delivers the cached computed value).
+// Only exactly-zero numeric cells flag; everything else (blank, NaN, +/-) collapses to 'ignore'. -0 flags (-0 === 0).
 export type CostRateCellState = 'zero' | 'ignore';
 
 export function classifyCostRateCell(

@@ -8,15 +8,21 @@ services:
     container_name: ses-postgres-prod
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ses
-      POSTGRES_PASSWORD: ses
-      POSTGRES_DB: ses
-    ports:
-      - '5432:5432'
+      # F5: no default credentials in prod. `:?` makes Compose fail closed
+      # (refuse `up`) if these are unset/empty in .deploy.env.
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set in .deploy.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .deploy.env}
+      POSTGRES_DB: ${POSTGRES_DB:-ses}
+    # F5: do NOT publish 5432 to the host in prod. The API reaches Postgres
+    # over the internal ses-network only. Re-enable behind a bastion if
+    # operational access is genuinely required.
+    expose:
+      - '5432'
     volumes:
       - ses_pg_data_prod:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ses -d ses']
+      test:
+        ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -27,11 +33,20 @@ services:
     image: redis:7-alpine
     container_name: ses-redis-prod
     restart: unless-stopped
-    command: ['redis-server', '--appendonly', 'yes']
+    # F18: require a password. Anything on ses-network could otherwise
+    # read/write the Socket.IO pub/sub stream. Fail closed if unset.
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--requirepass',
+        '${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .deploy.env}',
+      ]
     volumes:
       - ses_redis_data_prod:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -46,8 +61,9 @@ services:
     container_name: ses-minio-prod
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:-minioadmin}
+      # F5: no default object-storage credentials in prod.
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY must be set in .deploy.env}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY must be set in .deploy.env}
     command: server /data --console-address ":9001"
     volumes:
       - ses_minio_data_prod:/data
@@ -68,7 +84,7 @@ services:
       minio:
         condition: service_healthy
     environment:
-      MC_HOST_local: http://${OBJECT_STORAGE_ACCESS_KEY:-minioadmin}:${OBJECT_STORAGE_SECRET_KEY:-minioadmin}@minio:9000
+      MC_HOST_local: http://${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY must be set}:${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY must be set}@minio:9000
       BUCKET_WORKBOOKS: ${OBJECT_STORAGE_BUCKET_WORKBOOKS:-ses-workbooks}
       BUCKET_AI_PILOT: ${OBJECT_STORAGE_BUCKET_AI_PILOT:-ses-ai-files}
       BUCKET_PDFS: ${OBJECT_STORAGE_BUCKET_PDFS:-ses-ai-pdfs}
@@ -93,8 +109,11 @@ services:
       target: api-build
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://ses:ses@postgres:5432/ses
-      SES_AUTH_SECRET: ${SES_AUTH_SECRET_DOCKER:-change-me-change-me-change-me-change-me-123456}
+      # F5: DB URL is derived from the same credential vars Postgres uses.
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER must be set}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-ses}
+      # F8: no weak fallback. Compose refuses `up` if SES_AUTH_SECRET_DOCKER
+      # is unset/empty. Length/entropy is additionally enforced at API startup.
+      SES_AUTH_SECRET: ${SES_AUTH_SECRET_DOCKER:?SES_AUTH_SECRET_DOCKER must be set to a 32+ char random secret in .deploy.env}
     command: ['npm', 'run', 'db:migrate', '--workspace', '@ses/api']
     depends_on:
       postgres:
@@ -112,16 +131,25 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3211
-      DATABASE_URL: postgresql://ses:ses@postgres:5432/ses
-      REDIS_URL: redis://redis:6379
-      SES_AUTH_SECRET: ${SES_AUTH_SECRET_DOCKER:-change-me-change-me-change-me-change-me-123456}
+      # F5: DB URL derived from the same credential vars Postgres uses.
+      DATABASE_URL: postgresql://${POSTGRES_USER:?POSTGRES_USER must be set}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/${POSTGRES_DB:-ses}
+      # F18: authenticated Redis URL (password from the same var redis uses).
+      REDIS_URL: redis://:${REDIS_PASSWORD:?REDIS_PASSWORD must be set}@redis:6379
+      # F8: no weak fallback — fail closed if unset/empty.
+      SES_AUTH_SECRET: ${SES_AUTH_SECRET_DOCKER:?SES_AUTH_SECRET_DOCKER must be set to a 32+ char random secret in .deploy.env}
       SES_CORS_ORIGINS: ${SES_CORS_ORIGINS:-http://localhost:3210,http://127.0.0.1:3210}
       SES_BASE_URL: ${SES_BASE_URL:-http://localhost:3210}
-      SES_COOKIE_SECURE: ${SES_COOKIE_SECURE:-false}
+      # F6: prod runs behind an HTTPS edge (Cloudflare tunnel / nginx).
+      # Default to secure cookies; only override to false for a deliberate
+      # plain-HTTP test environment.
+      SES_COOKIE_SECURE: ${SES_COOKIE_SECURE:-true}
       SES_COOKIE_SAMESITE: ${SES_COOKIE_SAMESITE:-lax}
       # Default to the in-compose sidecar. Override AI_SERVICE_URL_DOCKER
       # to point at an external sidecar (e.g. a GPU host on the same VPN).
       AI_SERVICE_URL: ${AI_SERVICE_URL_DOCKER:-http://ai-sidecar:8000}
+      # F2: shared secret the API presents to the sidecar. Fail closed —
+      # both API and sidecar refuse to operate if this is unset.
+      SIDECAR_SHARED_SECRET: ${SIDECAR_SHARED_SECRET:?SIDECAR_SHARED_SECRET must be set to a 32+ char random secret in .deploy.env}
       # Object storage. Defaults target the in-compose MinIO. To use AWS S3
       # instead, set OBJECT_STORAGE_ENDPOINT to empty and provide real
       # OBJECT_STORAGE_REGION + access/secret keys via .deploy.env.
@@ -186,7 +214,23 @@ services:
       context: ./services/ai-sidecar
     container_name: ses-ai-sidecar-prod
     restart: unless-stopped
+    # F3/F16: shrink the blast radius of the LLM-SQL / document-parser
+    # surface. Non-root (Dockerfile), no privilege escalation, all caps
+    # dropped, read-only root filesystem with a small writable tmpfs only
+    # for the sandbox the uploader needs.
+    user: '10001:10001'
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /home/appuser/ses-ai-sandbox:size=128m,mode=1700
+      - /tmp:size=64m
     environment:
+      # F2: same shared secret the API presents. Sidecar fails closed (503)
+      # on every non-health route if this is unset.
+      SIDECAR_SHARED_SECRET: ${SIDECAR_SHARED_SECRET:?SIDECAR_SHARED_SECRET must be set to a 32+ char random secret in .deploy.env}
       OLLAMA_URL: http://ollama:11434
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
       # Analytics chat models (router/agent are deliberately small for speed).

@@ -31,9 +31,7 @@ import {
   OPPORTUNITIES_RULES_BY_CODE,
 } from './rules';
 
-// Per-engine config slice. Stored under `AuditPolicy.opportunities` so other
-// engines never read these fields. Values are optional; the engine falls
-// back to DEFAULT_OPPORTUNITIES_POLICY when a field is absent.
+// Per-engine config slice under `AuditPolicy.opportunities`; falls back to DEFAULT_OPPORTUNITIES_POLICY when absent.
 export interface OpportunitiesPolicy {
   closeDateLowProbabilityMax?: number;
   projectStartLowProbabilityMax?: number;
@@ -54,8 +52,7 @@ function isBlankRow(row: unknown[]): boolean {
   return row.every((cell) => String(cell ?? '').trim() === '');
 }
 
-// Same shape as missing-plan/engine.ts:rowsToObjects — keep an inline copy
-// per the engine-isolation convention (each engine owns its own helpers).
+// Inline copy of missing-plan/engine.ts:rowsToObjects per engine-isolation convention.
 function rowsToObjects(
   rows: unknown[][],
   headerRowIndex: number,
@@ -104,8 +101,7 @@ function pushIssue(
   const { file, sheetName, rowIndex, row, hits, options } = args;
   if (hits.length === 0) return;
 
-  // Hybrid rule code: specific when 1 hit, COMPOSITE when 2+. Reason text
-  // always carries every triggered message joined by '; '.
+  // Hybrid rule code: specific when 1 hit, COMPOSITE when 2+. Reason joins every message with '; '.
   const ruleCode = hits.length === 1 ? hits[0]!.code : OPP_COMPOSITE_RULE_CODE;
   const rule = OPPORTUNITIES_RULES_BY_CODE.get(ruleCode);
   if (!rule) return;
@@ -119,9 +115,7 @@ function pushIssue(
   const opportunityName = readText(row, OPP_NAME_ALIASES) || 'Unnamed opportunity';
   const category = readText(row, OPP_CATEGORY_ALIASES) || 'Unknown';
   const probability = readNumber(readCell(row, OPP_PROBABILITY_ALIASES));
-  // Opportunity Owner is the manager-equivalent for escalation routing.
-  // Empty string => no owner on the row (Escalation Center renders it
-  // as "missing-email" so auditors can fill it in via the Directory).
+  // Opportunity Owner = manager-equivalent for escalation routing. Empty => Escalation Center treats as "missing-email".
   const owner = readText(row, OPP_OWNER_ALIASES);
 
   issues.push({
@@ -140,21 +134,14 @@ function pushIssue(
     projectName: opportunityName,
     sheetName,
     severity: rule.defaultSeverity,
-    // Owner from the source row when present; em-dash placeholder only
-    // when the cell is genuinely blank, so the aggregator can still
-    // count this issue under "managers without owner" without crashing.
+    // Em-dash only when owner cell is blank so the aggregator can still count under "managers without owner".
     projectManager: owner || '—',
     projectState: category,
     effort: probability ?? 0,
     auditStatus: ruleCode,
     notes,
     rowIndex,
-    // Email is intentionally empty here — the post-engine
-    // `resolveIssueEmailsFromDirectory` step (same one master-data
-    // uses) looks the owner up in the tenant's Manager Directory and
-    // fills in the address. If the directory has no entry, the
-    // Escalation Center surfaces the row as "missing email" for the
-    // auditor to add — same UX as master-data.
+    // Email left blank; `resolveIssueEmailsFromDirectory` fills it from the Manager Directory post-engine.
     email: '',
     ruleId: ruleCode,
     ruleCode,
@@ -206,7 +193,6 @@ function auditRow(args: {
 
   const hits: RuleHit[] = [];
 
-  // 1. Close date in past (always fires when CLS_DATE_IN_PAST=true).
   if (clsDateInPast) {
     hits.push({
       code: OPP_CLOSED_DATE_PAST_RULE_CODE,
@@ -214,8 +200,7 @@ function auditRow(args: {
     });
   }
 
-  // 2. Close date in past + low probability (composite-friendly: rule 1 also
-  //    fires per locked decision 7 — both messages appear).
+  // Composite-friendly per locked decision 7: rule 1 also fires here, both messages appear.
   if (clsDateInPast && probability !== null && probability < closeDateLowProbabilityMax) {
     hits.push({
       code: OPP_CLOSED_DATE_PAST_LOW_PROB_RULE_CODE,
@@ -223,7 +208,6 @@ function auditRow(args: {
     });
   }
 
-  // 3. Project start in past + low probability.
   if (prjStartInPast && probability !== null && probability < projectStartLowProbabilityMax) {
     hits.push({
       code: OPP_PROJECT_START_PAST_LOW_PROB_RULE_CODE,
@@ -231,9 +215,7 @@ function auditRow(args: {
     });
   }
 
-  // 4. BCS missing — strictly Service + probability == exact threshold +
-  //    BCS_FLAG == '#'. Empty cells do NOT trigger this rule per locked
-  //    decision 5.
+  // BCS missing: strictly Service + probability == exact threshold + BCS_FLAG == '#'. Empty cells do NOT fire (locked decision 5).
   if (
     categoryNorm === 'service' &&
     probability !== null &&
@@ -243,8 +225,7 @@ function auditRow(args: {
     hits.push({ code: OPP_BCS_MISSING_RULE_CODE, message: 'BCS code missing' });
   }
 
-  // 5. BCS available with <90% — Service + probability < threshold + BCS
-  //    present (non-blank, non-'#'). Empty cells are NOT "available".
+  // BCS available with <90%: Service + probability < threshold + BCS present (non-blank, non-'#').
   if (
     categoryNorm === 'service' &&
     probability !== null &&
@@ -258,7 +239,6 @@ function auditRow(args: {
     });
   }
 
-  // 6. Brazil BU mismatch — case-insensitive trimmed comparison.
   if (countryNorm === 'brazil' && businessUnitNorm !== brazilExpectedBuNorm) {
     hits.push({ code: OPP_INCORRECT_BU_RULE_CODE, message: 'Incorrect BU mapping' });
   }
@@ -271,9 +251,7 @@ function auditRow(args: {
 export const opportunitiesAuditEngine: FunctionAuditEngine = {
   functionId: 'opportunities',
   run(file, policy, options) {
-    // Read ONLY from the namespaced opportunities slice. No top-level
-    // AuditPolicy fields are consulted — guarantees this engine cannot
-    // accidentally pick up settings from any other engine and vice versa.
+    // Read ONLY from the namespaced opportunities slice — guarantees engine isolation.
     const blob = policy as
       | (AuditPolicy & { opportunities?: OpportunitiesPolicy })
       | undefined;
@@ -319,8 +297,7 @@ export const opportunitiesAuditEngine: FunctionAuditEngine = {
         return { sheetName: sheet.name, rowCount: rows.length, flaggedCount };
       });
 
-    // Read CLS_DATE for any future use — currently unused at the engine level
-    // (kept available via aliases for downstream context expansions).
+    // Keep CLS_DATE aliases reachable for future engine-level use.
     void OPP_CLS_DATE_ALIASES;
 
     const result: AuditResult = {

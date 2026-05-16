@@ -10,15 +10,8 @@ interface Props {
 }
 
 /**
- * Lightweight analytics strip that lives at the top of the Escalation
- * Center. It derives every number from the already-loaded rows — no extra
- * network call — so it's free to render and always in sync with the table.
- *
- * Keep the five tiles opinionated: the auditor needs to answer five
- * questions at a glance: how many managers in play, how many findings
- * still open, how many SLAs are breached, how many are due soon, and
- * who's the worst offender. Anything more belongs on a separate
- * analytics page.
+ * Analytics strip at the top of the Escalation Center. Derives all numbers
+ * from already-loaded rows so it's free to render and always in sync.
  */
 export function AnalyticsStrip({ rows, now }: Props) {
   const analytics = useMemo(() => {
@@ -41,9 +34,8 @@ export function AnalyticsStrip({ rows, now }: Props) {
         topOffender.name = row.managerName ?? 'Unknown';
         topOffender.count = open;
       }
-      // Effective mapping: backend falls back to ManagerDirectory when the
-      // tracking/issue email is missing. Mirror that so the tile doesn't
-      // count managers already resolvable via Directory.
+      // Mirror backend's ManagerDirectory fallback so we don't count managers
+      // already resolvable via Directory.
       if (!row.resolvedEmail && !row.directoryEmail) missingEmail += 1;
       if (row.slaDueAt) {
         const t = new Date(row.slaDueAt).getTime();

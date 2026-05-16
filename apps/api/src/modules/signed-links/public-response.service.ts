@@ -75,13 +75,11 @@ export class PublicResponseService {
     const result = await this.prisma.$transaction(async (tx) => {
       const claimed = await this.signedLinks.claim(tx, peek.linkId, body.action, meta);
       if (!claimed) {
-        // Lost a race with another tab / replay. Reuse the same error so the
-        // page renders identically to "already used".
+        // Lost to another tab/replay — render as "already used".
         throw SignedLinkService.toHttpError('already_used');
       }
 
-      // Every action also records a tracking event so the auditor's timeline
-      // reflects the manager's response in real time.
+      // Record a tracking event so the auditor's timeline reflects the response.
       const tracking = peek.issueKey
         ? await this.findTrackingForIssue(tx, peek.processId, peek.managerEmail)
         : null;
@@ -98,7 +96,6 @@ export class PublicResponseService {
             triggeredById: null,
           },
         });
-        // Advance stage when the manager explicitly acknowledges or corrects.
         if (body.action === 'acknowledge' || body.action === 'correct') {
           await tx.trackingEntry.update({
             where: { id: tracking.id },
@@ -112,7 +109,6 @@ export class PublicResponseService {
         }
       }
 
-      // Write to domain tables for acknowledge / correct.
       if (body.action === 'acknowledge' && peek.issueKey) {
         await this.upsertAcknowledgment(tx, peek, 'acknowledged');
       } else if (body.action === 'correct' && peek.issueKey) {
@@ -133,8 +129,7 @@ export class PublicResponseService {
       };
     });
 
-    // After-commit realtime: auditors watching this process see the response
-    // appear live, no refresh needed.
+    // After-commit emissions so auditors see the response live.
     if (result.trackingCode && result.managerKey) {
       this.realtime.emitToProcess(peek.processCode, 'tracking.updated', {
         trackingCode: result.trackingCode,
@@ -197,9 +192,7 @@ export class PublicResponseService {
   }
 
   private async findTrackingForIssue(tx: Prisma.TransactionClient, processId: string, managerEmail: string) {
-    // Tracking is keyed by (processId, managerKey). We store managerKey as
-    // the normalized email for managers with an email address, so that's
-    // the lookup here. Falls back to null if none exists yet.
+    // managerKey is the normalized email when one exists.
     const row = await tx.trackingEntry.findFirst({
       where: { processId, managerKey: managerEmail.toLowerCase().trim() },
     });
@@ -221,7 +214,7 @@ export class PublicResponseService {
         // Change to String? in a future migration.
         data: {
           status,
-          updatedById: null, // public write — no user
+          updatedById: null,
           updatedAt: new Date(),
           rowVersion: { increment: 1 },
         } as any,

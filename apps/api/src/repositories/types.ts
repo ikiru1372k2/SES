@@ -45,9 +45,7 @@ export type DataClient = PgDataClient;
 
 export namespace Prisma {
   export type TransactionClient = PgDataClient;
-  // Permissive aliases for every Prisma.<X>WhereInput / UpdateInput /
-  // CreateInput / OrderByInput etc. used across the service layer. The
-  // catch-all index signature handles names we haven't enumerated.
+  // Permissive aliases used by the service layer during the Prisma migration.
   export type ProcessWhereInput = Record<string, any>;
   export type WorkbookFileWhereInput = Record<string, any>;
   export type TrackingEntryWhereInput = Record<string, any>;

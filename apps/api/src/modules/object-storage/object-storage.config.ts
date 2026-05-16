@@ -58,8 +58,7 @@ export function loadObjectStorageConfig(
   const endpointRaw = (env.OBJECT_STORAGE_ENDPOINT ?? '').trim();
   const endpoint = endpointRaw === '' ? undefined : endpointRaw;
 
-  // Per-purpose bucket env vars — fall back to the legacy single bucket
-  // so existing single-bucket setups keep working.
+  // Per-purpose bucket env vars fall back to the legacy single bucket.
   const workbooksBucket =
     (env.OBJECT_STORAGE_BUCKET_WORKBOOKS ?? '').trim() || legacyBucket;
   const aiPilotBucket =
@@ -85,8 +84,7 @@ export function loadObjectStorageConfig(
       'OBJECT_STORAGE_BUCKET_PDFS or OBJECT_STORAGE_BUCKET is required',
     );
 
-  // forcePathStyle defaults to true when an endpoint is set (MinIO needs it),
-  // false otherwise (AWS S3 standard virtual-host addressing).
+  // MinIO needs forcePathStyle=true; AWS S3 uses virtual-host addressing.
   const rawForce = (env.OBJECT_STORAGE_FORCE_PATH_STYLE ?? '').trim().toLowerCase();
   const forcePathStyle =
     rawForce === ''
@@ -111,9 +109,7 @@ export function loadObjectStorageConfig(
     driver: 's3',
     endpoint,
     region,
-    // `bucket` retained for callers that operate without specifying a
-    // purpose. Default to the AI Pilot bucket since that was the
-    // historical single-bucket default.
+    // Legacy default for callers that don't specify a purpose.
     bucket: aiPilotBucket,
     buckets,
     accessKey,

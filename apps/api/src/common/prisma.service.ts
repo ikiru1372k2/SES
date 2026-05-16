@@ -22,8 +22,7 @@ export class PrismaService implements OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
   private readonly pool: Pool;
 
-  // Model accessors — declared as fields so TypeScript sees them on the
-  // class without needing an interface merge (which breaks Nest DI).
+  // Field declarations avoid interface-merge (breaks Nest DI on some TS configs).
   identifierCounter!: ModelProxy;
   tenant!: ModelProxy;
   user!: ModelProxy;

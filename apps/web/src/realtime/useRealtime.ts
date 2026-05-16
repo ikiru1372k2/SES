@@ -58,12 +58,11 @@ export function useRealtime(
     if (!processCode) return;
     const socket = getSocket();
 
-    // Join (the server validates access and returns members count).
+    // Server validates access (ProcessAccessService); failures stay disconnected.
     let active = true;
     socket.emit('presence.join', { processCode }, (ack: { ok: boolean; reason?: string } | undefined) => {
       if (!active) return;
       if (!ack?.ok) {
-        // Access denied or unknown process — UI stays disconnected, no toast needed.
         setConnected(false);
       }
     });
@@ -73,13 +72,11 @@ export function useRealtime(
       handleEnvelope(envelope, selfCodeRef.current, setMembers, setConnected, onEvictedRef);
     });
 
-    // Heartbeat
     const heartbeat = window.setInterval(() => {
       socket.emit('presence.heartbeat');
     }, HEARTBEAT_MS);
 
-    // Reconnect -> re-join. Socket.IO reconnects automatically but forgets
-    // room memberships; we need to re-send presence.join each time.
+    // Socket.IO reconnects automatically but forgets room memberships; re-join.
     const onConnect = () => {
       socket.emit('presence.join', { processCode });
     };
@@ -151,9 +148,7 @@ export function handleEnvelope(
       } | undefined;
       const code = payload?.runCode ?? '';
       toast(`${actor} ran an audit ${code}`.trim(), { icon: '🔎' });
-      // Refresh the exact file the other user ran so scoped viewers/editors
-      // see fresh findings immediately instead of staying pinned to a cached
-      // in-session result from before the rerun.
+      // Refresh the file the other user ran so viewers see fresh findings.
       const state = useAppStore.getState();
       const proc = state.processes.find(
         (p) => p.id === envelope.processCode || p.displayCode === envelope.processCode,
@@ -234,7 +229,7 @@ export function handleEnvelope(
       return;
     }
     default:
-      // Unhandled events are fine — they're broadcast for future features.
+      // Unhandled events are broadcast for future features.
       return;
   }
 }

@@ -20,20 +20,8 @@ import { addStageComment, fetchStageComments } from '../../lib/api/trackingStage
 
 /**
  * Activity-tab header: state-machine ladder + SLA + escalation context.
- *
- * Each ladder node renders three things:
- *   - state colour (green=done, blue=current, gray=future, red=escalated)
- *   - the metadata you'd want at a glance (owner, count, timestamp)
- *   - click → opens an append-only comment thread scoped to the node
- *
- * Above the ladder we render:
- *   - Smart automation tags (SLA at risk / Waiting / Blocked / Escalated)
- *   - SLA countdown (red when breached, amber when <8h, gray otherwise)
- *   - Escalation level badge (L1, L2, …)
- *   - Progress %
- *
- * All state is derived from the existing `ProcessEscalationManagerRow` —
- * no new server fields required.
+ * Nodes click into an append-only stage-scoped comment thread.
+ * All state is derived from ProcessEscalationManagerRow — no new server fields.
  */
 
 type StageKey = string;
@@ -74,7 +62,6 @@ function buildStages(row: ProcessEscalationManagerRow): StageNode[] {
     },
   ];
 
-  // One node per Outlook send actually made, plus one pending slot
   const outlookSlots = Math.max(outlook + 1, 1);
   for (let i = 1; i <= outlookSlots; i += 1) {
     nodes.push({
@@ -87,7 +74,6 @@ function buildStages(row: ProcessEscalationManagerRow): StageNode[] {
     });
   }
 
-  // One node per Teams send actually made, plus one pending slot
   const teamsSlots = Math.max(teams + 1, 1);
   for (let i = 1; i <= teamsSlots; i += 1) {
     nodes.push({
@@ -137,8 +123,6 @@ function currentNodeIndex(nodes: StageNode[]): number {
   return nodes.length - 1;
 }
 
-// ---------- SLA helpers ----------
-
 interface SlaInfo {
   state: 'breached' | 'at-risk' | 'on-track' | 'none';
   /** Remaining ms (negative when breached). */
@@ -170,7 +154,6 @@ function describeSla(slaDueAt: string | null | undefined, now: number): SlaInfo 
       tooltip: `SLA was due ${new Date(slaDueAt).toLocaleString()}.`,
     };
   }
-  // Less than 8 hours = at-risk
   if (delta < 8 * 3_600_000) {
     return {
       state: 'at-risk',
@@ -191,8 +174,6 @@ function progressPercent(nodes: StageNode[]): number {
   const done = nodes.filter((n) => n.completed).length;
   return Math.round((done / nodes.length) * 100);
 }
-
-// ---------- automation tags ----------
 
 interface AutomationTag {
   label: string;
@@ -237,8 +218,6 @@ const TONE_BG: Record<AutomationTag['tone'], string> = {
   gray: 'bg-gray-100 text-gray-700 ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700',
 };
 
-// ---------- main component ----------
-
 export const StageGraph = memo(function StageGraph({
   row,
   trackingIdOrCode,
@@ -263,7 +242,6 @@ export const StageGraph = memo(function StageGraph({
 
   return (
     <div className="space-y-3">
-      {/* Top bar — automation tags + SLA + escalation level + progress */}
       <div className="flex flex-wrap items-center gap-2">
         {tags.map((t) => (
           <span
@@ -292,7 +270,6 @@ export const StageGraph = memo(function StageGraph({
         </span>
       </div>
 
-      {/* Ladder */}
       <ol className="flex flex-wrap items-stretch gap-1.5">
         {nodes.map((node, index) => {
           const isCurrent = !node.completed && index === current;
@@ -365,8 +342,6 @@ export const StageGraph = memo(function StageGraph({
   );
 });
 
-// ---------- SLA pill ----------
-
 function SlaPill({ info }: { info: SlaInfo }) {
   if (info.state === 'none') {
     return (
@@ -391,8 +366,6 @@ function SlaPill({ info }: { info: SlaInfo }) {
     </span>
   );
 }
-
-// ---------- comment thread (panel) ----------
 
 function StageCommentThread({
   trackingIdOrCode,

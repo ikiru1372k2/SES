@@ -80,18 +80,8 @@ export class AccessScopeService {
   }
 
   /**
-   * Pure resolver — no DB access. Given the loaded member + scope rows and a
-   * request scope context, decides whether to allow.
-   *
-   * Resolution:
-   *   1. owner => allow.
-   *   2. zero scope rows => fall back to ProcessMember.permission (legacy).
-   *   3. otherwise match by ctx.kind:
-   *      - 'function': exact function row + any 'all-functions' row.
-   *      - 'escalation-center': exact escalation row only.
-   *      - 'all-functions' (process-wide non-function routes): view is allowed
-   *        if any scope row exists; edit requires an 'all-functions' row.
-   *      Choose the most permissive matching accessLevel.
+   * Pure resolver: owner allows; no scope rows falls back to legacy permission;
+   * otherwise matches by ctx.kind and picks the most permissive accessLevel.
    */
   resolve(args: {
     member: { permission: ProcessPermission };
@@ -124,7 +114,6 @@ export class AccessScopeService {
       const esc = scopes.find((s) => s.scopeType === 'escalation-center');
       if (esc) candidates.push(esc.accessLevel);
     } else {
-      // 'all-functions' = process-wide non-function route.
       if (ctx.action === 'view') return { allowed: true };
       const all = scopes.find((s) => s.scopeType === 'all-functions');
       if (all) candidates.push(all.accessLevel);

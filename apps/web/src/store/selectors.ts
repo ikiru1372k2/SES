@@ -13,21 +13,16 @@ export function selectLatestAuditResult(process: AuditProcess): AuditResult | nu
   return process.latestAuditResult ?? process.versions[0]?.result ?? null;
 }
 
-// Fallback identity hash for audits that predate issue #74 (no findingsHash
-// on server-side results, no local signature persisted). Same shape as the
-// signature used by the runAudit autosave so comparisons stay consistent.
-// L6: sort by issueKey first so re-orders (parallel engine, different
-// iteration order) don't register as different findings. Content-derived
-// digest (not just length) so two different issue sets of the same size
-// don't collide.
+// Fallback identity hash for pre-#74 audits (no findingsHash). Sort by
+// issueKey so engine iteration order doesn't register as a change; content
+// digest avoids collisions across different issue sets of the same size.
 export function localFindingsSignature(issues: AuditResult['issues']): string {
   const normalized = issues
     .map((i) => `${i.issueKey ?? i.id}|${i.ruleCode ?? ''}|${i.severity ?? ''}`)
     .sort()
     .join('\n');
-  // djb2 is a tiny, dependency-free non-cryptographic hash. Good enough for
-  // session-local identity checks — the *real* identity hash comes from the
-  // server via AuditResult.findingsHash whenever it exists.
+  // djb2 — non-cryptographic; session-local identity only. Server-side
+  // AuditResult.findingsHash is the authoritative identity when available.
   let hash = 5381;
   for (let i = 0; i < normalized.length; i++) {
     hash = ((hash << 5) + hash + normalized.charCodeAt(i)) | 0;
@@ -38,19 +33,15 @@ export function localFindingsSignature(issues: AuditResult['issues']): string {
 export function selectHasUnsavedAudit(process: AuditProcess): boolean {
   const latestRun = process.latestAuditResult;
   if (!latestRun) return false;
-  // Compare findings content (findingsHash), not timestamps. Rerunning an
-  // audit on unchanged data produces a newer runAt but identical findings;
-  // the prior saved version is still a valid anchor — nothing needs saving.
-  // Anchor the comparison to the same file: different files produce
-  // different findings by construction, and cross-file comparison produced
-  // noisy "unsaved" banners on workspaces with multiple files.
+  // Compare findingsHash content (not timestamps): rerunning on unchanged
+  // data has a new runAt but identical findings. Anchor by fileId so multi-
+  // file workspaces don't show noisy cross-file "unsaved" banners.
   const sameFileVersion = process.versions.find((v) => v.result.fileId === latestRun.fileId);
   if (!sameFileVersion) return true;
   const savedHash = sameFileVersion.result.findingsHash;
   const latestHash = latestRun.findingsHash;
   if (savedHash && latestHash) return savedHash !== latestHash;
-  // Legacy fallback: one side has no hash (pre-#74 version). Compute a
-  // local signature from the issues array instead.
+  // Pre-#74 fallback: one side has no hash, compare via local signature.
   return localFindingsSignature(latestRun.issues) !== localFindingsSignature(sameFileVersion.result.issues);
 }
 

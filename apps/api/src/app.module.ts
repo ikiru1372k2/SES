@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { CsrfGuard } from './common/csrf.guard';
 import { DatabaseModule } from './db/database.module';
 import { CoreModule } from './common/core.module';
 import { ObjectStorageModule } from './modules/object-storage';
@@ -74,6 +75,12 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     SavedViewsModule,
     AnalyticsModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // F7: global CSRF guard. Runs for every route; enforces a custom header
+    // on cookie-authenticated unsafe methods. Exemptions are enumerated and
+    // justified inside the guard.
+    { provide: APP_GUARD, useClass: CsrfGuard },
+  ],
 })
 export class AppModule {}

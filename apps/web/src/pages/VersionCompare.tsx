@@ -63,8 +63,7 @@ export function VersionCompare() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Group versions by fileId so the picker steers users toward apples-to-apples
-  // comparisons (C2 in the audit: cross-file comparisons produced nonsense).
+  // Group by fileId so the picker steers toward apples-to-apples comparisons.
   const versionsByFile = useMemo(() => {
     const map = new Map<string, AuditVersion[]>();
     for (const version of process?.versions ?? []) {
@@ -89,21 +88,17 @@ export function VersionCompare() {
     return entries;
   }, [process?.files, versionsByFile]);
 
-  // Flat list of all versions across all files, sorted newest-first.
-  // Used as picker options when the weekly workflow uploads a new file each
-  // week — each file ends up with only one version, so per-file grouping
-  // would block comparison entirely.
+  // Flat newest-first list; used as picker options when the weekly workflow
+  // uploads a new file each week (one version per file).
   const allVersions = useMemo(() => {
     const flat = (process?.versions ?? []).slice();
     flat.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return flat;
   }, [process?.versions]);
 
-  // Whether any single file has ≥2 versions (same-file mode).
   const hasSameFileGroup = fileGroups.some((g) => g.versions.length >= 2);
 
-  // Sensible defaults: first file group, previous → latest. Respect URL if
-  // present so share links survive.
+  // Defaults: first group, previous → latest. URL overrides for share links.
   const urlFileId = searchParams.get('file');
   const urlFromId = searchParams.get('from');
   const urlToId = searchParams.get('to');
@@ -111,7 +106,6 @@ export function VersionCompare() {
   const [selectedFileId, setSelectedFileId] = useState<string>(initialGroup?.fileId ?? '');
   const activeGroup = fileGroups.find((g) => g.fileId === selectedFileId) ?? initialGroup;
 
-  // Picker options: same-file versions when available, otherwise all versions.
   const pickerVersions = hasSameFileGroup ? (activeGroup?.versions ?? []) : allVersions;
 
   const [fromId, setFromId] = useState<string>(() => {
@@ -121,7 +115,6 @@ export function VersionCompare() {
     return urlToId ?? pickerVersions[0]?.versionId ?? '';
   });
 
-  // Re-seed selections when the file group changes (same-file mode only).
   useEffect(() => {
     if (!hasSameFileGroup || !activeGroup) return;
     const versions = activeGroup.versions;
@@ -133,7 +126,7 @@ export function VersionCompare() {
     }
   }, [activeGroup, fromId, hasSameFileGroup, toId]);
 
-  // Mirror selection into URL so the page is bookmarkable and share-safe.
+  // Mirror selection into URL for bookmark/share.
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
     if (selectedFileId) next.set('file', selectedFileId);
@@ -142,7 +135,7 @@ export function VersionCompare() {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-    // `searchParams` left out intentionally; we only want to push on selection changes.
+    // searchParams omitted: push only on selection changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFileId, fromId, toId]);
 
@@ -659,5 +652,4 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
-// Typing helper — exposes ComparisonResult for the `.filter` call to narrow correctly.
 export type { ComparisonResult };

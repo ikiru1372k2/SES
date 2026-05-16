@@ -2,7 +2,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
+import { installCsrfHeader } from './lib/api/installCsrfHeader';
 import './index.css';
+
+// F7: must run before any API call. Adds X-Requested-With to same-origin
+// requests so the server-side CsrfGuard accepts our SPA traffic.
+installCsrfHeader();
 
 // The pre-React splash lives inside #root and is replaced when React renders.
 // To avoid a flash / layout shift on the handoff we keep a sibling overlay

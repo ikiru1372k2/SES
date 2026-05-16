@@ -92,6 +92,10 @@ export class AnalyticsController {
     return this.analytics.chatHistory(processCode, user, asFunctionId(q.functionId));
   }
 
+  // F10: export runs several heavy Prisma aggregations + xlsx build. Cap it
+  // tighter than the global 400/min so it can't be used as an amplification
+  // / cost-abuse vector.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Get('processes/:processCode/export.xlsx')
   async exportXlsx(
     @Param('processCode') processCode: string,

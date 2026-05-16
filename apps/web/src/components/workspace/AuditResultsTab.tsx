@@ -59,20 +59,14 @@ const ALL_ISSUE_HEADERS: Array<{ key: SortKey; label: string }> = [
   { key: 'reason', label: 'Issue' },
 ];
 
-// Master Data findings have no notion of effort hours — every issue is
-// emitted with `effort: 0`, so showing the column is just noise. Hide it
-// for that function. Other columns are useful regardless of the engine.
+// Master Data findings have no effort hours — every issue is effort: 0, so hide the column.
 function visibleIssueHeaders(functionId: string | undefined): Array<{ key: SortKey; label: string }> {
   if (functionId === 'master-data') return ALL_ISSUE_HEADERS.filter((h) => h.key !== 'effort');
   return ALL_ISSUE_HEADERS;
 }
 
 // Map a master-data rule code to the source column's user-facing label.
-//   "RUL-MD-CUSTOMER_NAME-MISSING"          -> "Customer name"
-//   "RUL-MD-PROJECT_PRODUCT-NOT-ASSIGNED"   -> "Project Product"
-//   "RUL-MD-PROJECT_PRODUCT-REVIEW-OTHERS"  -> "Project Product"
-// Returns null if the code does not belong to any master-data column —
-// caller should fall back to the issue's category for non-MD engines.
+// Returns null for codes that don't belong to any MD column.
 function masterDataColumnLabel(ruleCode: string | null | undefined): string | null {
   if (!ruleCode) return null;
   for (const col of Object.values(MD_COLUMNS)) {
@@ -81,11 +75,8 @@ function masterDataColumnLabel(ruleCode: string | null | undefined): string | nu
   return null;
 }
 
-// Friendly label for the Rule status dropdown. The master-data engine
-// emits exactly three rule "types" — every column has a MISSING rule, and
-// Project Product has two extra (NOT-ASSIGNED, REVIEW-OTHERS). The
-// dropdown collapses to those three semantic options regardless of column;
-// the user combines this filter with the Column filter to drill in.
+// Collapses MD's many rule codes into three semantic options; combined with
+// the Column filter for drill-down.
 const MD_RULE_FILTER_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: 'missing',      label: 'Missing' },
   { value: 'not_assigned', label: 'Not assigned' },
@@ -95,9 +86,8 @@ const MD_RULE_FILTER_OPTIONS: ReadonlyArray<{ value: string; label: string }> = 
 function matchesMasterDataRuleFilter(ruleCode: string, filter: string): boolean {
   if (filter === 'not_assigned') return ruleCode === MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE;
   if (filter === 'other') return ruleCode === MD_REVIEW_OTHERS_RULE_CODE;
-  // 'missing' covers all 27 RUL-MD-<COLUMN>-MISSING codes — including the
-  // Project Product MISSING one. NOT-ASSIGNED and REVIEW-OTHERS are
-  // explicitly excluded so "Missing" doesn't overlap with the other two.
+  // 'missing' covers all RUL-MD-<COLUMN>-MISSING codes; explicitly excludes
+  // NOT-ASSIGNED / REVIEW-OTHERS to avoid overlap.
   if (filter === 'missing') {
     return (
       ruleCode !== MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE &&
@@ -108,12 +98,8 @@ function matchesMasterDataRuleFilter(ruleCode: string, filter: string): boolean 
   return true;
 }
 
-// The authoritative "which rule produced this issue" key. Locally-run
-// audits set `auditStatus` to the rule code, but `mapApiAuditToResult`
-// in the store hard-codes `auditStatus: ''` for server-backed runs and
-// puts the code on `ruleCode` / `ruleId` instead. Using only auditStatus
-// here meant the Rule status dropdown silently came up empty for
-// server-backed audits — fixed by reading from ruleCode first.
+// Authoritative rule-code key. Server-backed runs put the code on ruleCode/ruleId
+// (auditStatus is ''); reading auditStatus first emptied the dropdown for them.
 function issueRuleKey(issue: AuditIssue): string {
   return issue.ruleCode ?? issue.ruleId ?? issue.auditStatus ?? '';
 }
@@ -125,7 +111,7 @@ function isMappingSourceValid(src: MappingSourceInput | undefined): boolean {
   return true;
 }
 
-// Stable module-scope set so references in render and effects don't churn.
+// Module-scope so refs in render/effects don't churn.
 const MAPPING_ENABLED_FUNCTIONS: ReadonlySet<string> = new Set([
   'over-planning',
   'function-rate',
@@ -150,16 +136,9 @@ export function AuditResultsTab({
   readOnlyReason?: string | undefined;
 }) {
   const editTooltip = !canEdit ? readOnlyReason : undefined;
-  // The Zustand `currentAuditResult` is only populated by an interactive
-  // run from this same browser session — it gets cleared whenever the user
-  // navigates between processes or functions (see useAppStore lines 321,
-  // 388, hydrateFunctionWorkspace, etc.). When the user lands here from
-  // an "Open evidence" link in the Escalation Center, that state is null
-  // and the tab would otherwise show "No audit run yet" even though the
-  // findings exist on the server. Fall back to (a) the process-level
-  // cached result that runAudit writes when it completes, then to (b) the
-  // most recent saved version. PreviewTab already follows the same
-  // pattern (Workspace.tsx:198,213).
+  // currentAuditResult is per-session and cleared on navigation, so when the
+  // user deep-links here from Escalation Center it's null. Fall back to the
+  // process-level cached result, then the most recent saved version.
   const liveResult = useAppStore((state) => state.currentAuditResult);
   const result = useMemo(() => {
     if (!file) return null;
@@ -167,7 +146,7 @@ export function AuditResultsTab({
     if (process.latestAuditResult && process.latestAuditResult.fileId === file.id) {
       return process.latestAuditResult;
     }
-    // process.versions is sorted newest-first elsewhere; index 0 is latest.
+    // process.versions is newest-first; index 0 is latest.
     const latestVersion = process.versions?.[0]?.result;
     if (latestVersion && latestVersion.fileId === file.id) return latestVersion;
     return null;
@@ -186,9 +165,7 @@ export function AuditResultsTab({
   const [sort, setSort] = useState<SortKey>('severity');
   const [expanded, setExpanded] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Mapping-file dropdown candidates: other uploaded files in this process
-  // that share the current audit file's functionId. Over-planning and
-  // function-rate both use this flow; each picks from its own sibling files.
+  // Mapping-file candidates: sibling files sharing this functionId.
   const overPlanningFiles = useMemo(
     () => process.files.filter((f) => f.functionId === file?.functionId),
     [process.files, file?.functionId],
@@ -199,42 +176,23 @@ export function AuditResultsTab({
   useKeyboardShortcut('/', () => searchRef.current?.focus(), Boolean(result));
   const policyChanged = Boolean(result && isPolicyChanged(process.auditPolicy, result.policySnapshot));
 
-  // Deep-link highlight: when the user arrived via `?issue=<issueKey>`
-  // (e.g. clicking "Open evidence" in the Escalation Center), find the
-  // matching row, clear filters that would hide it, expand it, scroll
-  // it into view, and flash a ring around it.
-  //
-  // The scroll is tricky because the result may arrive asynchronously
-  // (hydrateLatestAuditResult) AND the row is only rendered after we
-  // expand it. An effect that depends on `highlightedRowId` fires
-  // synchronously after state update but BEFORE the row has mounted, so
-  // `ref.current` is still null at that moment. The workaround is a
-  // callback ref — React invokes it the instant the <tr> attaches to
-  // the DOM, which is exactly when we can scroll.
+  // Deep-link (?issue=<issueKey>) handling: find row, clear filters, expand,
+  // scroll, flash. Uses a callback ref because the row mounts asynchronously
+  // (after expand) and an effect would see ref.current === null.
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightIssueKey = searchParams.get('issue');
   const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null);
   const [flashRowId, setFlashRowId] = useState<string | null>(null);
   const scrollPerformedRef = useRef<string | null>(null);
 
-  // Callback ref: React calls this with the <tr> node when it mounts,
-  // and with `null` when it unmounts. We use the mount call to trigger
-  // the scroll exactly once per deep link (tracked by scrollPerformedRef
-  // so switching highlight targets later still works, but repeat
-  // renders of the same target don't keep scrolling).
-  //
-  // IMPORTANT: use element.scrollIntoView — not window.scrollTo — because
-  // the actual scroll container here is a flex child of <main> with
-  // `overflow-y-auto` (see TabPanel.tsx). The window doesn't scroll at
-  // all. scrollIntoView walks up the ancestor chain to the nearest
-  // scrollable parent on its own, so it just works.
+  // Scroll once per deep-link target. Must use element.scrollIntoView (not
+  // window.scrollTo): the scroll container is a flex child of <main> with
+  // overflow-y-auto (see TabPanel.tsx), so window itself doesn't scroll.
   const attachHighlightRef = (node: HTMLTableRowElement | null) => {
     if (!node || !highlightedRowId) return;
     if (scrollPerformedRef.current === highlightedRowId) return;
     scrollPerformedRef.current = highlightedRowId;
-    // Delay one frame so the expanded detail panel also mounts and the
-    // browser can include it in the scroll bounds. Without this, the
-    // expanded detail renders below the fold after we scroll.
+    // Wait a frame so the expanded detail mounts and counts in scroll bounds.
     requestAnimationFrame(() => {
       node.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
@@ -243,10 +201,8 @@ export function AuditResultsTab({
   useEffect(() => {
     if (!highlightIssueKey || !result) return;
     const target = result.issues.find((issue) => issue.issueKey === highlightIssueKey);
-    if (!target) return; // Result loaded but issue not in it (yet / anymore). Wait or give up quietly.
-    // Found — latch, clear filters, expand, consume the URL param. Deliberate
-    // one-shot effect consuming `?issue=` from the URL; not a sync with an
-    // external system, so the set-state-in-effect rule doesn't apply here.
+    if (!target) return;
+    // One-shot effect consuming `?issue=` from URL; set-state-in-effect rule N/A.
     /* eslint-disable react-hooks/set-state-in-effect */
     setHighlightedRowId(target.id);
     setFlashRowId(target.id);
@@ -261,20 +217,15 @@ export function AuditResultsTab({
     setSearchParams(next, { replace: true });
   }, [highlightIssueKey, result, searchParams, setSearchParams]);
 
-  // Auto-dismiss the amber flash after a few seconds so it doesn't stick
-  // around forever. The expanded state stays (the user may want to read
-  // the details), but the visual attention-grabber fades out.
+  // Auto-dismiss the amber flash; keep the row expanded.
   useEffect(() => {
     if (!flashRowId) return;
     const t = window.setTimeout(() => setFlashRowId(null), 4000);
     return () => window.clearTimeout(t);
   }, [flashRowId]);
 
-  // Detect a stale result: either the result belongs to a different file
-  // (user switched files without re-running), or the rule codes in the
-  // result don't match the current file's function (legacy runs before
-  // the function engine split). Either way the displayed findings are
-  // misleading — surface a big amber banner instead of silently lying.
+  // Detect stale result (different file, or rule codes from another function's
+  // engine — legacy pre-split runs). Surface a banner rather than mislead.
   const staleReason: string | null = (() => {
     if (!result || !file) return null;
     if (result.fileId && result.fileId !== file.id) {
@@ -298,8 +249,7 @@ export function AuditResultsTab({
         if (file.functionId === 'function-rate') return !code.startsWith('RUL-FR-');
         if (file.functionId === 'opportunities') return !code.startsWith('RUL-OPP-');
         if (file.functionId === 'over-planning') {
-          // Over-planning covers several RUL-EFFORT/RUL-STATE/RUL-MGR codes,
-          // but not RUL-MD-*, RUL-MP-*, RUL-FR-*, or RUL-OPP-*.
+          // Over-planning covers RUL-EFFORT/RUL-STATE/RUL-MGR but not other engines.
           return (
             code.startsWith('RUL-MD-') ||
             code.startsWith('RUL-MP-') ||
@@ -337,8 +287,7 @@ export function AuditResultsTab({
     }));
   }, [result]);
 
-  // E1: debounce the expensive filter pipeline off a trailing 200ms window
-  // so typing doesn't thrash the whole issue list on every keystroke.
+  // Debounce the filter pipeline so typing doesn't thrash the issue list.
   const debouncedSearch = useDebouncedValue(search, 200);
   const filtered = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
@@ -348,18 +297,14 @@ export function AuditResultsTab({
       .filter(({ issue }) => !sheet || issue.sheetName === sheet)
       .filter(({ issue }) => {
         if (!status) return true;
-        // Master-data uses semantic filter values ('missing' / 'not_assigned'
-        // / 'other'). Other engines use exact rule-code match.
+        // Master-data uses semantic values; other engines use exact rule-code match.
         if (masterData) return matchesMasterDataRuleFilter(issueRuleKey(issue), status);
         return issueRuleKey(issue) === status;
       })
       .filter(({ issue }) => {
         if (!category) return true;
         if (masterData) {
-          // For master-data the dropdown lists column names, so we compare
-          // against the column derived from the issue's rule code, not the
-          // generic `issue.category` (which is "Data Quality" / "Needs
-          // Review" — useful for over-planning, not useful here).
+          // MD dropdown lists column names; compare against the column derived from ruleCode.
           return masterDataColumnLabel(issue.ruleCode ?? issue.ruleId) === category;
         }
         return issue.category === category;
@@ -376,30 +321,19 @@ export function AuditResultsTab({
   const isMasterData = functionId === 'master-data';
   const issueHeaders = useMemo(() => visibleIssueHeaders(functionId), [functionId]);
 
-  // Master-data swaps the "All categories" dropdown for a column-name
-  // dropdown — categories like "Data Quality" / "Needs Review" don't help
-  // the auditor narrow down to a specific field. For other engines we keep
-  // the fixed category list so the existing UX is untouched.
+  // Master-data swaps category dropdown for column-name dropdown.
   const categoryFilterOptions = useMemo<Array<{ value: string; label: string }>>(() => {
     if (!result) return [];
     if (isMasterData) {
-      // Show every configured master-data column, even if the current
-      // audit found zero issues for it. This makes it obvious to the
-      // auditor *which* columns were checked — selecting a clean column
-      // just shows "0 issues", which is useful confirmation that the
-      // engine looked at it. (Previously the dropdown only listed columns
-      // that had at least one finding, which made it look like missing
-      // columns weren't audited at all.)
+      // List every configured column (even 0-issue ones) so it's obvious
+      // which columns were checked; filtering only those with findings
+      // previously made missing columns look un-audited.
       return MD_REQUIRED_COLUMNS.map((col) => ({ value: col.label, label: col.label }));
     }
     return categoryOptions.map((c) => ({ value: c, label: c }));
   }, [result, isMasterData]);
 
-  // Master-data uses exactly three semantic rule options (Missing /
-  // Not assigned / Other) regardless of how many rule codes the engine
-  // emitted. Combined with the Column filter, the auditor can drill down:
-  // Column=Project Product + Rule=Not assigned → only those rows.
-  // Other engines keep the raw rule codes from issues (existing UX).
+  // MD uses 3 semantic rule options; other engines list raw rule codes from issues.
   const ruleFilterOptions = useMemo<Array<{ value: string; label: string }>>(() => {
     if (!result) return [];
     if (isMasterData) return [...MD_RULE_FILTER_OPTIONS];
@@ -844,10 +778,8 @@ function QgcSettingsDrawer({
     updateAuditPolicy(process.id, { ...draft, mediumEffortMin: 0, mediumEffortMax: 0, lowEffortEnabled: false });
     if (file) {
       const runOptions = (isOverPlanning || isFunctionRate || isInternalCostRate) && mappingSource ? { mappingSource } : undefined;
-      // Only toast "re-run" on actual success. Previously the .then() fired
-      // even when runAudit silently no-op'd (no sheets selected) and never
-      // caught API errors — users saw "Settings saved and audit re-run" for
-      // runs that never actually ran.
+      // Only toast "re-run" on actual success; runAudit previously silently
+      // no-op'd or threw without surfacing, so the message lied.
       void runAudit(process.id, file.id, runOptions)
         .then(() => toast.success('Settings saved and audit re-run'))
         .catch((err: unknown) => {
@@ -981,10 +913,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
   return <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /> {label}</label>;
 }
 
-// One-click bridge from "I ran an audit" to "I'm notifying the owners".
-// Notifications no longer live inside the tile — the Escalation Center is
-// the single place to compose, send, and track, so we surface the link
-// prominently right under the metric cards.
+// One-click bridge to the Escalation Center, the single place to compose/track.
 function EscalationCenterCta({
   processId,
   processDisplayCode,

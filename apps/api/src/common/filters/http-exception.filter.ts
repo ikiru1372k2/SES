@@ -9,6 +9,19 @@ import {
 import type { Request, Response } from 'express';
 import { MulterError } from 'multer';
 
+/**
+ * F4: signed-link tokens travel as a path segment under
+ * /api/v1/public/respond/<token>. Strip the token before the URL is logged
+ * or echoed to a client so a 256-bit bearer credential never lands in app
+ * logs / error responses. (nginx access_log is silenced separately.)
+ */
+function redactUrl(url: string): string {
+  return url.replace(
+    /(\/public\/respond\/)[^/?#]+/i,
+    '$1[redacted-token]',
+  );
+}
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -27,7 +40,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         statusCode: status,
         ...payload,
         requestId: response.getHeader('X-Request-ID'),
-        ...(isProd ? {} : { path: request.url }),
+        ...(isProd ? {} : { path: redactUrl(request.url) }),
       });
       return;
     }
@@ -38,7 +51,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
           statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
           message: 'File exceeds maximum allowed size',
           requestId: response.getHeader('X-Request-ID'),
-          ...(isProd ? {} : { path: request.url }),
+          ...(isProd ? {} : { path: redactUrl(request.url) }),
         });
         return;
       }
@@ -46,7 +59,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         statusCode: HttpStatus.BAD_REQUEST,
         message: exception.message,
         requestId: response.getHeader('X-Request-ID'),
-        ...(isProd ? {} : { path: request.url }),
+        ...(isProd ? {} : { path: redactUrl(request.url) }),
       });
       return;
     }
@@ -55,9 +68,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // 409/400 instead of a cryptic 500 for data-integrity violations.
     const err = exception as Error & { code?: string; detail?: string; table?: string; column?: string };
     if (err?.code) {
-      this.logger.warn(
-        `pg error ${err.code} on ${request.method} ${request.url}: ${err.message}${err.detail ? ' | ' + err.detail : ''}`,
-      );
+      // F13: PG `detail`/`message` embed offending row values
+      // (e.g. "Key (email)=(a@b.com) already exists"). Keep them out of
+      // production logs; only the error code + sanitized path in prod.
+      if (isProd) {
+        this.logger.warn(
+          `pg error ${err.code} on ${request.method} ${redactUrl(request.url)}`,
+        );
+      } else {
+        this.logger.warn(
+          `pg error ${err.code} on ${request.method} ${redactUrl(request.url)}: ${err.message}${err.detail ? ' | ' + err.detail : ''}`,
+        );
+      }
     }
     if (err?.code) {
       // 23505 = unique_violation, 23503 = foreign_key_violation,
@@ -91,7 +113,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     }
 
-    this.logger.error(err?.message ?? 'Unhandled error', err?.stack, `${request.method} ${request.url}`);
+    this.logger.error(
+      err?.message ?? 'Unhandled error',
+      err?.stack,
+      `${request.method} ${redactUrl(request.url)}`,
+    );
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       message: 'Internal server error',

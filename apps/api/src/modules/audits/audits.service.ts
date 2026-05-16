@@ -29,10 +29,8 @@ import { resolveIssueEmailsFromDirectory } from '../directory/resolve-issue-emai
 import { AiPilotService } from '../ai-pilot/ai-pilot.service';
 
 /**
- * Stable sha256 over the sorted identity of each issue.
- * Two runs with the same issues (any order) produce the same hash, so the
- * web store can skip creating duplicate SavedVersion rows when an auditor
- * re-runs against an unchanged file.
+ * Stable sha256 over the sorted identity of each issue, so re-runs against
+ * an unchanged file skip creating duplicate SavedVersion rows.
  */
 function computeFindingsHash(
   issues: Array<{ issueKey: string; ruleCode?: string | null; severity?: string | null }>,
@@ -256,10 +254,8 @@ export class AuditsService {
   }
 
   async run(processIdOrCode: string, body: { fileIdOrCode: string; mappingSource?: MappingSourceDto }, user: SessionUser) {
-    // Scope-aware edit enforcement happens at the controller boundary. By the
-    // time we reach the service we only need to confirm the caller can see the
-    // process, otherwise a scoped editor (base viewer) is rejected here even
-    // though they were correctly authorized for this function.
+    // Edit enforcement happens at the controller; here we only confirm read access
+    // so a scoped editor (base viewer) isn't rejected for an authorized function.
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode, 'viewer');
     const file = await this.prisma.workbookFile.findFirst({
       where: {
@@ -313,10 +309,8 @@ export class AuditsService {
         } as any, // PRISMA-JSON: unavoidable until Prisma 6 supports typed JSON columns
       });
 
-      // Resolve the policy slice for this function. Legacy single-blob
-      // AuditPolicy rows normalise into the over-planning slice; new
-      // ProcessPolicies rows are passed through unchanged. Engines that
-      // don't use policy (like master-data) get an empty object.
+      // Legacy single-blob AuditPolicy normalises into the over-planning slice;
+      // engines without policy (e.g. master-data) get an empty object.
       const processPolicies = normalizeProcessPolicies(process.auditPolicy);
       const resolvedFunctionId = (file.functionId ?? 'master-data') as FunctionId;
       const functionPolicy = resolveFunctionPolicy(processPolicies, resolvedFunctionId);
@@ -334,9 +328,8 @@ export class AuditsService {
       });
       const result = mergeAuditResults(engineResult, aiResult);
 
-      // Pre-resolve emails from an explicit mapping source. Enabled for
-      // functions whose audit workbook is authored separately from the
-      // manager mapping file (over-planning, function-rate, internal-cost-rate).
+      // Pre-resolve emails when the audit workbook is authored separately from
+      // the manager mapping file (over-planning, function-rate, ICR).
       let resolvedFromMapping = 0;
       let resolvedProjectIdToManager = 0;
       const mappingEnabledFunctions = new Set([
@@ -349,13 +342,9 @@ export class AuditsService {
         body.mappingSource &&
         body.mappingSource.type !== 'none'
       ) {
-        // Project ID → Project Manager name pre-pass. Applies to functions
-        // whose input file has no PM column (function-rate and ICR). We join
-        // by Project ID against the selected mapping source (MD run or
-        // uploaded file). Runs BEFORE the name-based stages so
-        // applyPreResolvedEmails and the directory resolver see a real
-        // manager name instead of 'Unassigned'. Over-planning skips this
-        // block entirely — its files already carry PMs.
+        // function-rate/ICR have no PM column; join Project ID against the
+        // mapping source first so downstream name-based resolution sees a real
+        // manager name instead of 'Unassigned'. Over-planning skips this.
         if (file.functionId === 'function-rate' || file.functionId === 'internal-cost-rate') {
           const idMap = await this.buildProjectIdToManagerMap(tx, process, file, body.mappingSource);
           resolvedProjectIdToManager = this.applyProjectIdToManager(result.issues, idMap);
@@ -364,9 +353,8 @@ export class AuditsService {
         resolvedFromMapping = this.applyPreResolvedEmails(result.issues, preMap);
       }
 
-      // Master Data exports have no email column at all — every owner must
-      // be looked up from the tenant's Manager Directory. For over-planning
-      // we also prefer the directory: it's canonical, the workbook isn't.
+      // Master Data has no email column; over-planning also prefers directory
+      // since it's canonical, not the workbook.
       const directoryResolution = await resolveIssueEmailsFromDirectory(
         tx,
         process.tenantId,
@@ -517,9 +505,7 @@ export class AuditsService {
       };
     });
 
-    // After-commit realtime emissions. We deliberately do NOT emit inside the
-    // transaction: a rollback would leave clients with events for state that
-    // never landed in the DB.
+    // Emit after commit — emitting inside the tx would leak events on rollback.
     this.realtime.emitToProcess(process.displayCode, 'audit.completed', {
       runCode: result.displayCode,
       runId: result.id,
@@ -547,13 +533,8 @@ export class AuditsService {
     return run.issues.map(serializeIssue);
   }
 
-  // Latest completed audit run for a given file. Used by the web client
-  // when the user lands on the Audit Results tab via a deep link (e.g.
-  // "Open evidence" from the Escalation Center) — at that point the
-  // Zustand `currentAuditResult` is null because the run wasn't initiated
-  // from this browser session, and there's no other client-side cache of
-  // the issue list. Returns 404 if no completed run exists for the file
-  // yet (caller should treat as "no audit run yet").
+  // Latest completed audit run for a file. Used by deep links into the Audit
+  // Results tab when no client-side cache of issues exists. 404 if none.
   async latestForFile(processIdOrCode: string, fileIdOrCode: string, user: SessionUser) {
     const process = await this.processAccess.findAccessibleProcessOrThrow(user, processIdOrCode);
     const file = await this.prisma.workbookFile.findFirst({
@@ -609,7 +590,7 @@ export class AuditsService {
     });
   }
 
-  // Build a name → email map from either an uploaded mapping file or a completed master-data run.
+  // name → email map from either an uploaded mapping file or a completed master-data run.
   private async buildMappingSourceMap(
     tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
     process: { id: string; displayCode: string },
@@ -686,25 +667,9 @@ export class AuditsService {
     return count;
   }
 
-  // ────────────────────────────────────────────────────────────────────────
-  // Function-rate specific: ownership resolution by Project ID.
-  //
-  // Over-planning files carry a Project Manager column, so the name-based
-  // mapping in buildMappingSourceMap works for them. Function-rate input
-  // files do not — they contain Project ID, Project Name, Employee Name,
-  // Function, but no PM. So every function-rate issue would land with
-  // projectManager='Unassigned' and directory resolution would fail.
-  //
-  // This pre-pass resolves PM name by joining the function-rate row's
-  // Project ID against the selected mapping source (a completed master-data
-  // audit run, or an uploaded file with Project ID + Project Manager
-  // columns). It runs BEFORE the existing name-based stages so that
-  // applyPreResolvedEmails and resolveIssueEmailsFromDirectory see a real
-  // manager name and resolve the email exactly as they do today.
-  //
-  // Gated by file.functionId === 'function-rate' at the call site — the
-  // over-planning mapping path is not touched.
-  // ────────────────────────────────────────────────────────────────────────
+  // function-rate/ICR pre-pass: resolve PM name by Project ID against the
+  // mapping source so downstream name-based stages can resolve emails. Gated
+  // by functionId at the call site so over-planning is unaffected.
   private async buildProjectIdToManagerMap(
     tx: Parameters<Parameters<PrismaService['$transaction']>[0]>[0],
     process: { id: string; displayCode: string },
@@ -716,8 +681,7 @@ export class AuditsService {
 
     if (src.type === 'uploaded_file') {
       if (!src.uploadId) return map;
-      // Same-file guard: audit file cannot also be its own mapping source.
-      // Matches the guard already enforced in buildMappingSourceMap.
+      // audit file cannot also be its own mapping source.
       if (src.uploadId === auditFile.id) {
         throw new BadRequestException('Mapping file must differ from the audit file');
       }
@@ -768,8 +732,7 @@ export class AuditsService {
       for (const issue of issues) {
         const id = normKey(issue.projectNo);
         const pm = String(issue.projectManager ?? '').trim();
-        // First occurrence wins to keep the map deterministic when an MD run
-        // has multiple issues per project (which is common).
+        // First occurrence wins — MD runs typically have multiple issues per project.
         if (id && pm && !map.has(id)) map.set(id, pm);
       }
     }
@@ -777,9 +740,8 @@ export class AuditsService {
     return map;
   }
 
-  // Populate issue.projectManager for function-rate issues whose row carried
-  // no manager name. Key: normalized Project ID. Never overwrites an already-
-  // populated manager name — keeps this pre-pass additive and safe to re-run.
+  // Populate projectManager from Project ID map; never overwrites a populated
+  // name so this pre-pass stays additive and safe to re-run.
   private applyProjectIdToManager(issues: AuditIssue[], map: Map<string, string>): number {
     if (map.size === 0) return 0;
     let count = 0;
