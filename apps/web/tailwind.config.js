@@ -23,6 +23,12 @@ export default {
         warning: { 50: '#fffbeb', 500: '#f59e0b', 700: '#b45309' },
         danger: { 50: '#fef2f2', 500: '#ef4444', 700: '#b91c1c' },
         info: { 50: '#eff6ff', 500: '#3b82f6', 700: '#1d4ed8' },
+        // Warm neutral scale for premium surfaces (auth shell, cards).
+        // Additive: pairs with Tailwind's gray-* for dark mode; nothing
+        // existing is renamed. Sourced from the SES design package.
+        ink: { DEFAULT: '#16181d', 2: '#3a3f48', 3: '#6b7280' },
+        surface: { app: '#fbfaf9' },
+        rule: { DEFAULT: '#e6e4e0' },
       },
       boxShadow: {
         card: '0 1px 2px rgba(0,0,0,0.04)',
