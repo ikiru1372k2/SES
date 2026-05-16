@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail } from 'lucide-react';
+import { KeyRound, Mail } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { applySessionUserForLocalWorkspace } from '../lib/storage/sessionWorkspace';
 import { AuthShell } from '../components/shared/AuthShell';
@@ -135,6 +135,25 @@ export function Login() {
           Sign in
         </Button>
       </form>
+
+      {/* Single sign-on — DUMMY / showcase only. Intentionally does not
+          authenticate or hit any endpoint; it just demonstrates where SSO
+          would live in the login flow. */}
+      <div className="mt-5 flex items-center gap-3" aria-hidden="true">
+        <span className="h-px flex-1 bg-rule dark:bg-gray-700" />
+        <span className="text-[11px] font-medium uppercase tracking-[0.04em] text-ink-3">
+          or
+        </span>
+        <span className="h-px flex-1 bg-rule dark:bg-gray-700" />
+      </div>
+      <button
+        type="button"
+        onClick={() => toast('SSO is a demo placeholder — not enabled.', { icon: 'ℹ️' })}
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-rule bg-white px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:border-brand hover:bg-brand/5 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+      >
+        <KeyRound size={16} className="text-brand" aria-hidden="true" />
+        Continue with Single Sign-On
+      </button>
 
       {/* Dev-login fallback: only rendered in non-production builds. The
           server-side SES_ALLOW_DEV_LOGIN flag is omitted in deploy.sh
