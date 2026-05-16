@@ -11,6 +11,9 @@ export default {
           subtle: '#fff1f2',
           50: '#fff5f5',
           100: '#fff1f2',
+          // brand-300: outline / focus-ring hover tint (audit U-13).
+          // Previously hand-mixed as brand/40 at call sites.
+          300: '#e89aa4',
           500: '#b00020',
           600: '#8f001a',
           700: '#7a0017',
@@ -25,6 +28,17 @@ export default {
         card: '0 1px 2px rgba(0,0,0,0.04)',
         panel: '0 4px 12px rgba(0,0,0,0.06)',
         modal: '0 20px 40px rgba(0,0,0,0.12)',
+      },
+      // 4-step radius scale (audit U-13 / Design Package · D).
+      // Additive: Tailwind's built-in rounded/-lg/-xl keys are preserved,
+      // so no existing class breaks. New surfaces should pick one of these:
+      // input = md, card = lg, modal/drawer = xl.
+      borderRadius: {
+        xs: '4px',
+        sm: '6px',
+        md: '8px',
+        lg: '12px',
+        xl: '16px',
       },
     },
   },

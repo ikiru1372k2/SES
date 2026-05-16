@@ -1,12 +1,12 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Check, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { applySessionUserForLocalWorkspace } from '../lib/storage/sessionWorkspace';
 import { BrandMark } from '../components/shared/BrandMark';
 import { Button } from '../components/shared/Button';
+import { PasswordInput } from '../components/shared/PasswordInput';
 import { signupOnApi } from '../lib/api/authApi';
-
-type Role = 'admin' | 'auditor';
 
 export function Signup() {
   const navigate = useNavigate();
@@ -14,9 +14,13 @@ export function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState<Role>('auditor');
   const [submitting, setSubmitting] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Live password-match indicator: only meaningful once both fields have
+  // content. `null` means "don't show anything yet".
+  const passwordsMatch =
+    password.length > 0 && confirmPassword.length > 0 ? password === confirmPassword : null;
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -38,17 +42,21 @@ export function Signup() {
     setValidationError(null);
     setSubmitting(true);
     try {
+      // Public sign-ups are always auditors. Admin promotion happens via
+      // the admin Directory tools, never the public form (audit U-04 / G-2).
       const data = await signupOnApi({
         email: trimmedEmail,
         displayName: trimmedDisplayName,
         password,
-        role,
+        role: 'auditor',
       });
       applySessionUserForLocalWorkspace(data.user.email);
       toast.success(`Account created — signed in as ${data.user.displayName}`);
       void navigate('/');
     } catch (err) {
-      toast.error((err as Error).message);
+      const message = (err as Error).message;
+      setValidationError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -76,7 +84,7 @@ export function Signup() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Jane Doe"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               autoComplete="name"
               minLength={2}
               maxLength={120}
@@ -93,65 +101,62 @@ export function Signup() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
               autoComplete="email"
               required
             />
           </div>
           <div>
-            <label htmlFor="signup-role" className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
-              Role
-            </label>
-            <select
-              id="signup-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-            >
-              <option value="auditor">Auditor</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div>
             <label htmlFor="signup-password" className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
               Password
             </label>
-            <input
-              id="signup-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 8 characters"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
+            <div className="mt-1">
+              <PasswordInput
+                id="signup-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="At least 8 characters"
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </div>
           </div>
           <div>
             <label htmlFor="signup-confirm" className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
               Confirm password
             </label>
-            <input
-              id="signup-confirm"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Re-enter your password"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
-              autoComplete="new-password"
-              required
-            />
+            <div className="mt-1">
+              <PasswordInput
+                id="signup-confirm"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter your password"
+                autoComplete="new-password"
+                required
+              />
+            </div>
+            {passwordsMatch !== null ? (
+              <p
+                role="status"
+                className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${
+                  passwordsMatch ? 'text-success-700' : 'text-danger-700'
+                }`}
+              >
+                {passwordsMatch ? <Check size={12} /> : <X size={12} />}
+                {passwordsMatch ? 'Passwords match.' : 'Passwords do not match.'}
+              </p>
+            ) : null}
           </div>
 
           {validationError ? (
-            <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+            <p role="alert" className="text-xs font-medium text-danger-700 dark:text-red-400">
               {validationError}
             </p>
           ) : null}
 
-          <Button type="submit" disabled={submitting}>
-            {submitting ? 'Creating account…' : 'Create account'}
+          <Button type="submit" loading={submitting}>
+            Create account
           </Button>
         </form>
 

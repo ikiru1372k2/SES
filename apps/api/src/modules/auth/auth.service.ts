@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -229,10 +228,11 @@ export class AuthService implements OnModuleInit {
 
   async signup(response: Response, payload: SignupDto): Promise<SessionUser> {
     const email = payload.email.trim().toLowerCase();
-    const role = payload.role;
-    if (role !== 'admin' && role !== 'auditor') {
-      throw new BadRequestException('Invalid role');
-    }
+    // Defence in depth (audit U-04 / gap G-2): the public signup endpoint
+    // always provisions an auditor, regardless of any `role` sent by the
+    // client. Admin promotion is an admin-only Directory operation and never
+    // happens through this unauthenticated route.
+    const role: 'auditor' = 'auditor';
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       throw new ConflictException('Email already registered');

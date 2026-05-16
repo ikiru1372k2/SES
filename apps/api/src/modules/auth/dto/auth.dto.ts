@@ -35,8 +35,13 @@ export class SignupDto {
   @MaxLength(200)
   password!: string;
 
+  // Public signup is always provisioned as `auditor` (audit U-04 / G-2).
+  // The field is accepted for backward compatibility but ignored — the
+  // service hard-codes the role server-side. Admin promotion is a separate
+  // admin-only operation.
+  @IsOptional()
   @IsIn(['admin', 'auditor'])
-  role!: 'admin' | 'auditor';
+  role?: 'admin' | 'auditor';
 }
 
 export class LoginDto {

@@ -82,6 +82,26 @@ describe('auth API e2e', { skip: !hasDb }, () => {
       .expect(409);
   });
 
+  it('signup with role=admin → server forces auditor (audit U-04 / G-2)', async () => {
+    const email = uniqueEmail('admin-attempt');
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/signup')
+      .send({ email, displayName: 'Wants Admin', password: 'pw12345678', role: 'admin' })
+      .expect(201);
+    const user = (res.body as { user: SignedUpUser }).user;
+    assert.equal(user.role, 'auditor', 'public signup must never grant admin');
+  });
+
+  it('signup with no role field → defaults to auditor', async () => {
+    const email = uniqueEmail('no-role');
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/signup')
+      .send({ email, displayName: 'No Role', password: 'pw12345678' })
+      .expect(201);
+    const user = (res.body as { user: SignedUpUser }).user;
+    assert.equal(user.role, 'auditor');
+  });
+
   it('signup with invalid role → 400', async () => {
     await request(app.getHttpServer())
       .post('/api/v1/auth/signup')

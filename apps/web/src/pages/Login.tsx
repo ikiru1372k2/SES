@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { applySessionUserForLocalWorkspace } from '../lib/storage/sessionWorkspace';
 import { BrandMark } from '../components/shared/BrandMark';
 import { Button } from '../components/shared/Button';
+import { PasswordInput } from '../components/shared/PasswordInput';
 import { loginOnApi } from '../lib/api/authApi';
 
 const SEEDED_USERS = [
@@ -17,14 +18,19 @@ export function Login() {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [devSubmitting, setDevSubmitting] = useState(false);
+  // Inline alert is the primary error surface for screen-reader / low-vision
+  // users; the toast stays as a secondary cue (audit U-07).
+  const [formError, setFormError] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     const trimmed = email.trim();
     if (!trimmed || !password) {
+      setFormError('Enter your email and password.');
       toast.error('Enter your email and password.');
       return;
     }
+    setFormError(null);
     setSubmitting(true);
     try {
       const data = await loginOnApi({ email: trimmed, password });
@@ -32,7 +38,9 @@ export function Login() {
       toast.success(`Signed in as ${data.user.displayName}`);
       void navigate('/');
     } catch (err) {
-      toast.error((err as Error).message);
+      const message = (err as Error).message;
+      setFormError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -87,7 +95,7 @@ export function Login() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-400"
+              className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-400"
               autoComplete="email"
               required
             />
@@ -96,19 +104,26 @@ export function Login() {
             <label htmlFor="login-password" className="block text-xs font-semibold text-gray-700 dark:text-gray-300">
               Password
             </label>
-            <input
-              id="login-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder:text-gray-400"
-              autoComplete="current-password"
-              required
-            />
+            <div className="mt-1">
+              <PasswordInput
+                id="login-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+              />
+            </div>
           </div>
-          <Button type="submit" disabled={busy || !email.trim() || !password}>
-            {submitting ? 'Signing in…' : 'Sign in'}
+
+          {formError ? (
+            <p role="alert" className="text-xs font-medium text-danger-700 dark:text-red-400">
+              {formError}
+            </p>
+          ) : null}
+
+          <Button type="submit" loading={submitting} disabled={busy || !email.trim() || !password}>
+            Sign in
           </Button>
         </form>
 
