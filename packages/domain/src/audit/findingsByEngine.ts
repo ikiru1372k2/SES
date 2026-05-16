@@ -18,7 +18,7 @@ export type EngineFindingLine = {
   detail?: EngineFindingDetail;
 };
 
-/** Per-engine context for the email builder so each engine can render the columns that explain its findings. */
+/** Per-engine context for the email builder so each finding can explain itself. */
 export interface EngineFindingDetail {
   ruleCode: string;
   ruleName: string;
@@ -31,35 +31,59 @@ export interface EngineFindingDetail {
   projectManager: string | null;
   projectState: string | null;
   effort: number | null;
-  /** Joined month labels (e.g. "Mar-2026, Apr-2026") for over-planning / rate engines. */
+  /** Joined month labels (e.g. "Mar-2026, Apr-2026"). */
   affectedMonths: string | null;
   zeroMonthCount: number | null;
-  /** Master-data: the missing field's human label (e.g. "Project Industry"). */
+  /** The missing field's human label (e.g. "Project Industry"). */
   missingFieldLabel: string | null;
   /** Auditor-supplied URL for the project (e.g. BCS deep link). */
   projectLink: string | null;
 }
 
-export function buildFindingsByEngineMarkdown(lines: EngineFindingLine[]): string {
-  if (!lines.length) return '_No open findings._';
-  const byEngine = new Map<string, { label: string; rows: EngineFindingLine[] }>();
+/** Label used for the bucket holding findings that carry no project identifier. */
+export const UNASSIGNED_PROJECT_LABEL = 'Unassigned';
+
+type ProjectGroup = {
+  /** Stable grouping key — the project identifier the app already uses (projectNo). */
+  projectKey: string;
+  /** Human-facing section title, e.g. "P1 — Acme Migration". */
+  projectTitle: string;
+  /** True when the finding carries no project identifier (sorted last). */
+  isUnassigned: boolean;
+  /** All findings for this project, in first-seen order. */
+  rows: EngineFindingLine[];
+};
+
+function projectIdentity(line: EngineFindingLine): { key: string; title: string; isUnassigned: boolean } {
+  const no = (line.projectNo ?? '').trim();
+  const name = (line.projectName ?? '').trim();
+  if (!no && !name) {
+    return { key: ' unassigned', title: UNASSIGNED_PROJECT_LABEL, isUnassigned: true };
+  }
+  // projectNo is the identity the rest of the app keys on (e.g. projectLinks map);
+  // fall back to the name only when the number is absent.
+  return { key: no || name, title: [no, name].filter(Boolean).join(' — '), isUnassigned: false };
+}
+
+/**
+ * Groups findings by unique project. Projects are ordered A–Z by title, with the
+ * "Unassigned" bucket always last. Findings keep first-seen order within a project.
+ */
+function groupByProject(lines: EngineFindingLine[]): ProjectGroup[] {
+  const byProject = new Map<string, ProjectGroup>();
   for (const line of lines) {
-    const key = line.engineKey;
-    if (!byEngine.has(key)) {
-      byEngine.set(key, { label: line.engineLabel, rows: [] });
+    const { key, title, isUnassigned } = projectIdentity(line);
+    let project = byProject.get(key);
+    if (!project) {
+      project = { projectKey: key, projectTitle: title, isUnassigned, rows: [] };
+      byProject.set(key, project);
     }
-    byEngine.get(key)!.rows.push(line);
+    project.rows.push(line);
   }
-  const parts: string[] = [];
-  for (const [, { label, rows }] of byEngine) {
-    parts.push(`### ${label}`);
-    for (const r of rows) {
-      const title = [r.projectNo, r.projectName].filter(Boolean).join(' — ') || 'Project';
-      parts.push(`- **${title}** (${r.severity}): ${r.ruleName}${r.notes ? ` — ${r.notes}` : ''}`);
-    }
-    parts.push('');
-  }
-  return parts.join('\n').trim();
+  return [...byProject.values()].sort((a, b) => {
+    if (a.isUnassigned !== b.isUnassigned) return a.isUnassigned ? 1 : -1;
+    return a.projectTitle.localeCompare(b.projectTitle, undefined, { sensitivity: 'base', numeric: true });
+  });
 }
 
 function escapeHtml(value: string): string {
@@ -71,19 +95,6 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-type ColumnSpec<T> = {
-  header: string;
-  read: (row: T) => string;
-};
-
-const HTML_TABLE_STYLE =
-  'border-collapse:collapse;width:100%;font-family:Arial,Helvetica,sans-serif;border:1.5px solid #334155;table-layout:fixed;';
-const HTML_HEAD_STYLE =
-  'border:1px solid #334155;padding:8px 10px;font-size:12px;font-weight:700;background:#1e293b;color:#ffffff;text-align:left;letter-spacing:0.02em;';
-const HTML_CELL_STYLE =
-  'border:1px solid #cbd5e1;padding:8px 10px;font-size:13px;color:#0f172a;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word;';
-const HTML_CELL_STYLE_ALT = HTML_CELL_STYLE + 'background:#f8fafc;';
-
 function dash(value: string | null | undefined): string {
   const trimmed = (value ?? '').toString().trim();
   return trimmed.length === 0 ? '—' : trimmed;
@@ -94,232 +105,169 @@ function clamp(value: string, max: number): string {
   return value.slice(0, Math.max(1, max - 1)).trimEnd() + '…';
 }
 
-/** Engine → column map. `width` is a CSS percentage; Project Link column is appended only when at least one row supplies a link. */
-type EngineColumn = ColumnSpec<EngineFindingLine> & {
+/**
+ * A short, plain-language label for what is wrong — deliberately free of any
+ * internal engine/check naming so the recipient just sees the issue.
+ */
+function findingIssueLabel(line: EngineFindingLine): string {
+  const d = line.detail;
+  const label =
+    (d?.missingFieldLabel?.trim() || '') ||
+    (d?.ruleName?.trim() || '') ||
+    (line.ruleName?.trim() || '') ||
+    (d?.reason?.trim() || '') ||
+    (line.notes?.trim() || '');
+  return clamp(label || 'Finding', 80);
+}
+
+/** Supporting context for a finding (no engine wording), joined into one cell. */
+function findingDetailText(line: EngineFindingLine): string {
+  const d = line.detail;
+  const issueLabel = d?.missingFieldLabel?.trim() || d?.ruleName?.trim() || line.ruleName?.trim() || '';
+  const parts: string[] = [];
+  const reason = (d?.reason ?? line.notes ?? '').trim();
+  if (reason && reason !== issueLabel) parts.push(reason);
+  if (d?.affectedMonths?.trim()) parts.push(`Affected month(s): ${d.affectedMonths.trim()}`);
+  if (d?.thresholdLabel?.trim()) parts.push(`Threshold: ${d.thresholdLabel.trim()}`);
+  else if (d?.effort != null && Number.isFinite(d.effort)) parts.push(`Value: ${d.effort}`);
+  if (d?.projectState?.trim()) parts.push(`State: ${d.projectState.trim()}`);
+  if (d?.zeroMonthCount != null) parts.push(`Months at zero: ${d.zeroMonthCount}`);
+  return parts.join(' · ');
+}
+
+type Column = {
+  header: string;
+  /** CSS percentage width for the HTML renderer. */
   width: string;
   /** Marks the column as a hyperlink in the HTML renderer. */
   isLink?: boolean;
+  read: (row: EngineFindingLine) => string;
 };
 
-const PROJECT_LINK_COLUMN: EngineColumn = {
-  header: 'Project Link',
-  width: '20%',
-  isLink: true,
-  read: (r) => r.detail?.projectLink?.trim() || '',
-};
-
-function columnsForEngine(engineKey: string, hasProjectLink: boolean): EngineColumn[] {
-  const linkCol = hasProjectLink ? [PROJECT_LINK_COLUMN] : [];
-  switch (engineKey) {
-    case 'master-data':
-      return [
-        { header: '#', width: '4%', read: () => '' },
-        { header: 'Project ID', width: '14%', read: (r) => dash(r.projectNo) },
-        { header: 'Project Name', width: hasProjectLink ? '26%' : '34%', read: (r) => clamp(dash(r.projectName), 60) },
-        { header: 'Missing Field', width: hasProjectLink ? '24%' : '32%', read: (r) => dash(r.detail?.missingFieldLabel ?? r.detail?.ruleName) },
-        { header: 'Severity', width: hasProjectLink ? '12%' : '16%', read: (r) => dash(r.detail?.severity) },
-        ...linkCol,
-      ];
-    case 'over-planning':
-      return [
-        { header: '#', width: '4%', read: () => '' },
-        { header: 'Project ID', width: '14%', read: (r) => dash(r.projectNo) },
-        { header: 'Project Name', width: hasProjectLink ? '22%' : '28%', read: (r) => clamp(dash(r.projectName), 60) },
-        { header: 'Issue', width: hasProjectLink ? '15%' : '18%', read: (r) => dash(r.detail?.ruleName) },
-        { header: 'Affected Month(s)', width: hasProjectLink ? '15%' : '18%', read: (r) => dash(r.detail?.affectedMonths) },
-        { header: 'Effort / Threshold', width: hasProjectLink ? '12%' : '14%', read: (r) => dash(r.detail?.thresholdLabel ?? (r.detail?.effort != null ? `${r.detail.effort}` : '')) },
-        { header: 'Severity', width: '8%', read: (r) => dash(r.detail?.severity) },
-        ...linkCol,
-      ];
-    case 'missing-plan':
-      return [
-        { header: '#', width: '4%', read: () => '' },
-        { header: 'Project ID', width: '14%', read: (r) => dash(r.projectNo) },
-        { header: 'Project Name', width: hasProjectLink ? '24%' : '32%', read: (r) => clamp(dash(r.projectName), 60) },
-        { header: 'State', width: hasProjectLink ? '14%' : '18%', read: (r) => dash(r.detail?.projectState) },
-        { header: 'Issue', width: hasProjectLink ? '24%' : '32%', read: (r) => dash(r.detail?.ruleName) },
-        ...linkCol,
-      ];
-    case 'function-rate':
-      return [
-        { header: '#', width: '4%', read: () => '' },
-        { header: 'Project ID', width: '12%', read: (r) => dash(r.projectNo) },
-        { header: 'Project Name', width: hasProjectLink ? '16%' : '22%', read: (r) => clamp(dash(r.projectName), 60) },
-        { header: 'Resource', width: '14%', read: (r) => dash(r.detail?.projectManager) },
-        { header: 'Issue', width: hasProjectLink ? '12%' : '13%', read: (r) => dash(r.detail?.ruleName) },
-        { header: 'Affected Month(s)', width: hasProjectLink ? '14%' : '17%', read: (r) => dash(r.detail?.affectedMonths) },
-        { header: 'Zero Months', width: '11%', read: (r) => dash(r.detail?.zeroMonthCount != null ? String(r.detail.zeroMonthCount) : '') },
-        { header: 'Severity', width: hasProjectLink ? '7%' : '10%', read: (r) => dash(r.detail?.severity) },
-        ...linkCol,
-      ];
-    case 'internal-cost-rate':
-      return [
-        { header: '#', width: '4%', read: () => '' },
-        { header: 'Project ID', width: '12%', read: (r) => dash(r.projectNo) },
-        { header: 'Project Name', width: hasProjectLink ? '16%' : '22%', read: (r) => clamp(dash(r.projectName), 60) },
-        { header: 'Resource', width: '14%', read: (r) => dash(r.detail?.projectManager) },
-        { header: 'Issue', width: hasProjectLink ? '12%' : '13%', read: (r) => dash(r.detail?.ruleName) },
-        { header: 'Affected Month(s)', width: hasProjectLink ? '14%' : '17%', read: (r) => dash(r.detail?.affectedMonths) },
-        { header: 'Zero Months', width: '11%', read: (r) => dash(r.detail?.zeroMonthCount != null ? String(r.detail.zeroMonthCount) : '') },
-        { header: 'Severity', width: hasProjectLink ? '7%' : '10%', read: (r) => dash(r.detail?.severity) },
-        ...linkCol,
-      ];
-    case 'opportunities':
-      // Surfaces the columns an account owner needs to fix the row in the source CRM.
-      return [
-        { header: '#', width: '4%', read: () => '' },
-        { header: 'Opportunity ID', width: '14%', read: (r) => dash(r.projectNo) },
-        { header: 'Opportunity', width: hasProjectLink ? '22%' : '28%', read: (r) => clamp(dash(r.projectName), 60) },
-        { header: 'Category', width: hasProjectLink ? '12%' : '14%', read: (r) => dash(r.detail?.projectState) },
-        {
-          header: 'Probability',
-          width: '10%',
-          read: (r) =>
-            r.detail?.effort != null && Number.isFinite(r.detail.effort)
-              ? `${r.detail.effort}%`
-              : '—',
-        },
-        {
-          header: 'Issue',
-          width: hasProjectLink ? '24%' : '32%',
-          read: (r) => clamp(dash(r.detail?.reason ?? r.detail?.ruleName), 110),
-        },
-        { header: 'Severity', width: hasProjectLink ? '8%' : '12%', read: (r) => dash(r.detail?.severity) },
-        ...linkCol,
-      ];
-    default:
-      return [
-        { header: '#', width: '5%', read: () => '' },
-        { header: 'Project ID', width: '15%', read: (r) => dash(r.projectNo) },
-        { header: 'Project Name', width: hasProjectLink ? '20%' : '25%', read: (r) => clamp(dash(r.projectName), 60) },
-        { header: 'Issue', width: '20%', read: (r) => dash(r.detail?.ruleName ?? r.ruleName) },
-        { header: 'Severity', width: '10%', read: (r) => dash(r.detail?.severity ?? r.severity) },
-        { header: 'Notes', width: hasProjectLink ? '15%' : '25%', read: (r) => clamp(dash(r.detail?.reason ?? r.notes), 80) },
-        ...linkCol,
-      ];
-  }
+/**
+ * A single, engine-agnostic column set used for every project. The recipient
+ * sees the issue and its context without any reference to which check produced it.
+ */
+function genericColumns(hasProjectLink: boolean): Column[] {
+  const linkCol: Column[] = hasProjectLink
+    ? [{ header: 'Link', width: '16%', isLink: true, read: (r) => r.detail?.projectLink?.trim() || '' }]
+    : [];
+  return [
+    { header: '#', width: '5%', read: () => '' },
+    { header: 'Issue', width: hasProjectLink ? '28%' : '32%', read: (r) => findingIssueLabel(r) },
+    { header: 'Details', width: hasProjectLink ? '37%' : '45%', read: (r) => clamp(dash(findingDetailText(r)), 160) },
+    { header: 'Severity', width: hasProjectLink ? '14%' : '18%', read: (r) => dash(r.detail?.severity ?? r.severity) },
+    ...linkCol,
+  ];
 }
 
-function shortDescriptionForEngine(engineKey: string): string {
-  switch (engineKey) {
-    case 'master-data':
-      return 'Required master-data fields are missing or contain placeholder values for the projects below. Please update the records so audits can complete.';
-    case 'over-planning':
-      return 'The following projects show monthly effort above the configured planning threshold. Please review and confirm or correct the planning entries.';
-    case 'missing-plan':
-      return 'The following projects have no planned effort recorded. Please add a plan or confirm the project should be inactive.';
-    case 'function-rate':
-      return 'External function rates are missing or recorded as zero for the months shown below. Please update the rate sheet.';
-    case 'internal-cost-rate':
-      return 'Internal cost rates are missing or recorded as zero for the months shown below. Please confirm or update the cost entries.';
-    case 'opportunities':
-      return 'The following opportunities have data quality issues that block forecasting and pipeline reporting. Please review the records in the source CRM and correct the flagged fields.';
-    default:
-      return 'Open findings for the projects listed below need attention.';
+export function buildFindingsByEngineMarkdown(lines: EngineFindingLine[]): string {
+  if (!lines.length) return '_No open findings._';
+  const parts: string[] = [];
+  for (const project of groupByProject(lines)) {
+    parts.push(`### ${project.projectTitle} (${project.rows.length} finding${project.rows.length === 1 ? '' : 's'})`);
+    for (const r of project.rows) {
+      const details = findingDetailText(r);
+      parts.push(
+        `- **${findingIssueLabel(r)}** (${dash(r.detail?.severity ?? r.severity)})${details ? ` — ${details}` : ''}`,
+      );
+    }
+    parts.push('');
   }
+  return parts.join('\n').trim();
 }
 
-/** Renders findings as a styled HTML table grouped by engine. Inline styles (no <style> block) so Outlook/Gmail/Teams render correctly. */
+const HTML_TABLE_STYLE =
+  'border-collapse:collapse;width:100%;font-family:Arial,Helvetica,sans-serif;border:1.5px solid #334155;table-layout:fixed;';
+const HTML_HEAD_STYLE =
+  'border:1px solid #334155;padding:8px 10px;font-size:12px;font-weight:700;background:#1e293b;color:#ffffff;text-align:left;letter-spacing:0.02em;';
+const HTML_CELL_STYLE =
+  'border:1px solid #cbd5e1;padding:8px 10px;font-size:13px;color:#0f172a;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word;';
+const HTML_CELL_STYLE_ALT = HTML_CELL_STYLE + 'background:#f8fafc;';
+const HTML_PROJECT_HEADER_STYLE =
+  'font-size:16px;font-weight:700;color:#0f172a;margin:0 0 12px 0;padding:0 0 6px 0;border-bottom:2px solid #334155;';
+
+/** Renders one project's findings as a styled HTML table. */
+function renderProjectHtmlBlock(project: ProjectGroup): string {
+  const hasProjectLink = project.rows.some((r) => Boolean(r.detail?.projectLink?.trim()));
+  const columns = genericColumns(hasProjectLink);
+  const colgroup =
+    `<colgroup>` + columns.map((c) => `<col style="width:${c.width};">`).join('') + `</colgroup>`;
+  const headerCells = columns
+    .map((c) => `<th style="${HTML_HEAD_STYLE}">${escapeHtml(c.header)}</th>`)
+    .join('');
+  const bodyRows = project.rows
+    .map((r, idx) => {
+      const cellStyle = idx % 2 === 0 ? HTML_CELL_STYLE : HTML_CELL_STYLE_ALT;
+      const cells = columns
+        .map((c, cIdx) => {
+          if (cIdx === 0) return `<td style="${cellStyle}">${idx + 1}</td>`;
+          const value = c.read(r);
+          if (c.isLink) {
+            const url = value.trim();
+            if (!url) return `<td style="${cellStyle}">—</td>`;
+            const safeUrl = escapeHtml(url);
+            return (
+              `<td style="${cellStyle}">` +
+              `<a href="${safeUrl}" style="color:#1d4ed8;text-decoration:underline;word-break:break-all;" target="_blank" rel="noopener noreferrer">Open project</a>` +
+              `</td>`
+            );
+          }
+          return `<td style="${cellStyle}">${escapeHtml(value)}</td>`;
+        })
+        .join('');
+      return `<tr>${cells}</tr>`;
+    })
+    .join('');
+  return (
+    `<div style="margin:0 0 26px 0;">` +
+    `<div style="${HTML_PROJECT_HEADER_STYLE}">` +
+    `${escapeHtml(project.projectTitle)} ` +
+    `<span style="color:#64748b;font-weight:400;font-size:13px;">(${project.rows.length} finding${project.rows.length === 1 ? '' : 's'})</span>` +
+    `</div>` +
+    `<table cellpadding="0" cellspacing="0" border="1" style="${HTML_TABLE_STYLE}">` +
+    colgroup +
+    `<thead><tr>${headerCells}</tr></thead>` +
+    `<tbody>${bodyRows}</tbody>` +
+    `</table></div>`
+  );
+}
+
+/** Renders findings as styled HTML, grouped by project. Inline styles (no <style> block) so Outlook/Gmail/Teams render correctly. */
 export function buildFindingsByEngineHtmlTable(lines: EngineFindingLine[]): string {
   if (!lines.length) {
     return '<p style="margin:0;color:#475569;font-style:italic;">No open findings.</p>';
   }
-  const byEngine = new Map<string, { label: string; rows: EngineFindingLine[] }>();
-  for (const line of lines) {
-    const key = line.engineKey;
-    if (!byEngine.has(key)) byEngine.set(key, { label: line.engineLabel, rows: [] });
-    byEngine.get(key)!.rows.push(line);
-  }
+  return groupByProject(lines).map(renderProjectHtmlBlock).join('');
+}
 
+/** Renders one project's findings as a fixed-width text table block. */
+function renderProjectTextBlock(project: ProjectGroup): string[] {
+  const hasProjectLink = project.rows.some((r) => Boolean(r.detail?.projectLink?.trim()));
+  const columns = genericColumns(hasProjectLink);
   const blocks: string[] = [];
-  for (const [engineKey, { label, rows }] of byEngine) {
-    const hasProjectLink = rows.some((r) => Boolean(r.detail?.projectLink?.trim()));
-    const columns = columnsForEngine(engineKey, hasProjectLink);
-    const description = shortDescriptionForEngine(engineKey);
-    const colgroup =
-      `<colgroup>` +
-      columns.map((c) => `<col style="width:${c.width};">`).join('') +
-      `</colgroup>`;
-    const headerCells = columns
-      .map((c) => `<th style="${HTML_HEAD_STYLE}">${escapeHtml(c.header)}</th>`)
-      .join('');
-    const bodyRows = rows
-      .map((r, idx) => {
-        const cellStyle = idx % 2 === 0 ? HTML_CELL_STYLE : HTML_CELL_STYLE_ALT;
-        const cells = columns
-          .map((c, cIdx) => {
-            if (cIdx === 0) {
-              return `<td style="${cellStyle}">${idx + 1}</td>`;
-            }
-            const value = c.read(r);
-            if (c.isLink) {
-              const url = value.trim();
-              if (!url) return `<td style="${cellStyle}">—</td>`;
-              const safeUrl = escapeHtml(url);
-              return (
-                `<td style="${cellStyle}">` +
-                `<a href="${safeUrl}" style="color:#1d4ed8;text-decoration:underline;word-break:break-all;" target="_blank" rel="noopener noreferrer">Open project</a>` +
-                `</td>`
-              );
-            }
-            return `<td style="${cellStyle}">${escapeHtml(value)}</td>`;
-          })
-          .join('');
-        return `<tr>${cells}</tr>`;
-      })
-      .join('');
-    blocks.push(
-      `<div style="margin:0 0 22px 0;">` +
-        `<div style="font-size:14px;font-weight:700;color:#0f172a;margin:0 0 4px 0;">` +
-        `${escapeHtml(label)} <span style="color:#64748b;font-weight:400;">(${rows.length} finding${rows.length === 1 ? '' : 's'})</span>` +
-        `</div>` +
-        `<div style="font-size:12px;color:#475569;margin:0 0 10px 0;line-height:1.45;">${escapeHtml(description)}</div>` +
-        `<table cellpadding="0" cellspacing="0" border="1" style="${HTML_TABLE_STYLE}">` +
-        colgroup +
-        `<thead><tr>${headerCells}</tr></thead>` +
-        `<tbody>${bodyRows}</tbody>` +
-        `</table></div>`,
-    );
-  }
-  return blocks.join('');
+  blocks.push(`=== ${project.projectTitle} (${project.rows.length} finding${project.rows.length === 1 ? '' : 's'}) ===`);
+  const renderedRows = project.rows.map((row, idx) =>
+    columns.map((column, columnIndex) => (columnIndex === 0 ? String(idx + 1) : column.read(row))),
+  );
+  const widths = columns.map((column, index) =>
+    Math.min(
+      Math.max(column.header.length, ...renderedRows.map((row) => row[index]?.length ?? 0)),
+      index === 0 ? 3 : 44,
+    ),
+  );
+  const renderRow = (values: string[]) =>
+    values.map((value, index) => clamp(value || '—', widths[index]!).padEnd(widths[index]!)).join('  ');
+  blocks.push(renderRow(columns.map((c) => c.header)));
+  blocks.push(widths.map((width) => '-'.repeat(width)).join('  '));
+  for (const row of renderedRows) blocks.push(renderRow(row));
+  blocks.push('');
+  return blocks;
 }
 
 export function buildFindingsByEngineTextTable(lines: EngineFindingLine[]): string {
   if (!lines.length) return 'No open findings.';
-  const byEngine = new Map<string, { label: string; rows: EngineFindingLine[] }>();
-  for (const line of lines) {
-    const key = line.engineKey;
-    if (!byEngine.has(key)) byEngine.set(key, { label: line.engineLabel, rows: [] });
-    byEngine.get(key)!.rows.push(line);
-  }
   const blocks: string[] = [];
-  for (const [engineKey, { label, rows }] of byEngine) {
-    const hasProjectLink = rows.some((r) => Boolean(r.detail?.projectLink?.trim()));
-    const columns = columnsForEngine(engineKey, hasProjectLink);
-    blocks.push(`${label} (${rows.length} finding${rows.length === 1 ? '' : 's'})`);
-    blocks.push(shortDescriptionForEngine(engineKey));
-    const renderedRows = rows.map((row, idx) =>
-      columns.map((column, columnIndex) => (columnIndex === 0 ? String(idx + 1) : column.read(row))),
-    );
-    const widths = columns.map((column, index) =>
-      Math.min(
-        Math.max(
-          column.header.length,
-          ...renderedRows.map((row) => row[index]?.length ?? 0),
-        ),
-        index === 0 ? 3 : 36,
-      ),
-    );
-    const renderRow = (values: string[]) =>
-      values
-        .map((value, index) => clamp(value || '—', widths[index]!).padEnd(widths[index]!))
-        .join('  ');
-    blocks.push(renderRow(columns.map((c) => c.header)));
-    blocks.push(widths.map((width) => '-'.repeat(width)).join('  '));
-    for (const row of renderedRows) {
-      blocks.push(renderRow(row));
-    }
-    blocks.push('');
-  }
+  for (const project of groupByProject(lines)) blocks.push(...renderProjectTextBlock(project));
   return blocks.join('\n').trim();
 }
