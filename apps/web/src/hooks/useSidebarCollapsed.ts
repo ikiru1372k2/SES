@@ -51,11 +51,18 @@ export function SidebarCollapsedProvider({ children }: { children: ReactNode }) 
 
 function useSidebarCollapsedContext(): SidebarCollapsedContextValue {
   const ctx = useContext(SidebarCollapsedContext);
-  if (ctx) return ctx;
 
+  // Hooks must run unconditionally and in a stable order, so the
+  // provider-less fallback is always constructed and only used when no
+  // context is present.
   const [collapsed, setCollapsed] = useState(false);
   const toggle = useCallback(() => setCollapsed((value) => !value), []);
-  return { collapsed, setCollapsed, toggle };
+  const fallback = useMemo(
+    () => ({ collapsed, setCollapsed, toggle }),
+    [collapsed, toggle],
+  );
+
+  return ctx ?? fallback;
 }
 
 export function useSidebarCollapsed(): [boolean, (next: boolean) => void, () => void] {

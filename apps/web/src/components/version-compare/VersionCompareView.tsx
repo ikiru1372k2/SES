@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import type { AuditIssue, AuditVersion, ChangedIssue } from '@ses/domain';
 import { buildIssuesCsv, compareResults } from '../../lib/domain/auditEngine';
@@ -61,6 +61,17 @@ export function VersionCompareView({
     fileGroups[0];
 
   const [selectedFileId, setSelectedFileId] = useState<string>(initialGroup?.fileId ?? '');
+
+  // Follow the `activeFileId` prop when it changes to a valid group, without
+  // an effect: adjust state during render via the previous-value pattern.
+  const [prevActiveFileId, setPrevActiveFileId] = useState(activeFileId);
+  if (activeFileId !== prevActiveFileId) {
+    setPrevActiveFileId(activeFileId);
+    if (activeFileId && fileGroups.some((g) => g.fileId === activeFileId)) {
+      setSelectedFileId(activeFileId);
+    }
+  }
+
   const activeGroup = fileGroups.find((g) => g.fileId === selectedFileId) ?? initialGroup;
   const pickerVersions = hasSameFileGroup ? (activeGroup?.versions ?? []) : allVersions;
   const headVersionId = pickerVersions[0]?.versionId ?? pickerVersions[0]?.id;
@@ -71,14 +82,12 @@ export function VersionCompareView({
   const [toId, setToId] = useState<string>(() => pickerVersions[0]?.versionId ?? '');
   const [viewFilter, setViewFilter] = useState<CompareViewFilter>('changed-only');
 
-  useEffect(() => {
-    if (activeFileId && fileGroups.some((g) => g.fileId === activeFileId)) {
-      setSelectedFileId(activeFileId);
-    }
-  }, [activeFileId, fileGroups]);
-
-  useEffect(() => {
-    if (!hasSameFileGroup || !activeGroup) return;
+  // When the active file group changes, re-seed the from/to selection if the
+  // current ids no longer belong to that group. Done at render time (not in an
+  // effect) keyed on the group id so it runs exactly once per group switch.
+  const [prevGroupId, setPrevGroupId] = useState(activeGroup?.fileId);
+  if (hasSameFileGroup && activeGroup && activeGroup.fileId !== prevGroupId) {
+    setPrevGroupId(activeGroup.fileId);
     const versions = activeGroup.versions;
     if (!versions.find((v) => v.versionId === fromId || v.id === fromId)) {
       setFromId(versions[1]?.versionId ?? versions[0]?.versionId ?? '');
@@ -86,7 +95,7 @@ export function VersionCompareView({
     if (!versions.find((v) => v.versionId === toId || v.id === toId)) {
       setToId(versions[0]?.versionId ?? '');
     }
-  }, [activeGroup, fromId, hasSameFileGroup, toId]);
+  }
 
   const fromVersion = pickerVersions.find((v) => v.versionId === fromId || v.id === fromId);
   const toVersion = pickerVersions.find((v) => v.versionId === toId || v.id === toId);
