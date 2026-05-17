@@ -272,6 +272,21 @@ function draftKey(processId: string, functionId: FunctionId): string {
   return `${processId}:${functionId}`;
 }
 
+/**
+ * The function a version belongs to. Prefer the explicit functionId (set by
+ * the server and by new saves); fall back to the audited file's function so
+ * pre-existing/optimistic versions still bucket correctly.
+ */
+function versionFunctionId(
+  process: AuditProcess,
+  result: AuditResult,
+  explicit?: string,
+): string {
+  if (explicit) return explicit;
+  const file = process.files.find((f) => f.id === result.fileId);
+  return file?.functionId ?? DEFAULT_FUNCTION_ID;
+}
+
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
@@ -756,8 +771,14 @@ export const useAppStore = create<AppStore>()(
         let updated: AuditProcess | undefined;
         set((state) => ({
           processes: patchProcess(state.processes, processId, (process) => {
-            const versionNumber = process.versions.length + 1;
-            const versionId = `${process.id}-v${versionNumber}`;
+            // Versions are numbered per function so saving one function's
+            // version never bumps another's. Resolve the function from the
+            // audited file, then count only that function's versions.
+            const functionId = versionFunctionId(process, result);
+            const versionNumber =
+              process.versions.filter((v) => versionFunctionId(process, v.result, v.functionId) === functionId)
+                .length + 1;
+            const versionId = `${process.id}-${functionId}-v${versionNumber}`;
             updated = {
               ...process,
               updatedAt: new Date().toISOString(),
@@ -766,6 +787,7 @@ export const useAppStore = create<AppStore>()(
                 {
                   id: versionId,
                   versionId,
+                  functionId,
                   versionNumber,
                   versionName: details.versionName.trim() || `${process.name} - V${versionNumber}`,
                   notes: details.notes.trim(),
@@ -786,7 +808,12 @@ export const useAppStore = create<AppStore>()(
         const current = get().processes.find((p) => p.id === processId);
         const result = get().currentAuditResult ?? current?.latestAuditResult;
         if (!result) return undefined;
-        if (!current || current.versions.length === 0) {
+        const fnId = current ? versionFunctionId(current, result) : DEFAULT_FUNCTION_ID;
+        // Only this function's versions count: if it has none yet, create
+        // its V1 even when other functions already have versions.
+        const hasFunctionVersion =
+          current?.versions.some((v) => versionFunctionId(current, v.result, v.functionId) === fnId) ?? false;
+        if (!current || !hasFunctionVersion) {
           // First-save path when autosave hasn't created V1 (legacy state).
           return get().saveVersion(processId, {
             versionName: `${current?.name ?? 'Audit'} - V1`,
@@ -796,20 +823,27 @@ export const useAppStore = create<AppStore>()(
         let updated: AuditProcess | undefined;
         set((state) => ({
           processes: patchProcess(state.processes, processId, (process) => {
-            const [head, ...rest] = process.versions;
-            if (!head) return process;
+            // Refresh the latest version OF THIS FUNCTION in place; leave
+            // every other function's versions untouched (no cross-bump).
+            const headIdx = process.versions.findIndex(
+              (v) => versionFunctionId(process, v.result, v.functionId) === fnId,
+            );
+            if (headIdx === -1) return process;
+            const head = process.versions[headIdx]!;
             const refreshed = {
               ...head,
               // Keep identity fields (name, notes, createdAt, versionNumber,
-              // versionId); swap only result + policy snapshot.
+              // versionId, functionId); swap only result + policy snapshot.
               result,
               auditPolicy: result.policySnapshot ?? head.auditPolicy ?? process.auditPolicy,
             };
+            const versions = process.versions.slice();
+            versions[headIdx] = refreshed;
             updated = {
               ...process,
               updatedAt: new Date().toISOString(),
               latestAuditResult: result,
-              versions: [refreshed, ...rest],
+              versions,
             };
             return updated;
           }),

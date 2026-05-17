@@ -224,6 +224,7 @@ export class ProcessesService {
     const versionSummaries = versions.map((v: any) => ({
       id: v.id,
       versionId: v.displayCode,
+      functionId: v.functionId,
       versionNumber: v.versionNumber,
       versionName: v.versionName,
       notes: v.notes ?? '',
