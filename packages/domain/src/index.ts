@@ -1,5 +1,6 @@
 export * from './core/types';
 export * from './escalation/escalationStages';
+export * from './escalation/escalationLevels';
 export * from './project/projectStatuses';
 export * from './core/id';
 export * from './audit/auditPolicy';

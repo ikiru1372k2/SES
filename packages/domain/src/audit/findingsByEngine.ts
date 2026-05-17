@@ -1,3 +1,5 @@
+import { escalationLevelLabel } from '../escalation/escalationLevels';
+
 export type EngineFindingLine = {
   engineKey: string;
   engineLabel: string;
@@ -8,6 +10,13 @@ export type EngineFindingLine = {
   notes: string;
   /** Optional issue identifier (e.g. tracking issue key). */
   issueKey?: string;
+  /**
+   * Level-wise escalation level for this (manager, issue) pair: 1 = first
+   * time flagged, 2 = repeat on a later upload, etc. Rendered as an
+   * "Escalation" column ("L1"/"L2"/…) only when at least one line has it set,
+   * so callers that don't supply a level are unaffected.
+   */
+  occurrenceLevel?: number;
   /** Optional task name from the source row. */
   taskName?: string;
   /** Optional employee/resource name from the source row. */
@@ -148,28 +157,43 @@ type Column = {
  * A single, engine-agnostic column set used for every project. The recipient
  * sees the issue and its context without any reference to which check produced it.
  */
-function genericColumns(hasProjectLink: boolean): Column[] {
+function genericColumns(hasProjectLink: boolean, hasLevel: boolean): Column[] {
   const linkCol: Column[] = hasProjectLink
-    ? [{ header: 'Link', width: '16%', isLink: true, read: (r) => r.detail?.projectLink?.trim() || '' }]
+    ? [{ header: 'Link', width: hasLevel ? '14%' : '16%', isLink: true, read: (r) => r.detail?.projectLink?.trim() || '' }]
     : [];
+  const levelCol: Column[] = hasLevel
+    ? [{ header: 'Escalation', width: '10%', read: (r) => escalationLevelLabel(r.occurrenceLevel) }]
+    : [];
+  const issueW = hasProjectLink ? (hasLevel ? '24%' : '28%') : hasLevel ? '28%' : '32%';
+  const detailW = hasProjectLink ? (hasLevel ? '32%' : '37%') : hasLevel ? '39%' : '45%';
+  const sevW = hasProjectLink ? '13%' : hasLevel ? '16%' : '18%';
   return [
     { header: '#', width: '5%', read: () => '' },
-    { header: 'Issue', width: hasProjectLink ? '28%' : '32%', read: (r) => findingIssueLabel(r) },
-    { header: 'Details', width: hasProjectLink ? '37%' : '45%', read: (r) => clamp(dash(findingDetailText(r)), 160) },
-    { header: 'Severity', width: hasProjectLink ? '14%' : '18%', read: (r) => dash(r.detail?.severity ?? r.severity) },
+    { header: 'Issue', width: issueW, read: (r) => findingIssueLabel(r) },
+    { header: 'Details', width: detailW, read: (r) => clamp(dash(findingDetailText(r)), 160) },
+    { header: 'Severity', width: sevW, read: (r) => dash(r.detail?.severity ?? r.severity) },
+    ...levelCol,
     ...linkCol,
   ];
+}
+
+/** True when any finding carries a level — drives the optional Escalation column. */
+function anyHasLevel(lines: EngineFindingLine[]): boolean {
+  return lines.some((l) => l.occurrenceLevel != null);
 }
 
 export function buildFindingsByEngineMarkdown(lines: EngineFindingLine[]): string {
   if (!lines.length) return '_No open findings._';
   const parts: string[] = [];
+  const hasLevel = anyHasLevel(lines);
   for (const project of groupByProject(lines)) {
     parts.push(`### ${project.projectTitle} (${project.rows.length} finding${project.rows.length === 1 ? '' : 's'})`);
     for (const r of project.rows) {
       const details = findingDetailText(r);
+      const sev = dash(r.detail?.severity ?? r.severity);
+      const tag = hasLevel ? `${sev} · ${escalationLevelLabel(r.occurrenceLevel)}` : sev;
       parts.push(
-        `- **${findingIssueLabel(r)}** (${dash(r.detail?.severity ?? r.severity)})${details ? ` — ${details}` : ''}`,
+        `- **${findingIssueLabel(r)}** (${tag})${details ? ` — ${details}` : ''}`,
       );
     }
     parts.push('');
@@ -188,9 +212,9 @@ const HTML_PROJECT_HEADER_STYLE =
   'font-size:16px;font-weight:700;color:#0f172a;margin:0 0 12px 0;padding:0 0 6px 0;border-bottom:2px solid #334155;';
 
 /** Renders one project's findings as a styled HTML table. */
-function renderProjectHtmlBlock(project: ProjectGroup): string {
+function renderProjectHtmlBlock(project: ProjectGroup, hasLevel: boolean): string {
   const hasProjectLink = project.rows.some((r) => Boolean(r.detail?.projectLink?.trim()));
-  const columns = genericColumns(hasProjectLink);
+  const columns = genericColumns(hasProjectLink, hasLevel);
   const colgroup =
     `<colgroup>` + columns.map((c) => `<col style="width:${c.width};">`).join('') + `</colgroup>`;
   const headerCells = columns
@@ -238,13 +262,16 @@ export function buildFindingsByEngineHtmlTable(lines: EngineFindingLine[]): stri
   if (!lines.length) {
     return '<p style="margin:0;color:#475569;font-style:italic;">No open findings.</p>';
   }
-  return groupByProject(lines).map(renderProjectHtmlBlock).join('');
+  const hasLevel = anyHasLevel(lines);
+  return groupByProject(lines)
+    .map((project) => renderProjectHtmlBlock(project, hasLevel))
+    .join('');
 }
 
 /** Renders one project's findings as a fixed-width text table block. */
-function renderProjectTextBlock(project: ProjectGroup): string[] {
+function renderProjectTextBlock(project: ProjectGroup, hasLevel: boolean): string[] {
   const hasProjectLink = project.rows.some((r) => Boolean(r.detail?.projectLink?.trim()));
-  const columns = genericColumns(hasProjectLink);
+  const columns = genericColumns(hasProjectLink, hasLevel);
   const blocks: string[] = [];
   blocks.push(`=== ${project.projectTitle} (${project.rows.length} finding${project.rows.length === 1 ? '' : 's'}) ===`);
   const renderedRows = project.rows.map((row, idx) =>
@@ -268,6 +295,7 @@ function renderProjectTextBlock(project: ProjectGroup): string[] {
 export function buildFindingsByEngineTextTable(lines: EngineFindingLine[]): string {
   if (!lines.length) return 'No open findings.';
   const blocks: string[] = [];
-  for (const project of groupByProject(lines)) blocks.push(...renderProjectTextBlock(project));
+  const hasLevel = anyHasLevel(lines);
+  for (const project of groupByProject(lines)) blocks.push(...renderProjectTextBlock(project, hasLevel));
   return blocks.join('\n').trim();
 }
