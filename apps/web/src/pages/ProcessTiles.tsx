@@ -14,6 +14,7 @@ import { PageHeader } from '../components/shared/PageHeader';
 import { fetchProcessEscalations } from '../lib/api/escalationsApi';
 import { fetchProcessTiles, type ApiTiles } from '../lib/api/tilesApi';
 import { escalationCenterPath, processAnalyticsPath, workspacePath } from '../lib/processRoutes';
+import { selectFunctionVersions } from '../lib/domain/versionScope';
 import { useAppStore } from '../store/useAppStore';
 
 const RequestFunctionAuditModal = lazy(() =>
@@ -132,6 +133,11 @@ export function ProcessTiles() {
               const fid = fn.id as FunctionId;
               const openCount = escalationSummary?.perEngineIssueCounts?.[fid] ?? 0;
               const processCode = process?.displayCode ?? process?.id;
+              // Head saved version for THIS function, derived client-side
+              // from the store (same per-function identity as save) so the
+              // tile reflects workspace saves and never bleeds across tiles.
+              const head = process ? selectFunctionVersions(process, fid)[0] : undefined;
+              const headVersionLabel = head ? `v${head.versionNumber}` : null;
               return (
                 <FunctionTile
                   key={fn.id}
@@ -139,6 +145,7 @@ export function ProcessTiles() {
                   label={fn.label}
                   stats={tiles[fid]}
                   openEscalationCount={openCount}
+                  headVersionLabel={headVersionLabel}
                   onOpen={() => navigate(workspacePath(processId, fn.id))}
                   aiPilotLink={isAdmin ? <FunctionTileAiPilotLink functionId={fid} /> : undefined}
                   escalationFooter={
