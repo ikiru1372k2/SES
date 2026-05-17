@@ -20,13 +20,13 @@ export function EnginePill({
       disabled={disabled && !onClick}
       onClick={disabled ? undefined : onClick}
       title={`${label}: ${count}`}
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-all ease-soft ${
         disabled
           ? 'cursor-default border-gray-100 bg-gray-50 text-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-600'
           : active
-            ? 'border-brand bg-brand/10 text-brand'
-            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'
-      } ${onClick && !disabled ? 'cursor-pointer' : ''}`}
+            ? 'border-brand bg-brand/10 text-brand shadow-soft'
+            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:shadow-soft dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200'
+      } ${onClick && !disabled ? 'cursor-pointer active:scale-[0.97]' : ''}`}
     >
       <span className="max-w-[120px] truncate">{label}</span>
       <span className="tabular-nums">{count}</span>

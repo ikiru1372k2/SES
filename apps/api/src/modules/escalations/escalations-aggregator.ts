@@ -153,6 +153,7 @@ export function aggregateEscalations(
       managerName: tr?.managerName ?? agg.managerName,
       resolvedEmail,
       directoryEmail: null,
+      directoryTeamsUsername: null,
       isUnmapped,
       totalIssues,
       countsByEngine: { ...agg.countsByEngine },

@@ -227,6 +227,19 @@ export class FilesRepository {
    * (`uploadedObjectId`); falls back to legacy `FileBlob.content` for
    * rows uploaded before the storage migration.
    */
+  /**
+   * Public accessor for a workbook's raw bytes (MinIO/S3 first, BYTEA
+   * fallback). Used by preview() to reconstruct sheet rows on demand when
+   * the DB-persisted `WorkbookSheet.rows` are empty (e.g. seeded/imported
+   * files that never ran the parse-and-persist step).
+   */
+  async getWorkbookBuffer(file: {
+    id: string;
+    uploadedObjectId?: string | null;
+  }): Promise<Buffer | null> {
+    return this.fetchFileContent(file);
+  }
+
   private async fetchFileContent(file: { id: string; uploadedObjectId?: string | null }): Promise<Buffer | null> {
     if (file.uploadedObjectId) {
       try {

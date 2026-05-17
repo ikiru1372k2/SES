@@ -106,8 +106,8 @@ export const MODELS: Record<string, ModelMeta> = {
     table: 'ManagerDirectory',
     columns: [
       'id', 'displayCode', 'tenantId', 'firstName', 'lastName', 'email',
-      'normalizedKey', 'aliases', 'active', 'source', 'createdById',
-      'createdAt', 'updatedAt',
+      'teamsUsername', 'normalizedKey', 'aliases', 'active', 'source',
+      'createdById', 'createdAt', 'updatedAt',
     ],
     jsonCols: ['aliases'],
     id: ['id'],

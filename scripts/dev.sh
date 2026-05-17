@@ -188,14 +188,43 @@ run_seed() {
 
 # -------- AI sidecar ---------------------------------------------------------
 
+# Liveness only (public path). NOTE: a foreign/squatter sidecar also answers
+# /health, so this must NOT be used to decide "skip start" — see start_ai.
 ai_running() { curl -sf "$AI_SERVICE_URL/health" >/dev/null 2>&1; }
+
+# Readiness: is THIS repo's sidecar up AND does the shared-secret handshake
+# work? `/analytics/chat` is auth-gated and fails closed (503) when the
+# sidecar has no SIDECAR_SHARED_SECRET — which is exactly the squatter
+# failure mode. We don't need a model answer, just to get past the auth
+# middleware, so a 503 ("auth not configured") => NOT ready; anything else
+# (200/400/streaming) => the secret matches and the sidecar is ours.
+ai_authed() {
+  local body
+  body="$(curl -s --max-time 5 -o - -X POST "$AI_SERVICE_URL/analytics/chat" \
+    -H 'Content-Type: application/json' \
+    -H "X-Internal-Token: ${SIDECAR_SHARED_SECRET:-}" \
+    -d '{"process_code":"_probe","question":"_probe","rows":[],"use_stub":true}' 2>/dev/null || true)"
+  case "$body" in
+    *"auth not configured"*|*"Unauthorized"*|"") return 1 ;;
+    *) return 0 ;;
+  esac
+}
 
 start_ai() {
   section "AI sidecar"
-  if ai_running; then
-    log "already running at $AI_SERVICE_URL"
+  # User policy: dev.sh always owns a correctly-configured sidecar on
+  # :$AI_PORT. If something is already there and the authed handshake works,
+  # keep it; otherwise (foreign squatter / no secret / down) take over the
+  # port and start THIS repo's sidecar with the repo-root .env secret.
+  if ai_running && ai_authed; then
+    log "correctly-configured sidecar already running at $AI_SERVICE_URL"
     return 0
   fi
+  if ai_running; then
+    warn "a sidecar on :$AI_PORT failed the shared-secret handshake — taking over the port"
+  fi
+  stop_ai
+  kill_port "$AI_PORT"
   if [ ! -d "$AI_DIR" ]; then
     warn "AI sidecar dir '$AI_DIR' not found — set AI_DIR or install the sidecar"
     warn "  expected layout: \$AI_DIR/{venv,main.py} (or an executable start.sh)"
@@ -221,9 +250,40 @@ start_ai() {
         >>"$LOG_DIR/ai.log" 2>&1 || warn "venv bootstrap failed; check $LOG_DIR/ai.log"
     fi
   fi
-  log "starting from $AI_DIR (logs → $LOG_DIR/ai.log)"
-  ( cd "$AI_DIR" && nohup bash -c '
-      set -a; [ -f .env ] && . .env; set +a
+  # Auth + model env for the sidecar process. load_env already sourced the
+  # repo-root .env, so SIDECAR_SHARED_SECRET is in this shell's environment.
+  # The sidecar's own dir has NO .env, so we must pass these through
+  # explicitly — sourcing $AI_DIR/.env (the old behaviour) silently dropped
+  # the secret and left the sidecar failing closed.
+  if [ -z "${SIDECAR_SHARED_SECRET:-}" ]; then
+    warn "SIDECAR_SHARED_SECRET is empty in repo-root .env — analytics/AI-pilot"
+    warn "  will fail the sidecar auth handshake. Set it in $REPO_ROOT/.env"
+    warn "  (see .env.example: a 32+ char random secret)."
+  fi
+  # Analytics agent = DeepSeek-R1 (user choice). AI Pilot keeps its earlier
+  # models (AI_MODEL=qwen2.5:7b, AI_ENHANCE_MODEL=llama3:latest) — pass
+  # whatever .env defines, falling back to the established defaults so a
+  # bare .env still yields a working stack.
+  local _agent_model _pilot_model _enhance_model _embed_model
+  _agent_model="${AI_AGENT_MODEL:-deepseek-r1:8b}"
+  _pilot_model="${AI_MODEL:-qwen2.5:7b}"
+  _enhance_model="${AI_ENHANCE_MODEL:-llama3:latest}"
+  _embed_model="${AI_EMBED_MODEL:-nomic-embed-text}"
+  log "starting from $AI_DIR (agent=$_agent_model, pilot=$_pilot_model; logs → $LOG_DIR/ai.log)"
+  # Analytics provider passthrough (analytics ONLY — AI Pilot always stays
+  # on its local model). Default empty/ollama keeps the local-only posture;
+  # set AI_ANALYTICS_PROVIDER=gemini + GEMINI_API_KEY in .env to opt in.
+  if [ "${AI_ANALYTICS_PROVIDER:-ollama}" = "gemini" ] && [ -n "${GEMINI_API_KEY:-}" ]; then
+    warn "analytics provider = GEMINI (cloud) — pseudonymized rows leave the host"
+  fi
+  ( cd "$AI_DIR" && SIDECAR_SHARED_SECRET="${SIDECAR_SHARED_SECRET:-}" \
+      AI_AGENT_MODEL="$_agent_model" AI_MODEL="$_pilot_model" \
+      AI_ENHANCE_MODEL="$_enhance_model" AI_EMBED_MODEL="$_embed_model" \
+      AI_ANALYTICS_PROVIDER="${AI_ANALYTICS_PROVIDER:-ollama}" \
+      GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
+      AI_GEMINI_MODEL="${AI_GEMINI_MODEL:-gemini-2.0-flash}" \
+      OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}" \
+      nohup bash -c '
       if [ -x ./start-ai.sh ]; then ./start-ai.sh
       elif [ -x ./start.sh ]; then ./start.sh
       elif [ -d venv ]; then . venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port '"$AI_PORT"'
@@ -231,7 +291,12 @@ start_ai() {
       fi
     ' >"$LOG_DIR/ai.log" 2>&1 & echo $! >"$LOG_DIR/ai.pid" )
   if wait_url "$AI_SERVICE_URL/health" 30; then
-    log "healthy at $AI_SERVICE_URL"
+    if ai_authed; then
+      log "healthy + authed at $AI_SERVICE_URL"
+    else
+      warn "sidecar is up but the shared-secret handshake still fails —"
+      warn "  check SIDECAR_SHARED_SECRET in $REPO_ROOT/.env, then: ./scripts/dev.sh restart"
+    fi
   else
     warn "did not become healthy in 30s — see $LOG_DIR/ai.log"
   fi
@@ -245,6 +310,15 @@ stop_ai() {
       kill "$pid" 2>/dev/null || true
       rm -f "$LOG_DIR/ai.pid"
     fi
+  fi
+  # start-ai.sh writes its OWN pidfile and refuses to start if it exists and
+  # the PID is alive ("AI sidecar already running"). A stale one pointing at
+  # a foreign/squatter process would block the takeover, so clear it too.
+  if [ -n "${AI_DIR:-}" ] && [ -f "$AI_DIR/ai-service.pid" ]; then
+    local spid
+    spid="$(cat "$AI_DIR/ai-service.pid" 2>/dev/null || true)"
+    [ -n "${spid:-}" ] && kill "$spid" 2>/dev/null || true
+    rm -f "$AI_DIR/ai-service.pid"
   fi
   kill_port "$AI_PORT"
 }

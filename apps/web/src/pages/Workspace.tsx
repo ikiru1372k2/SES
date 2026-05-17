@@ -1,7 +1,7 @@
-import { Link, Navigate, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDownToLine, History, Play, Save } from 'lucide-react';
+import { ArrowDownToLine, History, Loader2, Play, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { DEFAULT_FUNCTION_ID, getFunctionLabel, isFunctionId, isValidEmail, type FunctionId } from '@ses/domain';
 import { FilesSidebar } from '../components/workspace/FilesSidebar';
@@ -10,19 +10,19 @@ import { TabPanel } from '../components/workspace/TabPanel';
 import { PreviewTab } from '../components/workspace/PreviewTab';
 import { AuditResultsTab } from '../components/workspace/AuditResultsTab';
 import { DraftRestoreBanner } from '../components/workspace/DraftRestoreBanner';
-import { UnsavedAuditDialog } from '../components/workspace/UnsavedAuditDialog';
+import { WorkspaceStatusCards } from '../components/workspace/WorkspaceStatusCards';
 import { SaveVersionModal } from '../components/workspace/SaveVersionModal';
 import { AppShell } from '../components/layout/AppShell';
 import { usePageHeader } from '../components/layout/usePageHeader';
-import { PresenceBar } from '../components/shared/PresenceBar';
 import { useCurrentUser } from '../components/auth/authContext';
 import { downloadAuditedWorkbook } from '../lib/workbook/excelParser';
 import type { MappingSourceInput } from '../lib/api/auditsApi';
-import { selectCorrectionCount, selectHasUnsavedAudit, selectLatestAuditResult } from '../store/selectors';
+import { selectCorrectionCount, selectLatestAuditResult } from '../store/selectors';
 import { useAppStore } from '../store/useAppStore';
 import { isLegacyTileTrackingTabEnabled } from '../lib/featureFlags';
+import { resolveWorkspaceMetrics } from '../lib/workbook/auditResultFilter';
 import { anchorResultForFile, formatDiffChips, summarizeDiff } from '../lib/workbook/versionDiff';
-import { escalationCenterPath, processDashboardPath, versionComparePath } from '../lib/processRoutes';
+import { escalationCenterPath, processDashboardPath } from '../lib/processRoutes';
 import { useRealtime } from '../realtime/useRealtime';
 import { onRealtimeEvent } from '../realtime/socket';
 import { directorySuggestions } from '../lib/api/directoryApi';
@@ -31,7 +31,6 @@ import { useEffectiveAccess } from '../hooks/useEffectiveAccess';
 
 const READ_ONLY_TOOLTIP = 'Read-only access — ask an admin for editor scope.';
 
-const AnalyticsTab = lazy(() => import('../components/workspace/AnalyticsTab').then((module) => ({ default: module.AnalyticsTab })));
 const VersionHistoryTab = lazy(() =>
   import('../components/workspace/VersionHistoryTab').then((module) => ({ default: module.VersionHistoryTab })),
 );
@@ -61,25 +60,20 @@ export function Workspace() {
   const discardFileDraft = useAppStore((state) => state.discardFileDraft);
   const tab = useAppStore((state) => state.activeWorkspaceTab);
   const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
+  const clearCurrentAuditResult = useAppStore((state) => state.clearCurrentAuditResult);
   const result = useAppStore((state) => state.currentAuditResult);
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const runAudit = useAppStore((state) => state.runAudit);
   const saveOverCurrentVersion = useAppStore((state) => state.saveOverCurrentVersion);
   const saveAsNewRequestCount = useAppStore((state) => state.saveAsNewRequestCount);
-  const requestSaveAsNewVersion = useAppStore((state) => state.requestSaveAsNewVersion);
 
   const process = processes.find((item) => item.id === processId || item.displayCode === processId);
   const processRecordId = process?.id;
-  const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
   const currentUser = useCurrentUser();
   const managerDirectoryOn = currentUser?.managerDirectoryEnabled !== false;
   const tabFromUrl = searchParams.get('tab');
   const [resolutionOpen, setResolutionOpen] = useState(false);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
-  // Defers the blocker proceed/reset until SaveVersionModal resolves, so
-  // navigation only continues if a version was actually created.
-  const pendingBlockerRef = useRef<{ proceed?: (() => void) | undefined; reset?: (() => void) | undefined } | null>(null);
-  const modalSavedRef = useRef(false);
   const [mappingSource, setMappingSource] = useState<MappingSourceInput | undefined>(undefined);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- reset mapping source on function navigation
   useEffect(() => { setMappingSource(undefined); }, [functionId]);
@@ -143,14 +137,22 @@ export function Workspace() {
     void hydrateProcesses().finally(() => setHydratedProcessParam(processId));
   }, [hydratedProcessParam, process, processId, hydrateProcesses]);
 
+  // Synchronously drop any session result the moment the process or function
+  // changes (e.g. navigating to another process via URL), before async
+  // hydration runs — otherwise the previous file/process's result can leak
+  // into the metrics bar / Issues count for a render or two.
+  useEffect(() => {
+    clearCurrentAuditResult();
+  }, [processRecordId, functionId, clearCurrentAuditResult]);
+
   useEffect(() => {
     if (!processRecordId) return;
     void hydrateFunctionWorkspace(processRecordId, functionId);
   }, [functionId, hydrateFunctionWorkspace, processRecordId]);
 
   useEffect(() => {
-    if (tabFromUrl === 'results') {
-      setWorkspaceTab('results');
+    if (tabFromUrl === 'results' || tabFromUrl === 'versions') {
+      setWorkspaceTab(tabFromUrl);
       const next = new URLSearchParams(searchParams);
       next.delete('tab');
       setSearchParams(next, { replace: true });
@@ -169,29 +171,12 @@ export function Workspace() {
   }, [tab, processRecordId, process?.activeFileId, process?.files, functionId, hydrateLatestAuditResult]);
 
   const processRealtimeKey = process?.displayCode ?? process?.id ?? null;
-  const { members } = useRealtime(processRealtimeKey, currentUser?.displayCode, {
+  // Subscribe for the realtime eviction side-effect. `members` is no longer
+  // consumed here (PresenceBar was removed), so we don't destructure it.
+  useRealtime(processRealtimeKey, currentUser?.displayCode, {
     onEvicted: () => navigate('/'),
   });
 
-  useEffect(() => {
-    if (!hasUnsavedAudit) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [hasUnsavedAudit]);
-
-  const shouldBlock = useCallback<(args: { currentLocation: { pathname: string }; nextLocation: { pathname: string } }) => boolean>(
-    ({ currentLocation, nextLocation }) => {
-      if (!hasUnsavedAudit) return false;
-      if (currentLocation.pathname === nextLocation.pathname) return false;
-      return true;
-    },
-    [hasUnsavedAudit],
-  );
-  const blocker = useBlocker(shouldBlock);
 
   // Header action handlers read store via refs at call-time to stay stable
   // across renders (header must not re-render on every keystroke).
@@ -202,7 +187,15 @@ export function Workspace() {
   const activeFile = functionFiles.find((file) => file.id === process?.activeFileId) ?? functionFiles[0];
   const selectedSheets = activeFile?.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected).length ?? 0;
   const hasSavedVersion = (process?.versions.length ?? 0) > 0;
+  // Unfiltered: Run / Save / Download legitimately act on the latest result
+  // regardless of sheet selection or active file.
   const latestResult = result ?? (process ? selectLatestAuditResult(process) : null);
+  // Scoped to the active file (zeros when none) — drives the Issues·N tab
+  // count so it can't show a stale count from another file/version.
+  const filteredIssueCount = useMemo(
+    () => resolveWorkspaceMetrics(process, activeFile, result).issues,
+    [process, activeFile, result],
+  );
   const correctionCount = process ? selectCorrectionCount(process) : 0;
   const headVersion = process?.versions[0];
   const headVersionName = headVersion?.versionName ?? '';
@@ -286,11 +279,8 @@ export function Workspace() {
   }, [activeFile, latestResult, process]);
 
   const onOpenVersionHistory = useCallback(() => {
-    if (!process) return;
-    void navigate(versionComparePath(process.displayCode ?? process.id, functionId));
-  }, [navigate, process, functionId]);
-
-  const leaveGuard = useCallback(() => !hasUnsavedAudit, [hasUnsavedAudit]);
+    setWorkspaceTab('versions');
+  }, [setWorkspaceTab]);
 
   const headerConfig = useMemo(() => {
     if (!process) return { breadcrumbs: [] };
@@ -326,13 +316,6 @@ export function Workspace() {
     }
     if (correctionCount > 0) {
       overflow.push({
-        id: 'download-corrected',
-        label: 'Download corrected workbook',
-        icon: ArrowDownToLine,
-        onClick: onDownloadCorrected,
-        disabled: !canDownload,
-      });
-      overflow.push({
         id: 'download-original',
         label: 'Download audited (original)',
         icon: ArrowDownToLine,
@@ -344,6 +327,9 @@ export function Workspace() {
       overflow.push({ id: 'versions', label: 'Version history', icon: History, onClick: onOpenVersionHistory });
     }
     return {
+      // Show which function the user is in (matches master). Without this
+      // third crumb, Workspace pages for different functions looked
+      // identical — you couldn't tell Master Data from Function Rate.
       breadcrumbs: [
         { label: 'Dashboard', to: '/' },
         { label: process.name, to: processDashboardPath(process.displayCode ?? process.id) },
@@ -381,9 +367,20 @@ export function Workspace() {
             },
           ],
         },
+        ...(correctionCount > 0
+          ? [
+              {
+                id: 'download-corrected',
+                label: 'Download corrected',
+                icon: ArrowDownToLine,
+                onClick: onDownloadCorrected,
+                disabled: !canDownload,
+                variant: 'secondary' as const,
+              },
+            ]
+          : []),
       ],
       overflowActions: overflow,
-      leaveGuard,
     };
   }, [
     process,
@@ -408,13 +405,13 @@ export function Workspace() {
     onDownload,
     onDownloadCorrected,
     onOpenVersionHistory,
-    leaveGuard,
   ]);
   usePageHeader(headerConfig);
 
   if (hydrating) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-gray-500 dark:bg-gray-950">
+      <div className="flex min-h-screen items-center justify-center gap-2 bg-surface-app text-sm text-gray-500 dark:bg-gray-950">
+        <Loader2 size={16} className="animate-spin" aria-hidden="true" />
         Loading workspace…
       </div>
     );
@@ -433,29 +430,24 @@ export function Workspace() {
         onRestore={promoteFileDraft}
         onDiscard={discardFileDraft}
       />
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-white px-5 py-2 text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-400">
-        <div className="flex items-center gap-3">
-          <PresenceBar members={members} selfCode={currentUser?.displayCode} />
-          {activeFile?.lastAuditedAt ? (
-            <span>Last run: {new Date(activeFile.lastAuditedAt).toLocaleString()}</span>
-          ) : null}
-          {hasUnsavedAudit ? (
-            <span className="inline-flex items-center gap-1 font-medium text-amber-700" title="Latest audit run isn't reflected in any saved version">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-              Unsaved
-            </span>
-          ) : null}
-        </div>
-      </div>
+      <WorkspaceStatusCards
+        activeFile={activeFile}
+        sessionResult={result}
+        process={process}
+        onSaveAsNew={onSaveAsNew}
+      />
       {managerDirectoryOn && unmappedCount !== null && unmappedCount > 0 ? (
-        <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+        <div className="border-b border-amber-200 bg-amber-50 px-5 py-2 text-sm text-amber-950 shadow-soft dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
           {unmappedCount} manager{unmappedCount === 1 ? '' : 's'} in these findings are not confidently matched in the directory. Notifications may be blocked until resolved.{' '}
           <button type="button" className="font-medium underline" onClick={() => setResolutionOpen(true)}>
             Open resolver
           </button>
         </div>
       ) : null}
-      <WorkspaceShell>
+      <WorkspaceShell
+        issueCount={filteredIssueCount}
+        versionCount={process.versions.length}
+      >
         {tab === 'preview' ? (
           <TabPanel>
             <PreviewTab process={scopedProcess} file={activeFile} result={result} />
@@ -492,13 +484,6 @@ export function Workspace() {
             </Suspense>
           </TabPanel>
         ) : null}
-        {tab === 'analytics' ? (
-          <TabPanel>
-            <Suspense fallback={<div className="p-5 text-sm text-gray-500">Loading analytics...</div>}>
-              <AnalyticsTab process={scopedProcess} functionId={functionId} />
-            </Suspense>
-          </TabPanel>
-        ) : null}
       </WorkspaceShell>
       {managerDirectoryOn && resolutionOpen && rawManagerNames.length > 0 ? (
         <ResolutionDrawer
@@ -514,52 +499,16 @@ export function Workspace() {
       {versionModalOpen && process && latestResult ? (
         <SaveVersionModal
           process={process}
-          onSaved={() => {
-            // Version created; let blocked navigation proceed (no-op if not blocked).
-            modalSavedRef.current = true;
-          }}
-          onClose={() => {
-            setVersionModalOpen(false);
-            const pending = pendingBlockerRef.current;
-            pendingBlockerRef.current = null;
-            if (pending) {
-              if (modalSavedRef.current) {
-                pending.proceed?.();
-              } else {
-                pending.reset?.();
-              }
-            }
-            modalSavedRef.current = false;
-          }}
+          onClose={() => setVersionModalOpen(false)}
         />
       ) : null}
-      <UnsavedAuditDialog
-        open={blocker.state === 'blocked'}
-        process={process}
-        latestResult={result ?? process.latestAuditResult ?? null}
-        activeFileId={activeFile?.id}
-        onUpdate={() => {
-          blocker.proceed?.();
-        }}
-        onSaveAsNew={() => {
-          // Hand blocker to SaveVersionModal lifecycle; modal resolves it.
-          modalSavedRef.current = false;
-          pendingBlockerRef.current = {
-            proceed: blocker.proceed,
-            reset: blocker.reset,
-          };
-          requestSaveAsNewVersion();
-        }}
-        onLeave={() => blocker.proceed?.()}
-        onCancel={() => blocker.reset?.()}
-      />
     </AppShell>
   );
 }
 
 function NotificationsRedirect({ processId, onGoToResults }: { processId: string; onGoToResults: () => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+    <div className="mx-auto mt-10 flex max-w-lg flex-col items-center justify-center gap-3 rounded-xl border border-gray-200 bg-white p-10 text-center shadow-soft dark:border-gray-800 dark:bg-gray-900">
       <div className="rounded-full bg-brand/10 p-3 text-brand">
         <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M3 11l18-8-8 18-2-8-8-2z" />
@@ -573,14 +522,14 @@ function NotificationsRedirect({ processId, onGoToResults }: { processId: string
       <div className="mt-2 flex gap-2">
         <Link
           to={escalationCenterPath(processId)}
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover"
+          className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-soft transition-all ease-soft hover:bg-brand-hover hover:shadow-soft-md active:scale-[0.98]"
         >
           Open Escalation Center
         </Link>
         <button
           type="button"
           onClick={onGoToResults}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm shadow-soft transition-all ease-soft hover:bg-gray-50 hover:shadow-soft-md active:scale-[0.98] dark:border-gray-700 dark:hover:bg-gray-800"
         >
           Back to Audit Results
         </button>

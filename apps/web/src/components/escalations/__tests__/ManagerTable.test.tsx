@@ -7,6 +7,7 @@ function row(p: Partial<ProcessEscalationManagerRow> & Pick<ProcessEscalationMan
   return {
     resolvedEmail: null,
     directoryEmail: null,
+    directoryTeamsUsername: null,
     isUnmapped: false,
     totalIssues: 1,
     countsByEngine: {},
@@ -41,7 +42,6 @@ describe('ManagerTable', () => {
         onOpenPanel={vi.fn()}
         sortKey="issues"
         onSortKey={onSortKey}
-        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
@@ -69,7 +69,6 @@ describe('ManagerTable', () => {
         onOpenPanel={vi.fn()}
         sortKey="issues"
         onSortKey={vi.fn()}
-        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
@@ -101,7 +100,6 @@ describe('ManagerTable', () => {
         onOpenPanel={onOpenPanel}
         sortKey="issues"
         onSortKey={vi.fn()}
-        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
@@ -131,14 +129,13 @@ describe('ManagerTable', () => {
         onOpenPanel={vi.fn()}
         sortKey="priority"
         onSortKey={vi.fn()}
-        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
 
     expect(screen.getByText('devries@email.com')).toBeInTheDocument();
     expect(screen.queryByText(/missing email/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Send reminder')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open/i })).toBeInTheDocument();
   });
 
   it('highlights resolved rows in green', () => {
@@ -146,8 +143,8 @@ describe('ManagerTable', () => {
       <ManagerTable
         now={0}
         rows={[
-          row({ managerKey: 'done', managerName: 'Done', resolved: true, stage: 'RESOLVED' }),
-          row({ managerKey: 'open', managerName: 'Open' }),
+          row({ managerKey: 'done', managerName: 'Taylor Resolved', resolved: true, stage: 'RESOLVED' }),
+          row({ managerKey: 'still', managerName: 'River Active' }),
         ]}
         selectedTrackingIds={new Set()}
         onToggleTracking={vi.fn()}
@@ -157,14 +154,13 @@ describe('ManagerTable', () => {
         onOpenPanel={vi.fn()}
         sortKey="priority"
         onSortKey={vi.fn()}
-        selectedEngines={new Set()}
         onEngineFromPill={vi.fn()}
       />,
     );
 
     const rowsEls = container.querySelectorAll('tbody tr');
-    const resolvedRow = Array.from(rowsEls).find((tr) => tr.textContent?.includes('Done'));
-    const openRow = Array.from(rowsEls).find((tr) => tr.textContent?.includes('Open'));
+    const resolvedRow = Array.from(rowsEls).find((tr) => tr.textContent?.includes('Taylor Resolved'));
+    const openRow = Array.from(rowsEls).find((tr) => tr.textContent?.includes('River Active'));
     expect(resolvedRow?.className).toContain('bg-green-50');
     expect(openRow?.className).not.toContain('bg-green-50');
   });

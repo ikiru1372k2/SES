@@ -198,7 +198,7 @@ export class TrackingComposeService {
       throw new BadRequestException(`Send is not allowed from stage ${entry.stage}.`);
     }
 
-    const { subject, text, html, issueCount, channel, managerEmail } = await this.resolveContent(entry, user, body);
+    const { subject, text, html, issueCount, channel, managerEmail, teamsUsername } = await this.resolveContent(entry, user, body);
     const sendChannel: EscalationSendChannel = channel ?? 'email';
     if (sendChannel === 'both') {
       throw new BadRequestException('Channel "both" is no longer supported — pick Outlook or Teams.');
@@ -290,6 +290,13 @@ export class TrackingComposeService {
       issueCount: logRow.issueCount,
     }, { actor: { id: user.id, code: user.displayCode, email: user.email, displayName: user.displayName } });
 
+    // For Teams the frontend deep-links with `users=<to>`; prefer the
+    // directory Teams username, falling back to the manager email so
+    // existing rows without a Teams username keep working. Email/Outlook
+    // always uses the manager email.
+    const responseTo =
+      sendChannel === 'teams' ? (teamsUsername || to) : to.toLowerCase();
+
     return {
       ok: true,
       notificationLogId: logRow.id,
@@ -297,7 +304,7 @@ export class TrackingComposeService {
       subject,
       body: text,
       bodyHtml: html,
-      to: to.toLowerCase(),
+      to: responseTo,
       cc: (body.cc ?? []).map((c) => c.trim()).filter(Boolean),
     };
   }
@@ -385,6 +392,7 @@ export class TrackingComposeService {
     issueCount: number;
     channel: EscalationSendChannel;
     managerEmail: string | null;
+    teamsUsername: string | null;
   }> {
     const tenantId = this.tenantId(user);
     const stageKey = stageKeyForEntry(entry.stage, entry.escalationLevel);
@@ -402,6 +410,7 @@ export class TrackingComposeService {
     const esc = await this.escalations.getForProcess(entry.process.displayCode, user);
     const row = esc.rows.find((r) => r.trackingId === entry.id);
     const managerEmail = row?.resolvedEmail ?? row?.directoryEmail ?? entry.managerEmail ?? null;
+    const teamsUsername = row?.directoryTeamsUsername?.trim() || null;
     const lines: EngineFindingLine[] = [];
     const removed = new Set((overrides.removedEngineIds ?? draft.removedEngineIds ?? []).map(String));
     const issueKeys: string[] = [];
@@ -548,6 +557,6 @@ export class TrackingComposeService {
     const subject = substitute(baseSubject, textSlots);
     const text = substitute(baseBody, textSlots);
     const html = wrapEmailHtml(substituteHtml(baseBody, htmlSlots));
-    return { subject, text, html, issueCount: lines.length, channel, managerEmail };
+    return { subject, text, html, issueCount: lines.length, channel, managerEmail, teamsUsername };
   }
 }

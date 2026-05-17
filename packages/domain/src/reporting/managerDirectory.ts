@@ -1,6 +1,6 @@
 import { isValidEmail, sanitizeHeader } from '../notifications/notificationBuilder';
 
-export type DirectoryColumnRole = 'firstName' | 'lastName' | 'email';
+export type DirectoryColumnRole = 'firstName' | 'lastName' | 'email' | 'teamsUsername';
 
 export type DetectedColumnMapping = Partial<Record<DirectoryColumnRole, string>>;
 
@@ -21,6 +21,16 @@ const FIRST_KEYS = new Set([
 const LAST_KEYS = new Set(['lastname', 'lname', 'surname', 'familyname', 'last', 'secondname']);
 
 const EMAIL_KEYS = new Set(['email', 'emailaddress', 'mail', 'e-mail', 'workemail']);
+
+const TEAMS_KEYS = new Set([
+  'teamsusername',
+  'teams',
+  'teamsuser',
+  'teamsid',
+  'teamshandle',
+  'teamsupn',
+  'upn',
+]);
 
 function stripCombiningMarks(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -61,6 +71,7 @@ function normalizeHeaderKey(header: string): string {
 function classifyHeader(header: string): DirectoryColumnRole | null {
   const key = normalizeHeaderKey(header);
   if (!key) return null;
+  if (TEAMS_KEYS.has(key) || key.startsWith('teams')) return 'teamsUsername';
   if (EMAIL_KEYS.has(key) || key.endsWith('email')) return 'email';
   if (FIRST_KEYS.has(key) || key.startsWith('first') || key.includes('givenname')) return 'firstName';
   if (LAST_KEYS.has(key) || key.startsWith('last') || key.includes('surname') || key.includes('familyname'))
@@ -155,7 +166,12 @@ export function activeEntriesShareNormalizedKey(entries: DirectoryMatchRow[]): b
   return [...keys.values()].some((c) => c > 1);
 }
 
-export type DirectoryRowInput = { firstName: string; lastName: string; email: string };
+export type DirectoryRowInput = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  teamsUsername?: string;
+};
 
 export type DirectoryRowIssue =
   | 'invalid_email'
@@ -182,6 +198,7 @@ export function validateDirectoryRows(rows: DirectoryRowInput[]): DirectoryRowVa
     const fn = sanitizeHeader(input.firstName).trim();
     const ln = sanitizeHeader(input.lastName).trim();
     const em = sanitizeHeader(input.email).trim();
+    const tu = sanitizeHeader(input.teamsUsername ?? '').trim();
     if (!fn) issues.push('missing_first_name');
     if (!ln) issues.push('missing_last_name');
     if (!em) issues.push('missing_email');
@@ -190,7 +207,7 @@ export function validateDirectoryRows(rows: DirectoryRowInput[]): DirectoryRowVa
     if (em && isValidEmail(em) && (emailCount.get(lower) ?? 0) > 1) {
       issues.push('duplicate_email_in_batch');
     }
-    return { rowIndex, input: { firstName: fn, lastName: ln, email: em }, issues };
+    return { rowIndex, input: { firstName: fn, lastName: ln, email: em, teamsUsername: tu }, issues };
   });
 }
 

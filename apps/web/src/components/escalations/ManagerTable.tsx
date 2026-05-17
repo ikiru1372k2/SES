@@ -2,12 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, MoreVertical } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { FunctionId, ProcessEscalationManagerRow } from '@ses/domain';
-import { FUNCTION_IDS } from '@ses/domain';
-import { EnginePill } from './EnginePill';
+import { FUNCTION_IDS, getFunctionLabel } from '@ses/domain';
 import { Badge } from '../shared/Badge';
-import { computePriority, effectiveManagerEmail, suggestNextAction } from './nextAction';
+import { computePriority, effectiveManagerEmail } from './nextAction';
 
-export type SortKey = 'priority' | 'issues' | 'stage' | 'lastContact' | 'sla';
+export type SortKey = 'priority' | 'manager' | 'issues' | 'stage' | 'lastContact' | 'sla';
 
 function slaTone(row: ProcessEscalationManagerRow, now: number): 'green' | 'amber' | 'red' | 'grey' {
   if (row.resolved || !row.slaDueAt) return 'grey';
@@ -17,26 +16,41 @@ function slaTone(row: ProcessEscalationManagerRow, now: number): 'green' | 'ambe
   return 'green';
 }
 
-function SlaDot({ tone }: { tone: 'green' | 'amber' | 'red' | 'grey' }) {
-  const map = {
-    green: 'bg-success-500',
-    amber: 'bg-warning-500',
-    red: 'bg-danger-500',
-    grey: 'bg-gray-300 dark:bg-gray-600',
-  } as const;
-  return <span className={`inline-block h-2.5 w-2.5 rounded-full ${map[tone]}`} title="SLA" />;
-}
-
 function slaCountdownLabel(row: ProcessEscalationManagerRow, now: number): string {
   if (row.resolved) return 'Resolved';
   if (!row.slaDueAt) return '—';
   const delta = new Date(row.slaDueAt).getTime() - now;
   const abs = Math.abs(delta);
   const hours = Math.round(abs / 3_600_000);
-  if (hours < 1) return delta < 0 ? 'Overdue now' : 'Due < 1h';
-  if (hours < 48) return delta < 0 ? `Overdue ${hours}h` : `Due in ${hours}h`;
+  if (hours < 1) return delta < 0 ? '< 1 h breached' : 'due < 1 h';
+  if (hours < 48)
+    return delta < 0 ? `${hours} h breached` : `due ${hours} h`;
   const days = Math.round(hours / 24);
-  return delta < 0 ? `Overdue ${days}d` : `Due in ${days}d`;
+  return delta < 0 ? `${days} d breached` : `due ${days} d`;
+}
+
+/**
+ * UI-only label for the canonical escalation stage enum. The domain enum
+ * (NEW/DRAFTED/SENT/AWAITING_RESPONSE/RESPONDED/NO_RESPONSE/ESCALATED_L1/
+ * ESCALATED_L2/RESOLVED) drives the backend state machine and must NOT be
+ * renamed — this only changes how it reads in the table. "DRAFTED" was
+ * surfacing raw; auditors expect a clean escalation-ladder label.
+ */
+const STAGE_LABELS: Record<string, string> = {
+  NEW: 'New',
+  DRAFTED: 'Draft prepared',
+  SENT: 'Sent',
+  AWAITING_RESPONSE: 'Awaiting reply',
+  RESPONDED: 'Responded',
+  NO_RESPONSE: 'No response',
+  ESCALATED_L1: 'Escalated · L1',
+  ESCALATED_L2: 'Escalated · L2',
+  RESOLVED: 'Resolved',
+};
+
+function stageDisplayLabel(stage: string | null): string {
+  if (!stage) return '—';
+  return STAGE_LABELS[stage.toUpperCase()] ?? stage;
 }
 
 const SLA_BADGE_TONE = {
@@ -57,7 +71,6 @@ export function ManagerTable({
   onOpenPanel,
   sortKey,
   onSortKey,
-  selectedEngines,
   onEngineFromPill,
 }: {
   rows: ProcessEscalationManagerRow[];
@@ -73,7 +86,6 @@ export function ManagerTable({
   onOpenPanel: (row: ProcessEscalationManagerRow) => void;
   sortKey: SortKey;
   onSortKey: (k: SortKey) => void;
-  selectedEngines: Set<FunctionId>;
   onEngineFromPill: (engine: FunctionId) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -86,6 +98,7 @@ export function ManagerTable({
         // Default — the row a human should work on next is at the top.
         return computePriority(b, now) - computePriority(a, now);
       }
+      if (sortKey === 'manager') return String(a.managerName ?? '').localeCompare(String(b.managerName ?? ''));
       if (sortKey === 'issues') return b.totalIssues - a.totalIssues;
       if (sortKey === 'stage') return String(a.stage ?? '').localeCompare(String(b.stage ?? ''));
       if (sortKey === 'lastContact') {
@@ -154,11 +167,11 @@ export function ManagerTable({
   return (
     <div
       ref={wrapRef}
-      className="min-h-0 flex-1 overflow-auto rounded-xl border border-rule bg-white shadow-soft dark:border-gray-700 dark:bg-gray-900"
+      className="min-h-0 flex-1 overflow-auto rounded-xl border border-rule bg-white shadow-soft dark:border-gray-800 dark:bg-gray-900"
     >
       <table className="min-w-full text-left text-sm">
-        <thead className="sticky top-0 z-10 bg-surface-app text-[11px] text-ink-3 dark:bg-gray-800 dark:text-gray-400">
-          <tr className="border-b border-rule dark:border-gray-700">
+        <thead className="table-head">
+          <tr className="border-b border-rule-2 dark:border-gray-800">
             <th scope="col" className="px-3 py-2.5">
               <input
                 type="checkbox"
@@ -171,33 +184,44 @@ export function ManagerTable({
                 }
               />
             </th>
-            <th scope="col" className="px-3 py-2.5 font-semibold uppercase tracking-wide">Manager</th>
-            <th scope="col" className="px-3 py-2.5">{sortBtn('issues', 'Issues')}</th>
-            <th scope="col" className="hidden px-3 py-2.5 font-semibold uppercase tracking-wide lg:table-cell">Engines</th>
-            <th scope="col" className="hidden px-3 py-2.5 sm:table-cell">{sortBtn('stage', 'Stage')}</th>
-            <th scope="col" className="hidden px-3 py-2.5 md:table-cell">{sortBtn('lastContact', 'Last contact')}</th>
+            <th scope="col" className="px-3 py-2.5">{sortBtn('manager', 'Manager')}</th>
             <th scope="col" className="px-3 py-2.5">{sortBtn('sla', 'SLA')}</th>
-            <th scope="col" className="hidden px-3 py-2.5 font-semibold uppercase tracking-wide sm:table-cell">Next action</th>
-            <th scope="col" className="w-10 px-2 py-2.5" aria-label="Actions" />
+            <th scope="col" className="px-3 py-2.5">{sortBtn('stage', 'Stage')}</th>
+            <th scope="col" className="hidden px-3 py-2.5 font-semibold uppercase tracking-wide sm:table-cell">
+              Engine
+            </th>
+            <th scope="col" className="hidden px-3 py-2.5 sm:table-cell text-right">{sortBtn('issues', '#')}</th>
+            <th scope="col" className="w-28 px-2 py-2.5 text-right" aria-label="Open row">
+              <span />
+            </th>
+            <th scope="col" className="w-10 px-2 py-2.5" aria-label="Row menu" />
           </tr>
         </thead>
         <tbody>
           {sorted.map((row, idx) => {
-            const selected = idx === selectedIndex;
+            const keyboardHere = idx === selectedIndex;
+            const bulkSel = Boolean(row.trackingId && selectedTrackingIds.has(row.trackingId));
+            const rowFocus = bulkSel || keyboardHere;
             const tone = slaTone(row, now);
             const managerEmail = effectiveManagerEmail(row);
+            const stageUpper = String(row.stage ?? '').toUpperCase();
+            const stageTone: 'gray' | 'blue' | 'amber' | 'red' =
+              stageUpper.startsWith('ESC') ? 'red' : stageUpper === 'BLOCKED' ? 'amber' : stageUpper === 'ACK' ? 'blue' : 'gray';
+            const stageLabel = stageDisplayLabel(row.stage);
+            const rowEngines = enginesForRow(row);
+
             return (
               <tr
                 key={row.managerKey}
                 tabIndex={0}
-                aria-selected={selected}
+                aria-selected={keyboardHere}
                 className={`cursor-pointer border-t border-rule/70 transition-colors dark:border-gray-800 ${
                   row.resolved
                     ? 'bg-green-50 hover:bg-green-100 dark:bg-green-950/30 dark:hover:bg-green-900/40'
-                    : selected
-                      ? 'bg-brand-subtle hover:bg-brand-subtle dark:bg-brand/10 dark:hover:bg-gray-800/80'
+                    : rowFocus
+                      ? 'bg-brand-subtle hover:bg-brand-subtle dark:bg-brand/15 dark:hover:bg-brand/25'
                       : 'hover:bg-surface-app dark:hover:bg-gray-800/80'
-                } ${selected ? 'ring-1 ring-inset ring-brand/30' : ''}`}
+                } ${keyboardHere ? 'ring-1 ring-inset ring-brand/30' : ''}`}
                 onClick={() => {
                   onSelectManagerKey(row.managerKey);
                   onOpenPanel(row);
@@ -224,45 +248,60 @@ export function ManagerTable({
                     </div>
                   )}
                 </td>
-                <td className="px-3 py-2.5 tabular-nums text-ink dark:text-gray-200">{row.totalIssues}</td>
-                <td className="hidden px-3 py-2.5 lg:table-cell">
-                  <div className="flex flex-wrap gap-1">
-                    {FUNCTION_IDS.map((fid) => (
-                      <EnginePill
-                        key={fid}
-                        engine={fid}
-                        count={row.countsByEngine[fid] ?? 0}
-                        active={selectedEngines.has(fid)}
-                        onClick={() => onEngineFromPill(fid)}
-                      />
-                    ))}
-                  </div>
+                <td className="px-3 py-2.5">
+                  <Badge tone={SLA_BADGE_TONE[tone]}>{slaCountdownLabel(row, now)}</Badge>
                 </td>
-                <td className="hidden px-3 py-2.5 sm:table-cell">
+                <td className="px-3 py-2.5">
                   <div className="flex flex-wrap items-center gap-1">
-                    <Badge tone="gray">{row.stage ?? '—'}</Badge>
+                    <Badge tone={stageTone}>{stageLabel}</Badge>
                     {row.stage === 'RESOLVED' && !row.verifiedAt ? (
-                      <Badge tone="amber">Awaiting verification</Badge>
+                      <Badge tone="amber">Needs verification</Badge>
+                    ) : null}
+                    {row.stage === 'RESOLVED' && row.verifiedAt ? (
+                      <Badge tone="green">Verified</Badge>
                     ) : null}
                   </div>
                 </td>
-                <td className="hidden px-3 py-2.5 text-xs text-ink-3 md:table-cell">
-                  {row.lastContactAt ? new Date(row.lastContactAt).toLocaleDateString() : '—'}
-                </td>
-                <td className="px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <SlaDot tone={tone} />
-                    <Badge tone={SLA_BADGE_TONE[tone]}>{slaCountdownLabel(row, now)}</Badge>
-                  </div>
-                </td>
                 <td className="hidden px-3 py-2.5 sm:table-cell">
-                  <NextActionChip row={row} now={now} />
+                  {rowEngines.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {rowEngines.map(({ id, count }) => (
+                        <button
+                          key={id}
+                          type="button"
+                          className="rounded-md transition-opacity hover:opacity-90"
+                          title={`${getFunctionLabel(id)}: ${count} finding${count === 1 ? '' : 's'} — click to filter`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEngineFromPill(id);
+                          }}
+                        >
+                          <Badge tone="gray">
+                            {shortenEngine(getFunctionLabel(id))}
+                            <span className="ml-1 tabular-nums opacity-70">{count}</span>
+                          </Badge>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-ink-3">—</span>
+                  )}
+                </td>
+                <td className="hidden px-3 py-2.5 text-right tabular-nums text-ink dark:text-gray-200 sm:table-cell">{row.totalIssues}</td>
+                <td className="px-2 py-2.5 text-right">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-0.5 text-xs font-medium text-ink-3 hover:text-brand"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenPanel(row);
+                    }}
+                  >
+                    Open <ChevronRight size={13} />
+                  </button>
                 </td>
                 <td className="relative px-2 py-2.5">
-                  <div className="flex items-center justify-end gap-1">
-                    <span className="hidden items-center gap-0.5 text-xs font-medium text-ink-3 group-hover:text-brand lg:inline-flex">
-                      Open <ChevronRight size={13} />
-                    </span>
+                  <div className="flex items-center justify-end">
                     <button
                       type="button"
                       className="rounded-md p-1 text-ink-3 transition-colors hover:bg-gray-100 hover:text-ink dark:hover:bg-gray-800"
@@ -313,19 +352,25 @@ export function ManagerTable({
   );
 }
 
-const NEXT_ACTION_TONE: Record<'gray' | 'blue' | 'amber' | 'red' | 'emerald', string> = {
-  gray:    'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  blue:    'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  amber:   'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200',
-  red:     'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-  emerald: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200',
-};
+/**
+ * Every engine this manager has findings in, in FUNCTION_REGISTRY order.
+ * Previously the table collapsed to a single "primary" engine, which hid
+ * the fact a manager spans multiple engines (e.g. internal-cost-rate +
+ * master-data) — now all detected engines render as individual pills.
+ */
+function enginesForRow(
+  row: ProcessEscalationManagerRow,
+): Array<{ id: FunctionId; count: number }> {
+  const out: Array<{ id: FunctionId; count: number }> = [];
+  for (const id of FUNCTION_IDS) {
+    const c = row.countsByEngine[id] ?? 0;
+    if (c > 0) out.push({ id, count: c });
+  }
+  return out;
+}
 
-function NextActionChip({ row, now }: { row: ProcessEscalationManagerRow; now: number }) {
-  const action = suggestNextAction(row, now);
-  return (
-    <span className={`inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium ${NEXT_ACTION_TONE[action.tone]}`}>
-      {action.label}
-    </span>
-  );
+function shortenEngine(full: string): string {
+  if (full === 'Master Data') return 'Master';
+  const first = full.split(/\s+/)[0];
+  return first ?? full;
 }

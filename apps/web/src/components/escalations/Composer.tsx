@@ -390,14 +390,14 @@ export function Composer({
   return (
     <div className="space-y-4">
       {readOnly ? (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 shadow-soft dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
           Being edited by {statusQ.data?.lockedBy ?? 'another user'} until {statusQ.data?.lockedUntil ? new Date(statusQ.data.lockedUntil).toLocaleString() : '—'}
         </div>
       ) : null}
       {dirtyWarn ? (
-        <div className="flex items-center justify-between rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs dark:border-amber-800 dark:bg-amber-950">
+        <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs shadow-soft dark:border-amber-800 dark:bg-amber-950">
           <span>You edited the body. Changing template will replace content.</span>
-          <button type="button" className="text-brand underline" onClick={() => setDirtyWarn(false)}>
+          <button type="button" className="text-brand underline transition-colors" onClick={() => setDirtyWarn(false)}>
             Dismiss
           </button>
         </div>
@@ -405,7 +405,7 @@ export function Composer({
 
       <div>
         <div className="text-xs font-medium text-gray-500">To</div>
-        <div className="mt-1 rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
+        <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-sm dark:border-gray-800 dark:bg-gray-900">
           {row.managerName} &lt;{managerEmail ?? '—'}&gt;
         </div>
       </div>
@@ -414,10 +414,10 @@ export function Composer({
         <div className="text-xs font-medium text-gray-500">CC</div>
         <div className="mt-1 flex flex-wrap gap-1">
           {cc.map((c) => (
-            <span key={c} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800">
+            <span key={c} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs ring-1 ring-inset ring-black/[0.03] dark:bg-gray-800 dark:ring-white/[0.05]">
               {c}
               {!readOnly ? (
-                <button type="button" className="text-gray-500 hover:text-red-600" onClick={() => void removeCc(c)} aria-label={`Remove ${c}`}>
+                <button type="button" className="text-gray-500 transition-colors hover:text-red-600" onClick={() => void removeCc(c)} aria-label={`Remove ${c}`}>
                   ×
                 </button>
               ) : null}
@@ -430,7 +430,7 @@ export function Composer({
               value={ccInput}
               onChange={(e) => setCcInput(e.target.value)}
               placeholder="email@company.com"
-              className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-900"
+              className="min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
             />
             <Button type="button" variant="secondary" onClick={addCc}>
               Add
@@ -446,7 +446,7 @@ export function Composer({
             disabled={readOnly}
             value={templateId ?? ''}
             onChange={(e) => onTemplateChange(e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+            className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
           >
             {(templatesQ.data ?? []).map((t) => (
               <option key={t.id} value={t.id}>
@@ -462,7 +462,7 @@ export function Composer({
             disabled={readOnly}
             value={deadlineAt}
             onChange={(e) => setDeadlineAt(e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+            className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
           />
         </div>
       </div>
@@ -492,7 +492,7 @@ export function Composer({
               disabled={readOnly}
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+              className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
             />
           </div>
           <div>
@@ -502,7 +502,7 @@ export function Composer({
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={10}
-              className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 font-mono text-sm dark:border-gray-600 dark:bg-gray-900"
+              className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 font-mono text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
             />
           </div>
         </>
@@ -530,7 +530,7 @@ export function Composer({
           onChange={(e) => setAuthorNote(e.target.value)}
           rows={2}
           placeholder="Why are you sending this now? e.g. 'tried calling twice, no answer'"
-          className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900"
+          className="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
         />
       </div>
 

@@ -1,6 +1,6 @@
-import { FileText, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { FileText, PanelLeftOpen } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useSidebarCollapsed } from '../../hooks/useSidebarCollapsed';
+import { SidebarCollapsedProvider, useSidebarCollapsed } from '../../hooks/useSidebarCollapsed';
 import type { AuditProcess } from '../../lib/domain/types';
 import { useAppStore } from '../../store/useAppStore';
 import { GlobalShortcutOverlay } from '../shared/GlobalShortcutOverlay';
@@ -22,10 +22,10 @@ export function AppShell({
 }) {
   const isAuditRunning = useAppStore((state) => state.isAuditRunning);
   const progressText = useAppStore((state) => state.auditProgressText);
-  const [collapsed, , toggle] = useSidebarCollapsed();
+  const cancelAudit = useAppStore((state) => state.cancelAudit);
   const documentCount = process ? process.files.length || process.serverFilesCount || 0 : 0;
   return (
-    <div className="flex h-full flex-col bg-slate-50 text-gray-950 dark:bg-gray-950 dark:text-white">
+    <div className="flex h-full flex-col bg-surface-app text-gray-950 dark:bg-gray-950 dark:text-white">
       <a
         href="#main-content"
         className="sr-only z-50 rounded-md bg-brand px-4 py-2 text-sm font-medium text-white focus:not-sr-only focus:absolute focus:left-3 focus:top-3"
@@ -34,45 +34,29 @@ export function AppShell({
       </a>
       <TopBar process={process} accessory={topBarAccessory} />
       {isAuditRunning ? (
-        <div className="border-b border-gray-200 bg-white px-5 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
-          <div className="mb-1">{progressText}</div>
-          <ProgressBar value={0} indeterminate />
-        </div>
+        <>
+          <div className="flex items-center gap-3 border-b border-rule bg-surface-app px-4 py-2 text-xs text-ink-2 dark:border-gray-800 dark:bg-gray-950/80 sm:px-5">
+            <span className="font-semibold text-ink dark:text-gray-200">Running audit</span>
+            <span className="truncate text-ink-3">{progressText}</span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={cancelAudit}
+              className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-ink-2 hover:bg-white hover:text-ink dark:hover:bg-gray-800"
+            >
+              Cancel
+            </button>
+          </div>
+          <div className="border-b border-rule bg-surface-app px-4 pb-2 dark:border-gray-800 sm:px-5">
+            <ProgressBar value={0} indeterminate />
+          </div>
+        </>
       ) : null}
       <div className="flex min-h-0 flex-1">
-        {sidebar ? (
-          collapsed ? (
-            <aside className="hidden h-full w-12 shrink-0 flex-col items-center gap-3 border-r border-gray-200 bg-white py-3 md:flex dark:border-gray-800 dark:bg-gray-950">
-              <button
-                type="button"
-                onClick={toggle}
-                aria-label="Expand documents sidebar"
-                title="Expand documents sidebar"
-                className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-              >
-                <PanelLeftOpen size={18} />
-              </button>
-              <div className="flex flex-col items-center gap-1 text-[10px] text-gray-400">
-                <FileText size={16} />
-                <span aria-label={`${documentCount} documents`}>{documentCount}</span>
-              </div>
-            </aside>
-          ) : (
-            <aside className="hidden h-full w-[260px] shrink-0 flex-col border-r border-gray-200 bg-white md:flex dark:border-gray-800 dark:bg-gray-950">
-              <div className="flex items-center justify-end border-b border-gray-100 px-2 py-1 dark:border-gray-800">
-                <button
-                  type="button"
-                  onClick={toggle}
-                  aria-label="Collapse documents sidebar"
-                  title="Collapse documents sidebar"
-                  className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-                >
-                  <PanelLeftClose size={16} />
-                </button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto">{sidebar}</div>
-            </aside>
-          )
+                {sidebar ? (
+          <SidebarCollapsedProvider>
+            <WorkspaceDocumentsSidebar documentCount={documentCount}>{sidebar}</WorkspaceDocumentsSidebar>
+          </SidebarCollapsedProvider>
         ) : null}
         <main
           id="main-content"
@@ -84,5 +68,43 @@ export function AppShell({
       </div>
       <GlobalShortcutOverlay />
     </div>
+  );
+}
+
+function WorkspaceDocumentsSidebar({
+  documentCount,
+  children,
+}: {
+  documentCount: number;
+  children: ReactNode;
+}) {
+  const [collapsed, , toggle] = useSidebarCollapsed();
+
+  if (collapsed) {
+    return (
+      <aside className="hidden h-full w-12 shrink-0 flex-col items-center gap-3 border-r border-rule border-t-2 border-t-brand bg-white py-3 md:flex dark:border-gray-800 dark:bg-gray-950">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label="Expand documents sidebar"
+          title="Expand documents sidebar"
+          className="rounded-md p-1.5 text-ink-3 hover:bg-surface-app hover:text-ink dark:hover:bg-gray-800"
+        >
+          <PanelLeftOpen size={18} />
+        </button>
+        <div className="flex flex-col items-center gap-1 text-[10px] text-ink-3">
+          <FileText size={16} aria-hidden />
+          <span aria-label={`${documentCount} documents`}>{documentCount}</span>
+        </div>
+      </aside>
+    );
+  }
+
+  return (
+    <aside className="hidden h-full w-[240px] shrink-0 flex-col border-r border-rule border-t-2 border-t-brand bg-white md:flex dark:border-gray-800 dark:bg-gray-950">
+      {/* Children own their own scroll: FilesSidebar pins the dropzone footer
+          and scrolls the Documents/Sheets sections internally. */}
+      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+    </aside>
   );
 }

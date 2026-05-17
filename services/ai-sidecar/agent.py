@@ -7,12 +7,41 @@ import os
 import time
 from typing import Any, AsyncGenerator
 
+import ollama
+
 from tools.sql import DuckCache, canonicalize_rows, safe_query
 from tools.charts import validate_chart_spec
 from tools.stats import run_stat  # noqa: F401  (used once real agent wired)
 
-AGENT_MODEL = os.getenv("AI_AGENT_MODEL", "claude-opus-4-7")
-AGENT_MAX_ITER = int(os.getenv("AI_AGENT_MAX_ITER", "3"))
+# HIPAA: analytics runs on internal audit data, so the agent must use a LOCAL
+# Ollama model only — no cloud LLM calls. DeepSeek-R1 is a reasoning model;
+# the distill tag is run locally via Ollama. Its chain-of-thought is stripped
+# before JSON parsing (see _strip_reasoning) and `format="json"` is disabled
+# for R1 in _local_chat so the reasoning phase is not suppressed.
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+AGENT_MODEL = os.getenv("AI_AGENT_MODEL", "deepseek-r1:8b")
+
+# Optional cloud provider for the analytics agent. OFF by default — the
+# default posture stays local-only (Ollama). Enabled only when
+# AI_ANALYTICS_PROVIDER=gemini AND GEMINI_API_KEY is set. The agent loop and
+# its JSON-extraction path are provider-agnostic; only the single model call
+# in _local_chat is swapped. Pseudonymization upstream (API side) is
+# unaffected and still applied. NOTE: enabling this sends (pseudonymized)
+# analytics rows to Google's hosted API — a deployment/compliance decision
+# owned by the operator, not this code.
+ANALYTICS_PROVIDER = os.getenv("AI_ANALYTICS_PROVIDER", "ollama").strip().lower()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("AI_GEMINI_MODEL", "gemini-2.0-flash").strip()
+_USE_GEMINI = ANALYTICS_PROVIDER == "gemini" and bool(GEMINI_API_KEY)
+_gemini_client = None  # lazy-initialised on first use
+_IS_REASONING_AGENT = "deepseek-r1" in AGENT_MODEL.lower() or AGENT_MODEL.lower().startswith("r1")
+# Reasoning models do their multi-step thinking *inside* one call, so they
+# need fewer tool round-trips; each extra iteration is another slow R1 pass
+# on CPU. Cap R1 at 2 by default (override via AI_AGENT_MAX_ITER), keep the
+# established 3 for fast structured models.
+AGENT_MAX_ITER = int(os.getenv("AI_AGENT_MAX_ITER", "2" if _IS_REASONING_AGENT else "3"))
+
+_ollama_client = ollama.Client(host=OLLAMA_URL)
 
 _duck_cache = DuckCache()
 
@@ -174,8 +203,33 @@ For severity breakdown → type="pie" with name="severity",value="cnt".
 """
 
 
+def _strip_reasoning(s: str) -> str:
+    """Remove DeepSeek-R1 style chain-of-thought before the JSON answer.
+
+    R1 emits a `<think> … </think>` block (sometimes unclosed if truncated)
+    that can itself contain `{...}` while it reasons about the schema. Left
+    in, the agent loop's "first {...} block" extractor would lock onto a
+    brace inside the reasoning instead of the real tool/answer object. Strip
+    the think span first; if the closing tag is missing, drop everything up
+    to and including the last `</think>` we can find, else from the opening
+    tag onward (the JSON, if any, follows the reasoning for R1).
+    """
+    import re
+
+    s = re.sub(r"<think>.*?</think>", "", s, flags=re.DOTALL | re.IGNORECASE)
+    # Truncated / unclosed think block: keep only what follows the last tag.
+    low = s.lower()
+    if "<think>" in low:
+        close = low.rfind("</think>")
+        if close != -1:
+            s = s[close + len("</think>") :]
+        else:
+            s = s[: low.find("<think>")]
+    return s.strip()
+
+
 def _strip_codefence(s: str) -> str:
-    s = s.strip()
+    s = _strip_reasoning(s)
     if s.startswith("```"):
         s = s.split("```", 2)[1]
         if s.startswith("json"):
@@ -184,31 +238,13 @@ def _strip_codefence(s: str) -> str:
     return s.strip()
 
 
-async def _claude_chat(messages: list[dict[str, str]], model: str) -> dict[str, Any]:
-    """Single Anthropic Claude API call returning parsed JSON content."""
-    import anthropic
+def _extract_json_obj(cleaned: str, raw: str) -> dict[str, Any]:
+    """Pull the first balanced {...} object out of model text → parsed dict.
 
-    system_prompt = ""
-    conv_messages = []
-    for msg in messages:
-        if msg["role"] == "system":
-            system_prompt = msg["content"]
-        else:
-            conv_messages.append({"role": msg["role"], "content": msg["content"]})
-
-    client = anthropic.AsyncAnthropic()
-
-    response = await client.messages.create(
-        model=model,
-        max_tokens=1024,
-        # Cache the stable system prompt to reduce cost on multi-turn retries
-        system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-        messages=conv_messages,
-    )
-
-    content = response.content[0].text if response.content else "{}"
-    cleaned = _strip_codefence(content)
-    # Extract first {...} block in case the model added prose.
+    Shared by the Ollama and Gemini paths so JSON recovery behaves
+    identically regardless of provider. Falls back to a plain `final`
+    answer if nothing parses.
+    """
     depth = 0
     start = -1
     for i, ch in enumerate(cleaned):
@@ -224,7 +260,92 @@ async def _claude_chat(messages: list[dict[str, str]], model: str) -> dict[str, 
     try:
         return json.loads(cleaned)
     except Exception:
-        return {"final": content[:600], "chart_spec": None}
+        return {"final": raw[:600], "chart_spec": None}
+
+
+def _gemini_call(messages: list[dict[str, str]]) -> str:
+    """Single Gemini call → raw text (parsed by _extract_json_obj upstream).
+
+    Opt-in cloud path. The package is imported lazily so the local-only
+    default never requires google-genai to be installed. System messages
+    become the system instruction; the rest are concatenated as the user
+    turn (the agent loop already serialises tool results into messages).
+    """
+    global _gemini_client
+    from google import genai  # lazy: only when AI_ANALYTICS_PROVIDER=gemini
+    from google.genai import types
+
+    if _gemini_client is None:
+        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+
+    system_txt = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+    convo = "\n\n".join(
+        f"{m['role'].upper()}: {m['content']}"
+        for m in messages
+        if m["role"] != "system"
+    )
+    cfg = types.GenerateContentConfig(
+        temperature=0.1,
+        response_mime_type="application/json",
+        **({"system_instruction": system_txt} if system_txt else {}),
+    )
+    resp = _gemini_client.models.generate_content(
+        model=GEMINI_MODEL, contents=convo, config=cfg
+    )
+    return resp.text or "{}"
+
+
+async def _local_chat(messages: list[dict[str, str]], model: str) -> dict[str, Any]:
+    """Single LOCAL Ollama call returning parsed JSON content (HIPAA: no cloud).
+
+    Ollama's chat API takes the system/user messages directly. For most models
+    we request JSON mode so the agent-loop contract (a single {...} object) is
+    honoured. DeepSeek-R1 is a reasoning model: forcing `format="json"`
+    suppresses its <think> phase and sharply degrades answer quality, so for
+    R1 we let it reason freely and recover the JSON afterwards via
+    `_strip_reasoning` + the first-{...}-block extractor below.
+    """
+    import asyncio
+
+    # Cloud provider branch (opt-in via env; see module config). Returns the
+    # raw text; the shared _strip_codefence + first-{...} extractor below
+    # parses it exactly like a local model's output, so the agent loop is
+    # unchanged and this is fully reversible by unsetting the env flag.
+    if _USE_GEMINI:
+        content = await asyncio.to_thread(_gemini_call, messages)
+        cleaned = _strip_codefence(content or "{}")
+        return _extract_json_obj(cleaned, content)
+
+    is_reasoning = "deepseek-r1" in model.lower() or model.lower().startswith("r1")
+
+    def _call() -> str:
+        options: dict[str, Any] = {"temperature": 0.1}
+        if is_reasoning:
+            # R1 emits a long <think> chain before the JSON answer. Give it
+            # context headroom, but BOUND total output with num_predict so a
+            # runaway reasoning loop can't blow the request budget on CPU
+            # (the prior unbounded behaviour is what "model timed out").
+            options["num_ctx"] = 16384
+            options["num_predict"] = int(os.getenv("AI_AGENT_NUM_PREDICT", "2048"))
+        else:
+            options["num_ctx"] = 8192
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+            # keep_alive: keep the model resident between questions so users
+            # don't pay the cold-load on every ask (local CPU inference).
+            "keep_alive": "30m",
+            "options": options,
+        }
+        if not is_reasoning:
+            kwargs["format"] = "json"
+        resp = _ollama_client.chat(**kwargs)
+        return resp["message"]["content"]
+
+    # ollama.Client is sync; keep the async agent loop responsive.
+    content = await asyncio.to_thread(_call)
+    cleaned = _strip_codefence(content or "{}")
+    return _extract_json_obj(cleaned, content)
 
 
 async def _real_agent_loop(
@@ -233,7 +354,7 @@ async def _real_agent_loop(
     process_code: str,
     dataset_version: str,
 ) -> AsyncGenerator[dict[str, Any], None]:
-    """Claude JSON-mode agent loop. Yields ChatEvents."""
+    """Local-Ollama JSON-mode agent loop. Yields ChatEvents."""
     if not rows:
         yield {
             "type": "final",
@@ -308,7 +429,7 @@ async def _real_agent_loop(
     for iteration in range(1, AGENT_MAX_ITER + 1):
         yield {"type": "thinking", "text": f"iteration {iteration} (model={AGENT_MODEL})"}
         try:
-            result = await _claude_chat(messages, AGENT_MODEL)
+            result = await _local_chat(messages, AGENT_MODEL)
         except Exception as e:
             yield {"type": "error", "code": "LLM_FAIL", "message": str(e)}
             return

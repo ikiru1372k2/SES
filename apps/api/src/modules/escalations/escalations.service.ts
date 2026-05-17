@@ -129,10 +129,15 @@ export class EscalationsService {
 
     const directories = await this.prisma.managerDirectory.findMany({
       where: { tenantId: process.tenantId, active: true },
-      select: { normalizedKey: true, email: true },
+      select: { normalizedKey: true, email: true, teamsUsername: true },
     });
     const directoryByKey = new Map(
       directories.map((d) => [d.normalizedKey.trim().toLowerCase(), d.email.trim().toLowerCase()]),
+    );
+    const directoryTeamsByKey = new Map(
+      directories
+        .filter((d) => d.teamsUsername && d.teamsUsername.trim())
+        .map((d) => [d.normalizedKey.trim().toLowerCase(), d.teamsUsername!.trim()]),
     );
 
     const lockById = new Map(
@@ -152,6 +157,10 @@ export class EscalationsService {
       const nk = normalizeObservedManagerLabel(row.managerName).toLowerCase();
       const directoryEmail =
         directoryByKey.get(row.managerKey.trim().toLowerCase()) ?? directoryByKey.get(nk) ?? null;
+      const directoryTeamsUsername =
+        directoryTeamsByKey.get(row.managerKey.trim().toLowerCase()) ??
+        directoryTeamsByKey.get(nk) ??
+        null;
       const extra = row.trackingId ? lockById.get(row.trackingId) : undefined;
       // The aggregator runs before directory enrichment, so its isUnmapped
       // is provisional. Recompute here using the effective email (tracking
@@ -162,6 +171,7 @@ export class EscalationsService {
       return {
         ...row,
         directoryEmail,
+        directoryTeamsUsername,
         isUnmapped,
         escalationLevel: extra?.escalationLevel ?? 0,
         draftLockExpiresAt: extra?.draftLockExpiresAt ?? null,

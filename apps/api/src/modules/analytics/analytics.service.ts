@@ -254,6 +254,122 @@ export class AnalyticsService {
     };
   }
 
+  /**
+   * GET /analytics/default-charts — deterministic seed charts for the
+   * pinned workbench. NO LLM: reuses the summary/managers/timeseries
+   * engine so the workbench is populated instantly from live uploaded
+   * audit data, across ALL functions. Recomputed each load (virtual
+   * defaults — not stored rows), so they never go stale or get deleted.
+   */
+  async defaultCharts(processCode: string, user: SessionUser, functionId?: FunctionId) {
+    const [summary, managers, series] = await Promise.all([
+      this.summary(processCode, user, functionId),
+      this.managers(processCode, user, functionId),
+      this.timeseries(processCode, user, functionId),
+    ]);
+
+    // Severity breakdown: aggregate High/Medium/Low across the same
+    // latest-completed runs the other endpoints use.
+    const process = await this.processAccess.findAccessibleProcessOrThrow(user, processCode, 'viewer');
+    const targets = functionId
+      ? FUNCTION_REGISTRY.filter((f) => f.id === functionId)
+      : FUNCTION_REGISTRY;
+    const sev = { High: 0, Medium: 0, Low: 0 } as Record<string, number>;
+    for (const fn of targets) {
+      const run = await this.prisma.auditRun.findFirst({
+        where: {
+          processId: process.id,
+          file: { functionId: fn.id },
+          OR: [{ status: 'completed' }, { completedAt: { not: null } }],
+        },
+        orderBy: [{ completedAt: { sort: 'desc', nulls: 'last' } }, { startedAt: 'desc' }],
+        select: { issues: { select: { severity: true } } },
+      });
+      if (!run) continue;
+      for (const i of run.issues) {
+        const k = i.severity === 'High' || i.severity === 'Medium' ? i.severity : 'Low';
+        sev[k] = (sev[k] ?? 0) + 1;
+      }
+    }
+
+    const executed_at = new Date().toISOString();
+    const dataset_version = `latest:${summary.processCode}:${functionId ?? 'process'}`;
+    const src = (rowCount: number) => ({ executed_at, row_count: rowCount, dataset_version });
+
+    // 1) Issues by function (bar) — across all functions present.
+    const byFunction = summary.perFunction
+      .filter((p) => p.present)
+      .map((p) => ({ function: p.label, issues: p.flaggedRows }));
+
+    // 2) Top managers by issue count (bar) — top 10 for readability.
+    const topManagers = managers
+      .slice(0, 10)
+      .map((m) => ({ manager: m.manager, issues: m.count }));
+
+    // 3) Severity breakdown (pie).
+    const severity = Object.entries(sev)
+      .filter(([, v]) => v > 0)
+      .map(([name, value]) => ({ name, value }));
+
+    // 4) Flagged-rows trend over saved versions (line).
+    const trend = series.map((v) => ({
+      version: v.displayCode || `v${v.versionNumber}`,
+      flagged: v.flaggedRows,
+    }));
+
+    const charts = [
+      {
+        id: 'default-issues-by-function',
+        title: 'Issues by function',
+        question: 'How many issues per function across the whole process?',
+        spec: {
+          type: 'bar',
+          data: byFunction,
+          x: 'function',
+          y: 'issues',
+          source: src(byFunction.length),
+        },
+      },
+      {
+        id: 'default-top-managers',
+        title: 'Top managers by issue count',
+        question: 'Which managers have the most flagged issues?',
+        spec: {
+          type: 'bar',
+          data: topManagers,
+          x: 'manager',
+          y: 'issues',
+          source: src(topManagers.length),
+        },
+      },
+      {
+        id: 'default-severity',
+        title: 'Severity breakdown',
+        question: 'How do issues split across High / Medium / Low?',
+        spec: {
+          type: 'pie',
+          data: severity,
+          name: 'name',
+          value: 'value',
+          source: src(severity.length),
+        },
+      },
+      {
+        id: 'default-trend',
+        title: 'Flagged rows over versions',
+        question: 'How has the flagged-row count trended across saved versions?',
+        spec: {
+          type: 'line',
+          data: trend,
+          x: 'version',
+          y: 'flagged',
+          source: src(trend.length),
+        },
+      },
+    ];
+    return { charts };
+  }
+
   /** Build the row payload sent to the sidecar. */
   private async buildRows(
     processCode: string,
@@ -408,9 +524,16 @@ export class AnalyticsService {
             question: body.question,
             // F9: never ship raw email / manager names to the sidecar.
             rows: pseudonymizeRowsForSidecar(rows),
-            use_stub: body.useStub ?? true,
+            // Default to the real DeepSeek agent; only stub when a caller
+            // explicitly opts in (was `?? true`, which silently returned
+            // canned answers whenever the flag was omitted).
+            use_stub: body.useStub ?? false,
           },
-          { responseType: 'stream', timeout: 120_000 },
+          // Local-only (HIPAA) inference: the sidecar's multi-iteration agent
+          // loop on a CPU 7B model can stream for several minutes. A 120s cap
+          // aborted slow-but-valid answers ("model timed out"). Match the
+          // browser-side ceiling so the SSE stream runs to its `final` event.
+          { responseType: 'stream', timeout: 600_000 },
         ),
       );
       const stream = upstream.data as NodeJS.ReadableStream;

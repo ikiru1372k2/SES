@@ -14,6 +14,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@ses/domain": "file:../../packages/domain",
     "@tanstack/react-query": "^5.90.2",
     "idb-keyval": "^6.2.2",

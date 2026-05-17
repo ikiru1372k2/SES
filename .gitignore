@@ -44,3 +44,9 @@ services/ai-sidecar/__pycache__/
 services/ai-sidecar/venv
 services/ai-sidecar/ai-service.pid
 services/ai-sidecar/ai-service.log
+
+# Scratch artifacts — UI review screenshots & tooling caches (not source)
+*.jpeg
+analytics-rework.png
+.playwright-mcp/
+.claude/ui-ux_claude_design_recommeneation/

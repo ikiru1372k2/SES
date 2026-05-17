@@ -21,26 +21,33 @@ export function FindingsTab({ processId, row }: { processId: string; row: Proces
         const list = row.findingsByEngine[engine] ?? [];
         const isOpen = open[engine] ?? true;
         return (
-          <div key={engine} className="rounded-lg border border-gray-200 dark:border-gray-700">
+          <div key={engine} className="overflow-hidden rounded-xl border border-gray-200 shadow-soft dark:border-gray-800">
             <button
               type="button"
-              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-900"
+              className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium tracking-tight transition-colors hover:bg-gray-50 dark:hover:bg-gray-900"
               onClick={() => setOpen((s) => ({ ...s, [engine]: !isOpen }))}
             >
               <span>{getFunctionLabel(engine)}</span>
-              <span className="text-xs text-gray-500">{list.length}</span>
+              <span className="chip chip-plain">{list.length}</span>
             </button>
             {isOpen ? (
               <ul className="border-t border-gray-100 px-3 py-2 text-sm dark:border-gray-800">
-                {list.map((f) => (
-                  <li key={f.issueKey} className="flex flex-wrap items-center justify-between gap-2 py-1">
+                {list.map((f, i) => (
+                  // issueKey can repeat within an engine's findings (the same
+                  // issue is unioned across the manager's rows), so a bare
+                  // issueKey key collided — suffix with index + projectNo to
+                  // guarantee uniqueness and stop React reconciliation breaking.
+                  <li
+                    key={`${f.issueKey}::${f.projectNo ?? ''}::${i}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-md px-1 py-1.5 transition-colors hover:bg-gray-50/70 dark:hover:bg-gray-900/40"
+                  >
                     <span className="text-gray-700 dark:text-gray-200">
                       {f.projectNo ?? f.issueKey}
                       {f.projectName ? ` — ${f.projectName}` : ''}
                     </span>
                     <Link
                       to={`${workspacePath(processId, engine)}?tab=results&issue=${encodeURIComponent(f.issueKey)}`}
-                      className="shrink-0 text-xs text-brand hover:underline"
+                      className="shrink-0 text-xs text-brand transition-colors hover:underline"
                     >
                       Open evidence
                     </Link>

@@ -4,7 +4,7 @@ import { Badge } from '../shared/Badge';
 
 export function EscalationSummaryBar({ summary }: { summary: ProcessEscalationsSummary }) {
   return (
-    <div className="mb-4 grid gap-4 rounded-xl border border-rule bg-white p-4 text-sm shadow-soft dark:border-gray-700 dark:bg-gray-900 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="mb-4 grid gap-4 rounded-xl border border-rule bg-white p-4 text-sm shadow-soft dark:border-gray-800 dark:bg-gray-900 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <div className="eyebrow">Open findings</div>
         <div className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-ink dark:text-white">

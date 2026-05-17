@@ -240,7 +240,7 @@ export function EscalationPanel({
   const slaText = sla ? sla.toLocaleString() : '—';
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-black/30" role="presentation" onMouseDown={(e) => {
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/30 backdrop-blur-sm" role="presentation" onMouseDown={(e) => {
       if (e.target === e.currentTarget) onClose();
     }}
     >
@@ -249,7 +249,7 @@ export function EscalationPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby="escalation-panel-title"
-        className="relative flex h-full w-full flex-col bg-white shadow-modal dark:bg-gray-950"
+        className="relative flex h-full w-full flex-col bg-white shadow-soft-lg dark:bg-gray-950"
         style={{ width: `${width}px`, maxWidth: '100%' }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -267,31 +267,31 @@ export function EscalationPanel({
           className="absolute left-0 top-0 z-10 flex h-full w-1.5 -translate-x-1/2 cursor-col-resize items-center justify-center bg-transparent outline-none transition-colors hover:bg-brand/60 focus-visible:bg-brand"
           title="Drag to resize · Double-click to maximize"
         />
-        <div className="flex items-start justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-800">
-          <div>
-            <h2 id="escalation-panel-title" className="text-lg font-semibold text-gray-900 dark:text-white">
+        <div className="flex items-start justify-between gap-3 border-b border-rule bg-white/80 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-gray-800 dark:bg-gray-950/80 dark:supports-[backdrop-filter]:bg-gray-950/60">
+          <div className="min-w-0">
+            <h2 id="escalation-panel-title" className="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">
               {row.managerName}
             </h2>
-            <div className="text-sm text-gray-500">{managerEmail ?? '—'}</div>
-            <div className="mt-1 flex flex-wrap gap-2 text-xs">
-              <span className="rounded bg-gray-100 px-2 py-0.5 dark:bg-gray-800">{row.stage ?? '—'}</span>
+            <div className="truncate font-mono text-[11px] text-ink-3">{managerEmail ?? '—'}</div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+              <span className="chip chip-plain">{row.stage ?? '—'}</span>
               <span className="text-gray-500">SLA: {slaText}</span>
               {awaitingVerification ? (
-                <span className="rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                <span className="chip chip-amber">
                   Awaiting auditor verification
                 </span>
               ) : null}
               {row.verifiedAt ? (
-                <span className="rounded bg-green-100 px-2 py-0.5 font-medium text-green-900 dark:bg-green-900/40 dark:text-green-100">
+                <span className="chip chip-green">
                   Verified {row.verifiedByName ? `by ${row.verifiedByName}` : ''}
                 </span>
               ) : null}
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
-              className="rounded p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="rounded-md p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
               onClick={toggleMaximize}
               aria-label={isMaximized ? 'Restore panel width' : 'Maximize panel'}
               aria-pressed={isMaximized}
@@ -301,7 +301,7 @@ export function EscalationPanel({
             </button>
             <button
               type="button"
-              className="rounded p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="rounded-md p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-gray-100"
               onClick={onClose}
               aria-label="Close panel"
             >
@@ -309,7 +309,7 @@ export function EscalationPanel({
             </button>
           </div>
         </div>
-        <div className="flex border-b border-gray-200 text-sm dark:border-gray-800">
+        <div className="flex gap-1 border-b border-rule px-2 text-sm dark:border-gray-800">
           {(
             [
               ['findings', 'Findings'],
@@ -322,8 +322,10 @@ export function EscalationPanel({
               key={id}
               type="button"
               onClick={() => setTab(id)}
-              className={`flex-1 px-2 py-2 font-medium ${
-                tab === id ? 'border-b-2 border-brand text-brand' : 'text-gray-500'
+              className={`-mb-px flex-1 rounded-t-md border-b-2 px-2 py-2.5 font-medium transition-colors ease-soft ${
+                tab === id
+                  ? 'border-brand font-semibold text-brand'
+                  : 'border-transparent text-gray-500 hover:bg-gray-50/70 hover:text-gray-900 dark:hover:bg-gray-900/40 dark:hover:text-gray-200'
               }`}
             >
               {label}
@@ -341,7 +343,7 @@ export function EscalationPanel({
           ) : null}
         </div>
         {trackingRef && (canMarkResponded || canMarkResolved || canVerify) ? (
-          <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 dark:border-gray-800">
+          <div className="flex items-center justify-between gap-3 border-t border-rule bg-white/80 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-gray-800 dark:bg-gray-950/80 dark:supports-[backdrop-filter]:bg-gray-950/60">
             <span className="text-xs text-gray-500">
               {canMarkResolved
                 ? 'Use Resolve when the manager has responded and the finding can be closed. Auditor verification is the final close-out step.'
@@ -363,7 +365,7 @@ export function EscalationPanel({
                     })
                   }
                   disabled={transitionMut.isPending}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-800 shadow-soft transition-all ease-soft hover:border-brand hover:text-brand hover:shadow-soft-md active:scale-[0.98] disabled:opacity-60 disabled:shadow-none dark:border-gray-700 dark:text-gray-100 dark:hover:bg-gray-800"
                 >
                   <MessageCircleReply size={14} /> Manager responded
                 </button>
@@ -379,7 +381,7 @@ export function EscalationPanel({
                     })
                   }
                   disabled={transitionMut.isPending}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white shadow-soft transition-all ease-soft hover:bg-emerald-700 hover:shadow-soft-md active:scale-[0.98] disabled:opacity-60 disabled:shadow-none"
                 >
                   <CheckCircle2 size={14} /> Mark resolved
                 </button>
@@ -389,7 +391,7 @@ export function EscalationPanel({
                   type="button"
                   onClick={() => verifyMut.mutate()}
                   disabled={verifyMut.isPending}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white shadow-soft transition-all ease-soft hover:bg-emerald-800 hover:shadow-soft-md active:scale-[0.98] disabled:opacity-60 disabled:shadow-none"
                 >
                   <BadgeCheck size={14} /> Verified — Resolve
                 </button>

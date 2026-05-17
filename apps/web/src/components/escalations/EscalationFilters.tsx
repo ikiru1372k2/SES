@@ -11,6 +11,33 @@ const SLA_OPTIONS: { value: SlaFilter; label: string }[] = [
   { value: 'ok', label: 'OK' },
 ];
 
+/**
+ * Sentinel "stage" for the auditor-verified state. `verifiedAt` is a flag, not
+ * a domain stage, so it can't be a real ESCALATION_STAGES value — the parent
+ * detects this key and filters on `stage === RESOLVED && verifiedAt` instead.
+ */
+export const VERIFIED_STAGE_KEY = '__VERIFIED__';
+
+/**
+ * Fixed escalation ladder shown in the Stage filter, in lifecycle order, with
+ * clean labels. Always rendered (not derived from current data) so the filter
+ * is predictable. Raw values are the canonical ESCALATION_STAGES enum — the
+ * backend state machine is unchanged. "Resolved" and "Verified" are distinct:
+ * Resolved = stage RESOLVED awaiting verification; Verified = verifiedAt set.
+ */
+const STAGE_LADDER: { value: string; label: string }[] = [
+  { value: 'NEW', label: 'New' },
+  { value: 'DRAFTED', label: 'Draft prepared' },
+  { value: 'SENT', label: 'Sent' },
+  { value: 'AWAITING_RESPONSE', label: 'Awaiting reply' },
+  { value: 'RESPONDED', label: 'Responded' },
+  { value: 'NO_RESPONSE', label: 'No response' },
+  { value: 'ESCALATED_L1', label: 'Escalated · L1' },
+  { value: 'ESCALATED_L2', label: 'Escalated · L2' },
+  { value: 'RESOLVED', label: 'Resolved · awaiting verification' },
+  { value: VERIFIED_STAGE_KEY, label: 'Verified' },
+];
+
 function CheckRow({
   checked,
   label,
@@ -50,7 +77,6 @@ function FilterGroup({ label, children }: { label: string; children: React.React
 }
 
 export function EscalationFilters({
-  stages,
   selectedStages,
   onToggleStage,
   selectedEngines,
@@ -60,7 +86,6 @@ export function EscalationFilters({
   assignedToMe,
   onAssignedToMe,
 }: {
-  stages: string[];
   selectedStages: Set<string>;
   onToggleStage: (stage: string) => void;
   selectedEngines: Set<FunctionId>;
@@ -71,7 +96,10 @@ export function EscalationFilters({
   onAssignedToMe: (v: boolean) => void;
 }) {
   return (
-    <aside className="w-full shrink-0 space-y-5 rounded-xl border border-rule bg-white p-4 shadow-soft md:w-56 dark:border-gray-800 dark:bg-gray-900">
+    <aside className="flex max-h-[max(560px,calc(100vh-340px))] w-full shrink-0 flex-col overflow-hidden rounded-xl border border-rule bg-white p-4 shadow-soft md:h-full md:max-h-none md:w-56 dark:border-gray-800 dark:bg-gray-900">
+      {/* Inner scroll: on md+ the parent caps height, so the filter list
+          must scroll within this card instead of spilling out below it. */}
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto md:-mr-1 md:pr-1">
       <FilterGroup label="Engine">
         {FUNCTION_REGISTRY.map((fn) => (
           <CheckRow
@@ -94,18 +122,16 @@ export function EscalationFilters({
         ))}
       </FilterGroup>
 
-      {stages.length > 0 ? (
-        <FilterGroup label="Stage">
-          {stages.map((s) => (
-            <CheckRow
-              key={s}
-              checked={selectedStages.has(s)}
-              label={s}
-              onToggle={() => onToggleStage(s)}
-            />
-          ))}
-        </FilterGroup>
-      ) : null}
+      <FilterGroup label="Stage">
+        {STAGE_LADDER.map((s) => (
+          <CheckRow
+            key={s.value}
+            checked={selectedStages.has(s.value)}
+            label={s.label}
+            onToggle={() => onToggleStage(s.value)}
+          />
+        ))}
+      </FilterGroup>
 
       <FilterGroup label="Assignment">
         <CheckRow
@@ -114,6 +140,7 @@ export function EscalationFilters({
           onToggle={() => onAssignedToMe(!assignedToMe)}
         />
       </FilterGroup>
+      </div>
     </aside>
   );
 }

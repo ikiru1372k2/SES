@@ -154,13 +154,14 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
       </div>
       {loading ? <div className="text-sm text-gray-500">Loading…</div> : null}
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-gray-50 dark:bg-gray-900">
             <tr>
               <th scope="col" className="p-2 w-8" />
               <th scope="col" className="p-2">Code</th>
               <th scope="col" className="p-2">Name</th>
               <th scope="col" className="p-2">Email</th>
+              <th scope="col" className="p-2">Teams username</th>
               <th scope="col" className="p-2">Active</th>
               <th scope="col" className="p-2 w-12">Actions</th>
             </tr>
@@ -176,6 +177,16 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
                   {row.firstName} {row.lastName}
                 </td>
                 <td className="p-2 truncate max-w-64" title={row.email}>{row.email}</td>
+                <td
+                  className="p-2 truncate max-w-56 text-gray-600 dark:text-gray-300"
+                  title={row.teamsUsername ?? ''}
+                >
+                  {row.teamsUsername ? (
+                    row.teamsUsername
+                  ) : (
+                    <span className="text-xs italic text-gray-400">—</span>
+                  )}
+                </td>
                 <td className="p-2">
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs font-medium ${

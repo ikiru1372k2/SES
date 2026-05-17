@@ -45,6 +45,7 @@ export type DirectoryEntry = {
   firstName: string;
   lastName: string;
   email: string;
+  teamsUsername: string | null;
   normalizedKey: string;
   aliases: string[];
   active: boolean;
@@ -128,7 +129,7 @@ export async function directoryMergeImpact(sourceId: string, targetId: string) {
 
 export async function directoryPatch(
   id: string,
-  body: Partial<{ firstName: string; lastName: string; email: string; active: boolean; applyEmailChange: boolean }>,
+  body: Partial<{ firstName: string; lastName: string; email: string; teamsUsername: string; active: boolean; applyEmailChange: boolean }>,
 ) {
   return json<DirectoryEntry | { requiresConfirmation: true; trackingRowsToRepoint: number; entry: DirectoryEntry }>(
     `/${encodeURIComponent(id)}`,
@@ -140,6 +141,7 @@ export type CreateManagerPayload = {
   code: string;
   name: string;
   email: string;
+  teamsUsername?: string;
   active: boolean;
 };
 

@@ -13,14 +13,14 @@ export function ProcessDashboardBanner({
   const n = summary.managersWithOpenCount;
   const m = summary.engineCountWithOpen;
   return (
-    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-soft dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
       <p>
-        <span className="font-semibold">{n}</span> manager{n === 1 ? '' : 's'} have open findings across{' '}
-        <span className="font-semibold">{m}</span> engine{m === 1 ? '' : 's'}.
+        <span className="font-semibold tabular-nums">{n}</span> manager{n === 1 ? '' : 's'} have open findings across{' '}
+        <span className="font-semibold tabular-nums">{m}</span> engine{m === 1 ? '' : 's'}.
       </p>
       <Link
         to={escalationCenterPath(processId)}
-        className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
+        className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white shadow-soft transition-all ease-soft hover:bg-amber-700 hover:shadow-soft-md active:scale-[0.98]"
       >
         Open Escalation Center →
       </Link>

@@ -14,13 +14,13 @@ export function RequestFunctionAuditTile({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       onKeyDown={onKeyDown}
-      className="flex min-h-[132px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white p-5 text-sm text-gray-500 transition hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand dark:border-gray-700 dark:bg-gray-800"
+      className="flex min-h-[170px] flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-rule bg-white p-[18px] text-ink-3 transition-all ease-soft hover:border-brand hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand dark:border-gray-700 dark:bg-gray-900"
     >
-      <Plus size={22} />
-      <span className="font-medium">Request New Function Audit Analysis</span>
-      <span className="max-w-[22ch] text-center text-xs">
-        Propose a new audit surface. A helpdesk ticket is opened for review.
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-dashed border-rule-2 text-ink-3 dark:border-gray-700">
+        <Plus size={18} strokeWidth={1.75} />
       </span>
+      <span className="text-[13px] font-semibold text-ink-2 dark:text-gray-200">Request a new function audit</span>
+      <span className="text-[11.5px] text-ink-3">Admin will be notified</span>
     </button>
   );
 }

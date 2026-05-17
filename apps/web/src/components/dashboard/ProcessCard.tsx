@@ -1,9 +1,8 @@
-import { Edit2, MoreHorizontal, Share2, Trash2, X } from 'lucide-react';
+import { ChevronRight, Edit2, GitCompare, MoreHorizontal, Share2, Trash2, X } from 'lucide-react';
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
-import { daysUntilDue, scheduleBucket } from '../../lib/domain/scheduleHelpers';
-import { severityBarClass } from '../../lib/domain/severity';
+import { daysUntilDue } from '../../lib/domain/scheduleHelpers';
 import { displayName } from '../../lib/storage/storage';
 import type { AuditProcess } from '../../lib/domain/types';
 import { selectHasUnsavedAudit, selectLatestAuditResult } from '../../store/selectors';
@@ -23,6 +22,32 @@ function severityCounts(process: AuditProcess) {
   };
 }
 
+function dueChip(process: AuditProcess): { label: string; className: string } {
+  if (!process.nextAuditDue) {
+    return {
+      label: 'completed',
+      className: 'border-rule bg-surface-app text-ink-3 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400',
+    };
+  }
+  const days = daysUntilDue(process.nextAuditDue);
+  if (days < 0) {
+    return {
+      label: `overdue ${Math.abs(days)}d`,
+      className: 'border-danger-200 bg-danger-50 text-danger-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200',
+    };
+  }
+  if (days === 0) {
+    return {
+      label: 'due today',
+      className: 'border-warning-200 bg-warning-50 text-warning-800 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-200',
+    };
+  }
+  return {
+    label: `in ${days} day${days === 1 ? '' : 's'}`,
+    className: 'border-success-200 bg-success-50 text-success-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200',
+  };
+}
+
 export function ProcessCard({ process }: { process: AuditProcess }) {
   const deleteProcess = useAppStore((state) => state.deleteProcess);
   const updateProcess = useAppStore((state) => state.updateProcess);
@@ -30,16 +55,29 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const accessGate = useEffectiveAccess(process.serverBacked ? process.displayCode ?? process.id : null);
   const canManageMembers = process.serverBacked ? accessGate.isOwner : false;
   const latest = selectLatestAuditResult(process);
   const counts = severityCounts(process);
-  const total = Math.max(1, counts.High + counts.Medium + counts.Low);
-  const overdue = scheduleBucket(process) === 'overdue';
+  const openCount = latest?.issues.length ?? 0;
+  const highCount = counts.High;
   const unsaved = selectHasUnsavedAudit(process);
-  const dueLabel = process.nextAuditDue ? auditDueLabel(process.nextAuditDue) : null;
+  const chip = dueChip(process);
+  const processCode = process.displayCode ?? process.id;
   const fileCount = process.files.length || (process.serverFilesCount ?? 0);
-  const versionCount = process.versions.length || (process.serverVersionsCount ?? 0);
+  const description =
+    process.description?.trim() ||
+    `${fileCount} file${fileCount === 1 ? '' : 's'} · ${latest ? 'audited' : 'not audited yet'}`;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDoc(ev: MouseEvent) {
+      if (!menuRef.current?.contains(ev.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [menuOpen]);
 
   async function runDelete() {
     try {
@@ -57,8 +95,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
       (t) => (
         <div className="flex flex-col gap-2">
           <div className="text-sm">
-            Delete <strong>{displayName(process.name)}</strong>? Removes files, versions, and tracking
-            from {scope}.
+            Delete <strong>{displayName(process.name)}</strong>? Removes files, versions, and tracking from {scope}.
           </div>
           <div className="flex justify-end gap-2">
             <button
@@ -86,9 +123,9 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   }
 
   return (
-    <article className="relative rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-brand/40 hover:shadow-md dark:border-gray-700 dark:bg-gray-900">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+    <article className="group relative flex flex-col overflow-hidden rounded-xl border border-rule bg-white p-4 shadow-soft ring-1 ring-black/[0.02] transition-all duration-200 hover:border-brand/30 hover:shadow-soft-md dark:border-gray-800 dark:bg-gray-900 dark:ring-white/[0.03] sm:p-[18px]">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 pr-1">
           <InlineEditName
             value={process.name}
             onSave={async (next) => {
@@ -103,68 +140,96 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
               }
             }}
           />
-          <p className="mt-1 line-clamp-2 text-sm text-gray-500 dark:text-gray-400">{process.description || 'Workbook audit process'}</p>
-          {process.nextAuditDue ? <p className={overdue ? 'mt-2 text-xs font-semibold text-red-700' : 'mt-2 text-xs text-gray-500'}>{dueLabel}</p> : null}
+          <p className="mt-1 font-mono text-[11px] text-ink-3">{processCode}</p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-start gap-1">
+          <span
+            className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${chip.className}`}
+          >
+            {chip.label}
+          </span>
           {process.serverBacked ? (
             <button
               type="button"
               title="Share process"
               aria-label="Share process"
               onClick={() => setMembersOpen(true)}
-              className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="rounded-lg p-1 text-ink-3 opacity-0 transition-opacity hover:bg-gray-100 group-hover:opacity-100 focus:opacity-100 dark:hover:bg-gray-800"
             >
-              <Share2 size={18} />
+              <Share2 size={16} />
             </button>
           ) : null}
-          <div className="relative">
-          <button
-            type="button"
-            title="Process actions"
-            aria-label="Process actions"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-            className="rounded-lg p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-          >
-            <MoreHorizontal size={18} />
-          </button>
-          {menuOpen ? (
-            <div className="absolute right-0 top-8 z-10 w-44 rounded-lg border border-gray-200 bg-white p-1 text-sm shadow-lg dark:border-gray-700 dark:bg-gray-900">
-              <button onClick={() => { setEditOpen(true); setMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800">
-                <Edit2 size={14} />
-                Edit process
-              </button>
-              <button onClick={confirmDelete} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-brand hover:bg-red-50 dark:hover:bg-red-950/30">
-                <Trash2 size={14} />
-                Delete process
-              </button>
-            </div>
-          ) : null}
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              title="Process actions"
+              aria-label="Process actions"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+              className="rounded-lg p-1 text-ink-3 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            {menuOpen ? (
+              <div className="absolute right-0 top-8 z-20 w-44 rounded-xl border border-rule bg-white p-1 text-sm shadow-soft-lg dark:border-gray-800 dark:bg-gray-900">
+                <Link
+                  to="/compare"
+                  onClick={() => setMenuOpen(false)}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-ink-2 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  <GitCompare size={14} />
+                  Compare
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditOpen(true);
+                    setMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                  <Edit2 size={14} />
+                  Edit process
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDelete}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-brand hover:bg-red-50 dark:hover:bg-red-950/30"
+                >
+                  <Trash2 size={14} />
+                  Delete process
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
-      <div className="mt-5 text-sm text-gray-600 dark:text-gray-300">{fileCount} files - {versionCount} versions</div>
-      <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
-        <span>Last audit: {latest ? new Date(latest.runAt).toLocaleDateString() : 'Not audited'}</span>
-        {unsaved ? <span title="This audit run has not been saved as a version" className="inline-flex items-center gap-1 text-xs font-medium text-amber-700"><span className="h-2 w-2 rounded-full bg-amber-500" /> Unsaved</span> : null}
+
+      <p className="mt-2.5 line-clamp-2 text-[12.5px] leading-snug text-ink-2 dark:text-gray-400">{description}</p>
+      {unsaved ? (
+        <p className="mt-1.5 text-[11px] font-medium text-warning-700 dark:text-amber-300">Unsaved audit run</p>
+      ) : null}
+
+      <div className="mt-auto flex items-center justify-between gap-3 rounded-lg border border-rule-2 bg-surface-app/60 px-2.5 py-2 dark:border-gray-800 dark:bg-gray-800/40">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-ink-2 dark:text-gray-400">
+          <span>
+            <span className="font-semibold tabular-nums text-ink dark:text-gray-200">{openCount}</span> open
+          </span>
+          {highCount > 0 ? (
+            <span>
+              <span className="font-semibold tabular-nums text-danger-700 dark:text-red-300">{highCount}</span> high
+            </span>
+          ) : null}
+        </div>
+        <Link
+          to={processDashboardPath(process.id)}
+          className="inline-flex shrink-0 items-center gap-0.5 text-xs font-semibold text-brand hover:text-brand-hover"
+        >
+          Open <ChevronRight size={13} aria-hidden />
+        </Link>
       </div>
-      <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
-        <div><div className="text-gray-500">Files</div><div className="text-xl font-bold">{fileCount}</div></div>
-        <div><div className="text-gray-500">Versions</div><div className="text-xl font-bold">{versionCount}</div></div>
-        <div><div className="text-gray-500">Issues</div><div className="text-xl font-bold">{latest?.issues.length ?? 0}</div></div>
-      </div>
-      <div className="mt-4 flex h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-700">
-        <div className={severityBarClass.High} style={{ width: `${(counts.High / total) * 100}%` }} />
-        <div className={severityBarClass.Medium} style={{ width: `${(counts.Medium / total) * 100}%` }} />
-        <div className={severityBarClass.Low} style={{ width: `${(counts.Low / total) * 100}%` }} />
-      </div>
-      <div className="mt-2 text-xs text-gray-500">High {counts.High} - Med {counts.Medium} - Low {counts.Low}</div>
-      <div className="mt-5 flex gap-2">
-        <Link to={processDashboardPath(process.id)} className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">Open Process</Link>
-        <Link to={`/compare`} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:border-brand hover:text-brand dark:border-gray-700 dark:hover:bg-gray-800">Compare</Link>
-      </div>
+
       {editOpen ? <EditProcessModal process={process} onClose={() => setEditOpen(false)} /> : null}
       {membersOpen && process.serverBacked ? (
         <MembersPanel
@@ -200,28 +265,50 @@ function EditProcessModal({ process, onClose }: { process: AuditProcess; onClose
     }
   }
 
-  function close() {
-    // Silent close — re-entering the modal is cheap and the confirm dialog
-    // was surprising on ESC. Users with real changes should click Save Changes.
-    onClose();
-  }
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <form onSubmit={submit} className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5 shadow-soft-lg dark:border-gray-800 dark:bg-gray-900"
+      >
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Edit Process</h2>
-          <button type="button" onClick={close} aria-label="Close edit process dialog" className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"><X size={18} /></button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close edit process dialog"
+            className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            <X size={18} />
+          </button>
         </div>
         <label className="mt-5 block text-sm font-medium">Process Name</label>
-        <input value={name} onChange={(event) => setName(event.target.value)} required className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          required
+          className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-800"
+        />
         <label className="mt-4 block text-sm font-medium">Description</label>
-        <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="mt-2 h-24 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
+        <textarea
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          className="mt-2 h-24 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-800"
+        />
         <label className="mt-4 block text-sm font-medium">Next audit due</label>
-        <input type="date" value={nextAuditDue} onChange={(event) => setNextAuditDue(event.target.value)} className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
+        <input
+          type="date"
+          value={nextAuditDue}
+          onChange={(event) => setNextAuditDue(event.target.value)}
+          className="mt-2 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-800"
+        />
         <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={close}>Cancel</Button>
-          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</Button>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Saving…' : 'Save Changes'}
+          </Button>
         </div>
       </form>
     </div>
@@ -263,9 +350,6 @@ function InlineEditName({
       await onSave(next);
       setEditing(false);
     } catch {
-      // The parent already showed an error toast; keep editing so the user
-      // can adjust, but fall back to the original value to avoid a divergent
-      // UI/store state.
       setDraft(value);
     } finally {
       setSaving(false);
@@ -293,7 +377,7 @@ function InlineEditName({
         onBlur={() => void commit()}
         disabled={saving}
         aria-label="Process name"
-        className="w-full rounded-md border border-brand/40 bg-white px-2 py-0.5 font-semibold text-gray-950 outline-none focus:border-brand focus:ring-1 focus:ring-brand dark:bg-gray-900 dark:text-white"
+        className="w-full rounded-md border border-brand/40 bg-white px-2 py-0.5 text-sm font-bold text-ink outline-none focus:border-brand focus:ring-1 focus:ring-brand dark:bg-gray-900 dark:text-white"
       />
     );
   }
@@ -303,22 +387,14 @@ function InlineEditName({
       type="button"
       onClick={() => setEditing(true)}
       title="Click to rename"
-      className="group -mx-1 -my-0.5 inline-flex max-w-full items-center gap-1 truncate rounded-md px-1 py-0.5 text-left font-semibold text-gray-950 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-800"
+      className="group/name -mx-1 inline-flex max-w-full items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-sm font-bold leading-snug text-ink hover:bg-gray-100 dark:text-white dark:hover:bg-gray-800 sm:text-[14.5px]"
     >
       <span className="truncate">{displayName(value)}</span>
       <Edit2
         size={12}
-        className="shrink-0 text-gray-400 opacity-0 transition-opacity group-hover:opacity-100"
+        className="shrink-0 text-gray-400 opacity-0 transition-opacity group-hover/name:opacity-100"
         aria-hidden="true"
       />
     </button>
   );
-}
-
-function auditDueLabel(nextAuditDue: string): string {
-  const days = daysUntilDue(nextAuditDue);
-  const date = new Date(`${nextAuditDue}T00:00:00`).toLocaleDateString();
-  if (days < 0) return `Next audit due: ${date} (${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue)`;
-  if (days === 0) return `Next audit due: ${date} (due today)`;
-  return `Next audit due: ${date} (in ${days} day${days === 1 ? '' : 's'})`;
 }

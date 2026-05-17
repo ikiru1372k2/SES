@@ -45,7 +45,22 @@ export function Breadcrumb({
           <CrumbLink crumb={tailLast} onNavigate={onNavigate} />
         </>
       ) : null}
-      {middle.length > 0 ? (
+      {/* Short trail (≤3 crumbs → at most 1 middle): render it inline so
+          'Dashboard › Process › Function' is fully visible. Only collapse
+          into the '…' menu for longer trails (≥4 crumbs). */}
+      {middle.length > 0 && middle.length <= 1 ? (
+        <>
+          {middle.map((c) => (
+            <span key={`${c.label}-${c.to ?? ''}`} className="flex items-center gap-1">
+              <Separator />
+              <CrumbLink crumb={c} onNavigate={onNavigate} />
+            </span>
+          ))}
+          <Separator />
+          <CrumbLink crumb={tailLast} onNavigate={onNavigate} />
+        </>
+      ) : null}
+      {middle.length > 1 ? (
         <>
           <Separator />
           <div ref={expandRef} className="relative">

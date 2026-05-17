@@ -125,6 +125,8 @@ type AppStore = {
   loadTemplate: (processId: string, name: string) => NotificationComposeTemplate | null;
   deleteTemplate: (processId: string, name: string) => void;
   setWorkspaceTab: (tab: WorkspaceTab) => void;
+  /** Drop the per-session audit result (e.g. on process/function switch). */
+  clearCurrentAuditResult: () => void;
   resetWorkspaceAfterUserSwitch: () => void;
   reconcileProcessesFromServer: (remote: AuditProcess[]) => void;
   evictProcess: (id: string) => void;
@@ -531,7 +533,10 @@ export const useAppStore = create<AppStore>()(
         }
         void deleteWorkbookRawData(fileId);
         set((state) => ({
-          currentAuditResult: state.currentAuditResult?.fileId === fileId ? null : state.currentAuditResult,
+          // Any file delete invalidates the session audit result: the active
+          // file may shift, so clear it unconditionally rather than only when
+          // the deleted file's id matched (which left a stale result behind).
+          currentAuditResult: null,
           processes: patchProcess(state.processes, processId, (process) => {
             const files = process.files.filter((file) => file.id !== fileId);
             const updated: AuditProcess = {
@@ -1230,6 +1235,7 @@ export const useAppStore = create<AppStore>()(
       },
 
       setWorkspaceTab: (tab) => set({ activeWorkspaceTab: tab }),
+      clearCurrentAuditResult: () => set({ currentAuditResult: null }),
 
       resetWorkspaceAfterUserSwitch: () => {
         cancelDebouncedWorkspaceSave();

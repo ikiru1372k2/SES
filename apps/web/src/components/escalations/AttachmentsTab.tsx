@@ -196,7 +196,7 @@ function AttachmentCard({
   });
 
   return (
-    <li className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+    <li className="rounded-xl border border-gray-200 p-3 shadow-soft transition-shadow hover:shadow-soft-md dark:border-gray-800">
       <div className="flex items-start gap-2">
         <div className="pt-0.5">{iconFor(att.mimeType)}</div>
         <div className="min-w-0 flex-1">
@@ -218,7 +218,7 @@ function AttachmentCard({
               <input
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-900"
+                className="min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
                 placeholder="What is this file?"
               />
               <Button
@@ -254,7 +254,7 @@ function AttachmentCard({
         <div className="flex flex-col items-end gap-1">
           <a
             href={attachmentDownloadUrl(trackingIdOrCode, att.id)}
-            className="inline-flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300"
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-xs text-gray-600 shadow-soft transition-all ease-soft hover:border-brand hover:text-brand hover:shadow-soft-md active:scale-[0.98] dark:border-gray-700 dark:text-gray-300"
             title="Download"
           >
             <Download size={12} /> Download
@@ -262,7 +262,7 @@ function AttachmentCard({
           {canDelete ? (
             <button
               type="button"
-              className="inline-flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:hover:bg-red-950"
+              className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1 text-xs text-red-600 shadow-soft transition-all ease-soft hover:bg-red-50 hover:shadow-soft-md active:scale-[0.98] disabled:opacity-60 disabled:shadow-none dark:border-red-900 dark:hover:bg-red-950"
               disabled={delMut.isPending}
               onClick={async () => {
                 const ok = await confirm({
