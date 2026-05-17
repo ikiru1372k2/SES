@@ -11,6 +11,10 @@ interface Props {
   stats: ApiTileStats | undefined;
   openEscalationCount: number;
   onOpen: () => void;
+  /** Compact label for this function's head saved version (e.g. "v1"), or
+   *  null when the function has no saved version. Derived client-side from
+   *  the store via selectFunctionVersions (per-function isolation). */
+  headVersionLabel: string | null;
   aiPilotLink?: ReactNode;
   escalationFooter?: ReactNode;
 }
@@ -27,7 +31,7 @@ const openValueClass: Record<ReturnType<typeof openTone>, string> = {
   bad: 'text-danger-700 dark:text-red-300',
 };
 
-function TileStat({ label, value, tone = 'plain' }: { label: string; value: number; tone?: 'plain' | 'warn' | 'bad' }) {
+function TileStat({ label, value, tone = 'plain' }: { label: string; value: number | string; tone?: 'plain' | 'warn' | 'bad' }) {
   return (
     <div className="rounded-md border border-rule-2 bg-surface-app px-2.5 py-1.5 dark:border-gray-800 dark:bg-gray-950/50">
       <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-ink-3">{label}</div>
@@ -42,11 +46,11 @@ export function FunctionTile({
   stats,
   openEscalationCount,
   onOpen,
+  headVersionLabel,
   aiPilotLink,
   escalationFooter,
 }: Props) {
   const fileCount = stats?.fileCount ?? 0;
-  const draftCount = stats?.hasDraft ? 1 : 0;
   const openToneKey = openTone(openEscalationCount);
   const description = FUNCTION_DESCRIPTIONS[functionId];
 
@@ -81,7 +85,7 @@ export function FunctionTile({
 
       <div className="mt-3.5 grid grid-cols-3 gap-2">
         <TileStat label="Files" value={fileCount} />
-        <TileStat label="Drafts" value={draftCount} />
+        <TileStat label="Version" value={headVersionLabel ?? '—'} />
         <TileStat label="Open" value={openEscalationCount} tone={openToneKey} />
       </div>
 

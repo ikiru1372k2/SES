@@ -14,7 +14,9 @@ import {
   buildFindingsByEngineMarkdown,
   buildFindingsByEngineTextTable,
   createId,
+  escalationLevelLabel,
   getFunctionLabel,
+  managerKey,
   substitute,
   type EngineFindingLine,
   type EscalationStage as DomainEscalationStage,
@@ -27,6 +29,7 @@ import { ActivityLogService } from '../../../common/activity-log.service';
 import { RealtimeGateway } from '../../../realtime/realtime.gateway';
 import { DEFAULT_TENANT_ID } from '../../../common/default-tenant';
 import { EscalationsService } from '../../escalations/escalations.service';
+import { EscalationLevelService } from '../../escalations/escalation-level.service';
 import { OutboundDeliveryService, type EscalationSendChannel } from '../../outbound/outbound-delivery.service';
 import {
   DEFAULT_BODY_TEMPLATE,
@@ -62,6 +65,7 @@ export class TrackingComposeService {
     private readonly activity: ActivityLogService,
     private readonly realtime: RealtimeGateway,
     private readonly escalations: EscalationsService,
+    private readonly escalationLevels: EscalationLevelService,
     private readonly outbound: OutboundDeliveryService,
   ) {}
 
@@ -380,7 +384,7 @@ export class TrackingComposeService {
       managerEmail: string | null;
       escalationLevel: number;
       stage: string;
-      process: { id: string; displayCode: string; name: string; slaInitialHours: number };
+      process: { id: string; displayCode: string; name: string; slaInitialHours: number; tenantId: string };
       composeDraft: unknown;
     },
     user: SessionUser,
@@ -409,6 +413,21 @@ export class TrackingComposeService {
 
     const esc = await this.escalations.getForProcess(entry.process.displayCode, user);
     const row = esc.rows.find((r) => r.trackingId === entry.id);
+    // Level-wise escalation: how many distinct uploads have flagged this
+    // manager for each issue. Derived from immutable audit-run history.
+    const levelResolver = await this.escalationLevels.resolverForProcess(
+      entry.processId,
+      entry.process.tenantId,
+    );
+    // Identify the manager the same way the level history does: the
+    // effective email (issue/tracking email, else directory), else the
+    // missing-email name bucket. Using row.managerKey directly would drift
+    // for functions whose email is resolved per-run (over-planning,
+    // function-rate, internal-cost-rate) and never match a repeat.
+    const levelManagerKey = managerKey(
+      row?.managerName ?? entry.managerName,
+      row?.resolvedEmail ?? row?.directoryEmail ?? entry.managerEmail ?? null,
+    );
     const managerEmail = row?.resolvedEmail ?? row?.directoryEmail ?? entry.managerEmail ?? null;
     const teamsUsername = row?.directoryTeamsUsername?.trim() || null;
     const lines: EngineFindingLine[] = [];
@@ -481,6 +500,7 @@ export class TrackingComposeService {
             ? (iss!.missingMonths as unknown[]).map((m) => String(m).trim()).filter(Boolean).join(', ')
             : null;
           const projectLink = f.projectNo ? projectLinks.get(f.projectNo) ?? null : null;
+          const occurrenceLevel = levelResolver.levelFor(levelManagerKey, f.issueKey);
           lines.push({
             engineKey: engineId,
             engineLabel: getFunctionLabel(engineId as FunctionId),
@@ -490,6 +510,7 @@ export class TrackingComposeService {
             ruleName,
             notes: iss?.reason ?? '',
             issueKey: f.issueKey,
+            occurrenceLevel,
             detail: {
               ruleCode: iss?.ruleCode ?? '',
               ruleName,
@@ -511,6 +532,12 @@ export class TrackingComposeService {
         }
       }
     }
+    // Headline level for the manager = the highest occurrence level across the
+    // findings rendered in this message (e.g. "L2"). Exposed as a template
+    // slot; the default templates don't reference it so behaviour is unchanged.
+    const maxLevel = lines.reduce((m, l) => Math.max(m, l.occurrenceLevel ?? 1), lines.length ? 1 : 0);
+    const findingsMaxLevel = lines.length ? escalationLevelLabel(maxLevel) : '';
+
     const findingsMd = buildFindingsByEngineMarkdown(lines);
     const findingsTxt = buildFindingsByEngineTextTable(lines);
     const findingsHtml = buildFindingsByEngineHtmlTable(lines);
@@ -536,6 +563,7 @@ export class TrackingComposeService {
       processName: entry.process?.name ?? '',
       findingsByEngine: findingsTxt || findingsMd,
       findingsCount: String(lines.length),
+      findingsMaxLevel,
       slaDeadline,
       dueDate: dueDate || slaDeadline || '',
       auditRunDate,
@@ -548,6 +576,7 @@ export class TrackingComposeService {
       processName: escapeHtml(entry.process?.name ?? ''),
       findingsByEngine: findingsHtml,
       findingsCount: String(lines.length),
+      findingsMaxLevel: escapeHtml(findingsMaxLevel),
       slaDeadline: escapeHtml(slaDeadline),
       dueDate: escapeHtml(dueDate || slaDeadline || ''),
       auditRunDate: escapeHtml(auditRunDate),

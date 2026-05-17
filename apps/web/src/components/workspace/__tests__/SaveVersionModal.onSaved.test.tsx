@@ -70,7 +70,7 @@ describe('SaveVersionModal callback contract (bug #2 — blocker race)', () => {
     const onClose = vi.fn(() => order.push('closed'));
 
     const { container } = render(
-      <SaveVersionModal process={process} onClose={onClose} onSaved={onSaved} />,
+      <SaveVersionModal process={process} functionId="master-data" onClose={onClose} onSaved={onSaved} />,
     );
 
     const form = container.querySelector('form');
@@ -86,7 +86,7 @@ describe('SaveVersionModal callback contract (bug #2 — blocker race)', () => {
     const onSaved = vi.fn();
     const onClose = vi.fn();
 
-    render(<SaveVersionModal process={process} onClose={onClose} onSaved={onSaved} />);
+    render(<SaveVersionModal process={process} functionId="master-data" onClose={onClose} onSaved={onSaved} />);
 
     // The Cancel button is variant="secondary" with text "Cancel".
     fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }));
@@ -97,9 +97,30 @@ describe('SaveVersionModal callback contract (bug #2 — blocker race)', () => {
 
   it('still works when no onSaved prop is supplied (back-compat)', () => {
     const onClose = vi.fn();
-    const { container } = render(<SaveVersionModal process={process} onClose={onClose} />);
+    const { container } = render(<SaveVersionModal process={process} functionId="master-data" onClose={onClose} />);
     const form = container.querySelector('form');
     fireEvent.submit(form!);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('SaveVersionModal — per-function numbering & cross-function guard', () => {
+  it('numbers V1 for a function with no versions even if other functions have versions', () => {
+    // Workspace passes a function-scoped process: function-rate has no
+    // versions here (master-data's v1/v2 are filtered out upstream). The
+    // store mock's currentAuditResult.fileId ('f1') is NOT a function-rate
+    // file, so the modal must ignore it (cross-function guard) and not
+    // surface an identical-content guard from a foreign head.
+    const process = mkProcess(); // files: [], versions: []
+    const onClose = vi.fn();
+    render(
+      <SaveVersionModal process={process} functionId="function-rate" onClose={onClose} />,
+    );
+
+    // Version-id preview matches what the store actually writes:
+    // `${process.id}-${functionId}-v${n}` (not the old `${id}-v${n}`).
+    expect(screen.getByText(/p1-function-rate-v1/)).toBeTruthy();
+    // No foreign-head identical guard → plain submit label.
+    expect(screen.getByRole('button', { name: /^save version$/i })).toBeTruthy();
   });
 });

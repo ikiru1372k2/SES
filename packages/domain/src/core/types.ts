@@ -237,6 +237,8 @@ export interface AuditVersion {
   id: string;
   displayCode?: string | undefined;
   versionId: string;
+  /** Function this version belongs to; versions are numbered per function. */
+  functionId?: string | undefined;
   versionNumber: number;
   versionName: string;
   notes: string;

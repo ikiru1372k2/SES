@@ -1,15 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import { Trash2 } from 'lucide-react';
 import { AddManagerForm } from './AddManagerForm';
 import { DeleteManagerButton } from './DeleteManagerButton';
+import { Button } from '../shared/Button';
 import { useConfirm } from '../shared/ConfirmProvider';
 import {
   directoryArchiveBulk,
   directoryList,
   directoryMerge,
   directoryMergeImpact,
+  directoryPatch,
   type DirectoryEntry,
 } from '../../lib/api/directoryApi';
+
+// Mirrors AddManagerForm's private email check (kept local to avoid an
+// out-of-scope export from that component).
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+type Draft = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  teamsUsername: string;
+  active: boolean;
+};
 
 export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
   const confirm = useConfirm();
@@ -18,6 +33,12 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
   const [filter, setFilter] = useState<'active' | 'archived' | 'all'>('active');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  // Inline row edit — one row at a time (other Edit buttons are disabled
+  // while a row is open, so there is no dirty-prompt / data-loss path).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<{ email?: string; firstName?: string }>({});
 
   const load = useCallback(async (currentFilter: typeof filter, currentSearch: string) => {
     setLoading(true);
@@ -87,6 +108,96 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
     });
   }
 
+  function startEdit(row: DirectoryEntry) {
+    setEditingId(row.id);
+    setDraft({
+      firstName: row.firstName,
+      lastName: row.lastName,
+      email: row.email,
+      teamsUsername: row.teamsUsername ?? '',
+      active: row.active,
+    });
+    setFieldError({});
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft(null);
+    setFieldError({});
+  }
+
+  async function saveEdit(row: DirectoryEntry) {
+    if (!draft || savingId) return;
+
+    const firstName = draft.firstName.trim();
+    const lastName = draft.lastName.trim();
+    const email = draft.email.trim().toLowerCase();
+    const teamsUsername = draft.teamsUsername.trim();
+
+    const nextErrors: { email?: string; firstName?: string } = {};
+    if (!firstName) nextErrors.firstName = 'First name is required.';
+    if (!email || !EMAIL_PATTERN.test(email)) nextErrors.email = 'Email is not valid.';
+    if (nextErrors.firstName || nextErrors.email) {
+      setFieldError(nextErrors);
+      return;
+    }
+    setFieldError({});
+
+    // Only send changed fields (email stored lowercased server-side).
+    const body: Partial<{
+      firstName: string;
+      lastName: string;
+      email: string;
+      teamsUsername: string;
+      active: boolean;
+      applyEmailChange: boolean;
+    }> = {};
+    if (firstName !== row.firstName) body.firstName = firstName;
+    if (lastName !== row.lastName) body.lastName = lastName;
+    if (email !== row.email) body.email = email;
+    if (teamsUsername !== (row.teamsUsername ?? '')) body.teamsUsername = teamsUsername;
+    if (draft.active !== row.active) body.active = draft.active;
+
+    if (Object.keys(body).length === 0) {
+      cancelEdit();
+      return;
+    }
+
+    setSavingId(row.id);
+    try {
+      let result = await directoryPatch(row.id, body);
+      if (result && typeof result === 'object' && 'requiresConfirmation' in result) {
+        const n = result.trackingRowsToRepoint;
+        const proceed = await confirm({
+          title: 'Update email',
+          description: `Changing this email will repoint ${n} tracking row${
+            n === 1 ? '' : 's'
+          } onto the updated manager. Continue?`,
+          confirmLabel: 'Update email',
+        });
+        if (!proceed) {
+          setSavingId(null);
+          return;
+        }
+        result = await directoryPatch(row.id, { ...body, applyEmailChange: true });
+      }
+      const updated = result as DirectoryEntry;
+      toast.success('Manager updated');
+      if (matchesFilters(updated, filter, search)) {
+        setItems((prev) => prev.map((it) => (it.id === updated.id ? updated : it)));
+      } else {
+        removeManager(updated.id);
+        toast.success('Manager updated (no longer visible under current filter).');
+      }
+      cancelEdit();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Update failed');
+      // Keep the row in edit mode so the user can fix and retry.
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   async function archiveSelected() {
     if (!selected.size) return;
     try {
@@ -123,6 +234,9 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
       toast.error(e instanceof Error ? e.message : 'Merge failed');
     }
   }
+
+  const inputClass =
+    'w-full rounded-lg border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-900';
 
   return (
     <div className="space-y-3">
@@ -162,47 +276,148 @@ export function DirectoryTable({ refreshKey }: { refreshKey: number }) {
               <th scope="col" className="p-2">Name</th>
               <th scope="col" className="p-2">Email</th>
               <th scope="col" className="p-2">Teams username</th>
-              <th scope="col" className="p-2">Active</th>
-              <th scope="col" className="p-2 w-12">Actions</th>
+              <th scope="col" className="p-2 w-32">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {items.map((row) => (
-              <tr key={row.id} className="border-t border-gray-100 dark:border-gray-800">
-                <td className="p-2">
-                  <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)} />
-                </td>
-                <td className="p-2 font-mono text-xs">{row.displayCode}</td>
-                <td className="p-2 truncate max-w-56" title={`${row.firstName} ${row.lastName}`.trim()}>
-                  {row.firstName} {row.lastName}
-                </td>
-                <td className="p-2 truncate max-w-64" title={row.email}>{row.email}</td>
-                <td
-                  className="p-2 truncate max-w-56 text-gray-600 dark:text-gray-300"
-                  title={row.teamsUsername ?? ''}
-                >
-                  {row.teamsUsername ? (
-                    row.teamsUsername
+            {items.map((row) => {
+              const isEditing = editingId === row.id;
+              const isSaving = savingId === row.id;
+              const otherRowEditing = editingId !== null && editingId !== row.id;
+              return (
+                <tr key={row.id} className="border-t border-gray-100 dark:border-gray-800">
+                  <td className="p-2">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(row.id)}
+                      disabled={isEditing}
+                      onChange={() => toggle(row.id)}
+                      aria-label={`Select ${row.firstName} ${row.lastName}`.trim()}
+                    />
+                  </td>
+                  <td className="p-2 font-mono text-xs">{row.displayCode}</td>
+                  {isEditing && draft ? (
+                    <>
+                      <td className="p-2 align-top">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex gap-1">
+                            <input
+                              className={inputClass}
+                              aria-label="First name"
+                              value={draft.firstName}
+                              onChange={(e) => setDraft({ ...draft, firstName: e.target.value })}
+                            />
+                            <input
+                              className={inputClass}
+                              aria-label="Last name"
+                              value={draft.lastName}
+                              onChange={(e) => setDraft({ ...draft, lastName: e.target.value })}
+                            />
+                          </div>
+                          {fieldError.firstName ? (
+                            <span className="text-xs text-red-600">{fieldError.firstName}</span>
+                          ) : null}
+                          <label className="flex items-center gap-2 text-xs">
+                            <input
+                              type="checkbox"
+                              aria-label="Active"
+                              checked={draft.active}
+                              onChange={(e) => setDraft({ ...draft, active: e.target.checked })}
+                            />
+                            <span>Active</span>
+                          </label>
+                        </div>
+                      </td>
+                      <td className="p-2 align-top">
+                        <input
+                          className={`${inputClass} ${fieldError.email ? 'border-red-500' : ''}`}
+                          type="email"
+                          aria-label="Email"
+                          aria-describedby={fieldError.email ? `edit-email-error-${row.id}` : undefined}
+                          value={draft.email}
+                          onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+                        />
+                        {fieldError.email ? (
+                          <span
+                            id={`edit-email-error-${row.id}`}
+                            className="mt-1 block text-xs text-red-600"
+                          >
+                            {fieldError.email}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="p-2 align-top">
+                        <input
+                          className={inputClass}
+                          aria-label="Teams username"
+                          placeholder="Teams sign-in / UPN (optional)"
+                          value={draft.teamsUsername}
+                          onChange={(e) => setDraft({ ...draft, teamsUsername: e.target.value })}
+                        />
+                      </td>
+                    </>
                   ) : (
-                    <span className="text-xs italic text-gray-400">—</span>
+                    <>
+                      <td className="p-2 truncate max-w-56" title={`${row.firstName} ${row.lastName}`.trim()}>
+                        {row.firstName} {row.lastName}
+                      </td>
+                      <td className="p-2 truncate max-w-64" title={row.email}>
+                        {row.email}
+                      </td>
+                      <td
+                        className="p-2 truncate max-w-56 text-gray-600 dark:text-gray-300"
+                        title={row.teamsUsername ?? ''}
+                      >
+                        {row.teamsUsername ? (
+                          row.teamsUsername
+                        ) : (
+                          <span className="text-xs italic text-gray-400">—</span>
+                        )}
+                      </td>
+                    </>
                   )}
-                </td>
-                <td className="p-2">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                      row.active
-                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                        : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-                    }`}
-                  >
-                    {row.active ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td className="p-2">
-                  <DeleteManagerButton manager={row} onDeleted={removeManager} />
-                </td>
-              </tr>
-            ))}
+                  <td className="p-2">
+                    {isEditing ? (
+                      <div className="flex items-center gap-1.5">
+                        <Button size="sm" loading={isSaving} onClick={() => void saveEdit(row)}>
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={isSaving}
+                          onClick={cancelEdit}
+                        >
+                          Cancel
+                        </Button>
+                        <button
+                          type="button"
+                          disabled
+                          aria-label="Delete (finish editing first)"
+                          className="rounded p-1 text-gray-400 opacity-40 cursor-not-allowed"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(row)}
+                          disabled={otherRowEditing}
+                          title={otherRowEditing ? 'Finish editing the open row first' : undefined}
+                          aria-label={`Edit manager ${row.firstName} ${row.lastName}`.trim()}
+                          className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-gray-600 dark:hover:bg-gray-800"
+                        >
+                          Edit
+                        </button>
+                        <DeleteManagerButton manager={row} onDeleted={removeManager} />
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

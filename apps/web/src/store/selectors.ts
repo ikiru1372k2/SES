@@ -10,7 +10,14 @@ export function selectIssueCorrection(process: AuditProcess, issue: AuditIssue):
 }
 
 export function selectLatestAuditResult(process: AuditProcess): AuditResult | null {
-  return process.latestAuditResult ?? process.versions[0]?.result ?? null;
+  // `latestAuditResult` is a single process-wide field that may belong to a
+  // different function. Only trust it when it matches a file in this
+  // process's (possibly function-scoped) file list; otherwise fall back to
+  // the head version's result. Callers passing the full process are
+  // unaffected (every file matches).
+  const latest = process.latestAuditResult;
+  if (latest && process.files.some((f) => f.id === latest.fileId)) return latest;
+  return process.versions[0]?.result ?? null;
 }
 
 // Fallback identity hash for pre-#74 audits (no findingsHash). Sort by

@@ -12,6 +12,7 @@ import { ChatCacheService } from '../analytics/chat-cache.service';
 function serializeVersion(version: {
   id: string;
   displayCode: string;
+  functionId: string;
   versionNumber: number;
   versionName: string;
   notes: string;
@@ -77,6 +78,7 @@ function serializeVersion(version: {
     id: version.id,
     displayCode: version.displayCode,
     versionId: version.displayCode,
+    functionId: version.functionId,
     versionNumber: version.versionNumber,
     versionName: version.versionName,
     notes: version.notes,
@@ -137,14 +139,23 @@ export class VersionsService {
               processId: process.id,
               OR: [{ id: body.auditRunIdOrCode }, { displayCode: body.auditRunIdOrCode }],
             },
+            include: { file: { select: { functionId: true } } },
           })
         : await tx.auditRun.findFirst({
             where: { processId: process.id, status: 'completed' },
             orderBy: { completedAt: 'desc' },
+            include: { file: { select: { functionId: true } } },
           });
       if (!auditRun) throw new NotFoundException('No completed audit run available to save');
+      // Version identity is keyed per (process, function). The function is
+      // the one that produced this audit run's workbook; legacy/un-scoped
+      // files fall back to the app's default function.
+      const functionId =
+        (auditRun as { file?: { functionId?: string | null } }).file?.functionId ?? 'master-data';
+      // Per-function counter: only versions of THIS function advance the
+      // number, so saving function A never bumps function B.
       const latest = await tx.savedVersion.aggregate({
-        where: { processId: process.id },
+        where: { processId: process.id, functionId },
         _max: { versionNumber: true },
       });
       const version = await tx.savedVersion.create({
@@ -152,6 +163,7 @@ export class VersionsService {
           id: createId(),
           displayCode: await this.identifiers.nextVersionCode(tx, process.displayCode),
           processId: process.id,
+          functionId,
           auditRunId: auditRun.id,
           versionNumber: (latest._max.versionNumber ?? 0) + 1,
           versionName: body.versionName.trim(),
@@ -190,6 +202,8 @@ export class VersionsService {
     // Event-driven analytics chat-cache eviction. Without this, a user who
     // saves v4 and immediately re-asks "what changed in v4?" could get a
     // cached v3 answer for up to ANALYTICS_CACHE_TTL_SECONDS.
+    // Broad (process-wide) eviction is intentional: over-evicting the
+    // analytics chat cache is safe, under-evicting risks a stale answer.
     this.chatCache.evictMatching({ processCode: process.displayCode, functionId: null });
 
     return version;

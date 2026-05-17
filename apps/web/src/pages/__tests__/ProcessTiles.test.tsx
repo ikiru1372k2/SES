@@ -101,4 +101,61 @@ describe('ProcessTiles', () => {
     const overTile = document.querySelector('[data-function-id="over-planning"]');
     expect(overTile?.textContent).toContain('9');
   });
+
+  it('shows each function head version, isolated per function', () => {
+    const tiles = FUNCTION_REGISTRY.reduce(
+      (acc, fn) => {
+        acc[fn.id] = { fileCount: 0, lastUploadAt: null, hasDraft: false };
+        return acc;
+      },
+      {} as Record<string, { fileCount: number; lastUploadAt: null; hasDraft: boolean }>,
+    );
+    vi.mocked(rq.useQuery).mockReturnValue({
+      data: tiles,
+      isError: false,
+      error: null,
+      isPending: false,
+      isFetching: false,
+    } as never);
+
+    const mkVersion = (functionId: string, n: number): AuditVersion => ({
+      id: `${functionId}-v${n}`,
+      versionId: `${functionId}-v${n}`,
+      functionId,
+      versionNumber: n,
+      versionName: `${functionId} V${n}`,
+      notes: '',
+      createdAt: '2026-04-02T00:00:00.000Z',
+      result: { fileId: 'f', runAt: '', scannedRows: 0, flaggedRows: 0, issues: [], sheets: [] },
+    });
+    // master-data at v2 (newest-first), function-rate has none.
+    const processWithVersions: AuditProcess = {
+      ...mockProcess,
+      versions: [mkVersion('master-data', 2), mkVersion('master-data', 1)],
+    };
+    vi.mocked(useAppStore).mockImplementation((selector) =>
+      selector({
+        processes: [processWithVersions],
+        hydrateProcesses: vi.fn().mockResolvedValue(undefined),
+      } as never),
+    );
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={['/processes/p-tiles']}>
+          <Routes>
+            <Route path="/processes/:processId" element={<ProcessTiles />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const mdTile = document.querySelector('[data-function-id="master-data"]');
+    const frTile = document.querySelector('[data-function-id="function-rate"]');
+    expect(mdTile?.textContent).toContain('v2'); // head = highest versionNumber
+    expect(mdTile?.textContent).not.toContain('v1');
+    expect(frTile?.textContent).toContain('—'); // no version for this function
+    expect(frTile?.textContent).not.toContain('v2'); // isolation: no bleed
+  });
 });

@@ -293,11 +293,14 @@ export const MODELS: Record<string, ModelMeta> = {
     model: 'SavedVersion',
     table: 'SavedVersion',
     columns: [
-      'id', 'displayCode', 'processId', 'auditRunId', 'versionNumber',
+      'id', 'displayCode', 'processId', 'functionId', 'auditRunId', 'versionNumber',
       'versionName', 'notes', 'createdById', 'createdAt',
     ],
     id: ['id'],
-    uniques: { processId_versionNumber: ['processId', 'versionNumber'], displayCode: ['displayCode'] },
+    uniques: {
+      processId_functionId_versionNumber: ['processId', 'functionId', 'versionNumber'],
+      displayCode: ['displayCode'],
+    },
     relations: {
       auditRun: { kind: 'one', target: 'AuditRun', localKey: 'auditRunId' },
       createdBy: { kind: 'one', target: 'User', localKey: 'createdById' },

@@ -8,7 +8,9 @@ import { downloadAuditedWorkbook } from '../../lib/workbook/excelParser';
 import { escalationCenterPath, processDashboardPath } from '../../lib/processRoutes';
 import { displayName } from '../../lib/storage/storage';
 import type { AuditProcess } from '../../lib/domain/types';
+import { DEFAULT_FUNCTION_ID } from '@ses/domain';
 import { selectCorrectionCount, selectHasUnsavedAudit, selectLatestAuditResult } from '../../store/selectors';
+import { selectFunctionVersions } from '../../lib/domain/versionScope';
 import { useAppStore } from '../../store/useAppStore';
 import { anchorResultForFile, formatDiffChips, summarizeDiff } from '../../lib/workbook/versionDiff';
 import { BrandMark } from '../shared/BrandMark';
@@ -46,16 +48,26 @@ export function TopBarLegacy({ process, accessory }: { process?: AuditProcess | 
   }, [saveAsNewRequestCount, process]);
   const activeFile = process?.files.find((file) => file.id === process.activeFileId);
   const selectedSheets = activeFile?.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected).length ?? 0;
-  const hasSavedVersion = (process?.versions.length ?? 0) > 0;
-  const latestResult = currentAuditResult ?? (process ? selectLatestAuditResult(process) : null);
+  // Versioning is independent per function — scope every version surface to
+  // the active file's function so saving one function never bumps another.
+  const functionId = activeFile?.functionId ?? DEFAULT_FUNCTION_ID;
+  const functionFiles = process
+    ? process.files.filter((f) => (f.functionId ?? DEFAULT_FUNCTION_ID) === functionId)
+    : [];
+  const functionVersions = process ? selectFunctionVersions(process, functionId) : [];
+  const scopedProcess = process
+    ? { ...process, files: functionFiles, versions: functionVersions }
+    : process;
+  const hasSavedVersion = functionVersions.length > 0;
+  const latestResult = currentAuditResult ?? (scopedProcess ? selectLatestAuditResult(scopedProcess) : null);
   const correctionCount = process ? selectCorrectionCount(process) : 0;
   const hasUnsavedAudit = process ? selectHasUnsavedAudit(process) : false;
   const canRun = Boolean(process && activeFile && selectedSheets > 0 && !isAuditRunning);
   const canSave = Boolean(process && latestResult && !isAuditRunning);
   const canDownload = Boolean(process && activeFile && latestResult && hasSavedVersion && !isAuditRunning);
-  const headVersion = process?.versions[0];
+  const headVersion = functionVersions[0];
   const headVersionName = headVersion?.versionName ?? '';
-  const nextVersionNumber = (process?.versions.length ?? 0) + 1;
+  const nextVersionNumber = functionVersions.length + 1;
 
   async function onRunAudit() {
     if (!process || !activeFile || !canRun) return;
@@ -344,7 +356,7 @@ export function TopBarLegacy({ process, accessory }: { process?: AuditProcess | 
           ) : null}
         </nav>
       ) : null}
-      {versionModalOpen && process && latestResult ? <SaveVersionModal process={process} onClose={() => setVersionModalOpen(false)} /> : null}
+      {versionModalOpen && scopedProcess && latestResult ? <SaveVersionModal process={scopedProcess} functionId={functionId} onClose={() => setVersionModalOpen(false)} /> : null}
     </header>
   );
 }
