@@ -1,5 +1,5 @@
 import { ChevronRight, Edit2, GitCompare, MoreHorizontal, Share2, Trash2, X } from 'lucide-react';
-import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
@@ -74,13 +74,18 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
     process.description?.trim() ||
     `${fileCount} file${fileCount === 1 ? '' : 's'} · ${latest ? 'audited' : 'not audited yet'}`;
 
-  useLayoutEffect(() => {
-    if (!menuOpen) return;
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) {
-      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+  // Compute the fixed position from the trigger rect at click time (not in an
+  // effect) so the portaled menu lands under the button without a
+  // setState-in-effect cascade.
+  function toggleMenu() {
+    if (menuOpen) {
+      setMenuOpen(false);
+      return;
     }
-  }, [menuOpen]);
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setMenuOpen(true);
+  }
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -190,7 +195,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
               aria-label="Process actions"
               aria-haspopup="menu"
               aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((open) => !open)}
+              onClick={toggleMenu}
               className="rounded-lg p-1 text-ink-3 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               <MoreHorizontal size={18} />
