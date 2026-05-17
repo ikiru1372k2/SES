@@ -18,6 +18,7 @@ import { useCurrentUser } from '../components/auth/authContext';
 import { downloadAuditedWorkbook } from '../lib/workbook/excelParser';
 import type { MappingSourceInput } from '../lib/api/auditsApi';
 import { selectCorrectionCount, selectLatestAuditResult } from '../store/selectors';
+import { selectFunctionVersions } from '../lib/domain/versionScope';
 import { useAppStore } from '../store/useAppStore';
 import { isLegacyTileTrackingTabEnabled } from '../lib/featureFlags';
 import { resolveWorkspaceMetrics } from '../lib/workbook/auditResultFilter';
@@ -90,7 +91,9 @@ export function Workspace() {
 
   const rawManagerNames = useMemo(() => {
     if (!process) return [];
-    const auditResult = result ?? process.versions[0]?.result ?? null;
+    // Scoped to this function's head so the directory-name scan never pulls
+    // another function's saved findings.
+    const auditResult = result ?? selectFunctionVersions(process, functionId)[0]?.result ?? null;
     const names = new Set<string>();
     for (const issue of auditResult?.issues ?? []) {
       const n = issue.projectManager?.trim();
@@ -98,7 +101,7 @@ export function Workspace() {
       if (!isValidEmail(issue.email)) names.add(n);
     }
     return [...names];
-  }, [process, result]);
+  }, [process, result, functionId]);
 
   const directorySuggestionsKey = useMemo(
     () => ['directory-suggestions', [...rawManagerNames].sort()] as const,
@@ -184,12 +187,25 @@ export function Workspace() {
     () => (process ? process.files.filter((file) => (file.functionId ?? DEFAULT_FUNCTION_ID) === functionId) : []),
     [process, functionId],
   );
+  // Versioning is independent per function: only this function's saved
+  // versions drive the head / next number / pills, so saving Master Data
+  // never bumps Function Rate (and vice-versa).
+  const functionVersions = useMemo(
+    () => (process ? selectFunctionVersions(process, functionId) : []),
+    [process, functionId],
+  );
   const activeFile = functionFiles.find((file) => file.id === process?.activeFileId) ?? functionFiles[0];
   const selectedSheets = activeFile?.sheets.filter((sheet) => sheet.status === 'valid' && sheet.isSelected).length ?? 0;
-  const hasSavedVersion = (process?.versions.length ?? 0) > 0;
+  const hasSavedVersion = functionVersions.length > 0;
   // Unfiltered: Run / Save / Download legitimately act on the latest result
-  // regardless of sheet selection or active file.
-  const latestResult = result ?? (process ? selectLatestAuditResult(process) : null);
+  // regardless of sheet selection or active file. Pass a function-scoped
+  // process so the version fallback (and latestAuditResult guard) can't pick
+  // another function's result.
+  const latestResult =
+    result ??
+    (process
+      ? selectLatestAuditResult({ ...process, files: functionFiles, versions: functionVersions })
+      : null);
   // Scoped to the active file (zeros when none) — drives the Issues·N tab
   // count so it can't show a stale count from another file/version.
   const filteredIssueCount = useMemo(
@@ -197,9 +213,9 @@ export function Workspace() {
     [process, activeFile, result],
   );
   const correctionCount = process ? selectCorrectionCount(process) : 0;
-  const headVersion = process?.versions[0];
+  const headVersion = functionVersions[0];
   const headVersionName = headVersion?.versionName ?? '';
-  const nextVersionNumber = (process?.versions.length ?? 0) + 1;
+  const nextVersionNumber = functionVersions.length + 1;
   function isMappingSourceValid(src: MappingSourceInput | undefined): boolean {
     if (!src || src.type === 'none') return true;
     if (src.type === 'master_data_version') return Boolean(src.masterDataVersionId);
@@ -417,7 +433,7 @@ export function Workspace() {
     );
   }
   if (!process) return <Navigate to="/" replace />;
-  const scopedProcess = { ...process, files: functionFiles };
+  const scopedProcess = { ...process, files: functionFiles, versions: functionVersions };
   const draft = fileDrafts[`${process.id}:${functionId}`];
 
   return (
@@ -433,7 +449,7 @@ export function Workspace() {
       <WorkspaceStatusCards
         activeFile={activeFile}
         sessionResult={result}
-        process={process}
+        process={scopedProcess}
         onSaveAsNew={onSaveAsNew}
       />
       {managerDirectoryOn && unmappedCount !== null && unmappedCount > 0 ? (
@@ -446,7 +462,7 @@ export function Workspace() {
       ) : null}
       <WorkspaceShell
         issueCount={filteredIssueCount}
-        versionCount={process.versions.length}
+        versionCount={functionVersions.length}
       >
         {tab === 'preview' ? (
           <TabPanel>
@@ -498,7 +514,8 @@ export function Workspace() {
       ) : null}
       {versionModalOpen && process && latestResult ? (
         <SaveVersionModal
-          process={process}
+          process={scopedProcess}
+          functionId={functionId}
           onClose={() => setVersionModalOpen(false)}
         />
       ) : null}

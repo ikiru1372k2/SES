@@ -10,6 +10,7 @@ import {
 } from '@ses/domain';
 import { processDashboardPath, workspacePath } from '../lib/processRoutes';
 import { useAppStore } from '../store/useAppStore';
+import { selectFunctionVersions } from '../lib/domain/versionScope';
 import { AppShell } from '../components/layout/AppShell';
 import { usePageHeader } from '../components/layout/usePageHeader';
 import { VersionCompareView } from '../components/version-compare/VersionCompareView';
@@ -29,6 +30,22 @@ export function VersionCompare() {
       : undefined,
   );
   const navigate = useNavigate();
+
+  // Versions are independent per function: only compare this function's
+  // versions (scope files too so the per-file grouping/labels stay consistent).
+  const scopedProcess = useMemo(
+    () =>
+      process
+        ? {
+            ...process,
+            files: process.files.filter(
+              (f) => (f.functionId ?? DEFAULT_FUNCTION_ID) === functionId,
+            ),
+            versions: selectFunctionVersions(process, functionId),
+          }
+        : process,
+    [process, functionId],
+  );
 
   const openEvidence = (issue: AuditIssue) => {
     if (!process) return;
@@ -74,7 +91,7 @@ export function VersionCompare() {
             ← Back to Versions tab
           </Link>
         </p>
-        <VersionCompareView process={process} onOpenIssue={openEvidence} showTitle />
+        <VersionCompareView process={scopedProcess ?? process} onOpenIssue={openEvidence} showTitle />
       </div>
     </AppShell>
   );

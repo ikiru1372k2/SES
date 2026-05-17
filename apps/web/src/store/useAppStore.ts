@@ -13,6 +13,7 @@ import { runAuditAsync } from '../lib/audit/auditRunner';
 import { deleteWorkbookRawData, getWorkbookRawData, putWorkbookRawData, renameWorkbookRawDataKey } from '../lib/storage/blobStore';
 import { detectWorkbookSheets, parseWorkbook } from '../lib/workbook/excelParser';
 import { createId } from '../lib/domain/id';
+import { versionFunctionId } from '../lib/domain/versionScope';
 import { createProcessOnApi, deleteProcessOnApi, fetchProcessesFromApi, updateProcessOnApi } from '../lib/api/processesApi';
 import { uploadFileToApi, deleteFileOnApi, listFilesOnApi, type ApiFileSummary } from '../lib/api/filesApi';
 import { listFileVersionsOnApi } from '../lib/api/fileVersionsApi';
@@ -270,21 +271,6 @@ async function mapApiFileToWorkbookFile(file: ApiFileSummary): Promise<WorkbookF
 
 function draftKey(processId: string, functionId: FunctionId): string {
   return `${processId}:${functionId}`;
-}
-
-/**
- * The function a version belongs to. Prefer the explicit functionId (set by
- * the server and by new saves); fall back to the audited file's function so
- * pre-existing/optimistic versions still bucket correctly.
- */
-function versionFunctionId(
-  process: AuditProcess,
-  result: AuditResult,
-  explicit?: string,
-): string {
-  if (explicit) return explicit;
-  const file = process.files.find((f) => f.id === result.fileId);
-  return file?.functionId ?? DEFAULT_FUNCTION_ID;
 }
 
 export const useAppStore = create<AppStore>()(

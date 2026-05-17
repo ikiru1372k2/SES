@@ -9,10 +9,14 @@ import { formatDiffChips, summarizeDiff, suggestVersionName } from '../../lib/wo
 
 export function SaveVersionModal({
   process,
+  functionId,
   onClose,
   onSaved,
 }: {
   process: AuditProcess;
+  /** Active function — versions are numbered per function; also used for the
+   *  saved version-id preview so it matches what the store actually writes. */
+  functionId: string;
   onClose: () => void;
   // Fires only when the user actually saves a new version (not on cancel or
   // overlay dismiss). Lets callers distinguish "save completed, proceed with
@@ -22,7 +26,14 @@ export function SaveVersionModal({
   const saveVersion = useAppStore((state) => state.saveVersion);
   const updateProcess = useAppStore((state) => state.updateProcess);
   const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
-  const latestResult = useAppStore((state) => state.currentAuditResult) ?? process.latestAuditResult ?? null;
+  const sessionResult = useAppStore((state) => state.currentAuditResult);
+  // `process` is the function-scoped process (files restricted to this
+  // function). Only trust the per-session result when it belongs to this
+  // function; otherwise another function's run could anchor the diff/guard.
+  const latestResult =
+    sessionResult && process.files.some((f) => f.id === sessionResult.fileId)
+      ? sessionResult
+      : process.latestAuditResult ?? null;
   const nextVersion = process.versions.length + 1;
   const headVersion = process.versions[0];
   const diff = summarizeDiff(headVersion?.result ?? null, latestResult);
@@ -133,7 +144,7 @@ export function SaveVersionModal({
           className="mt-2 h-24 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
         />
         <div className="mt-5 rounded-lg bg-gray-50 p-3 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-          Version ID will be {process.id}-v{nextVersion}.
+          Version ID will be {process.id}-{functionId}-v{nextVersion}.
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
