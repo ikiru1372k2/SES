@@ -23,6 +23,12 @@ export interface ProcessEscalationManagerRow {
   resolvedEmail: string | null;
   /** Email from `ManagerDirectory` when `normalizedKey` matches this row. */
   directoryEmail: string | null;
+  /**
+   * Teams username/UPN from `ManagerDirectory` when `normalizedKey`
+   * matches this row. Used for the Teams deep link; null when unset
+   * (the Teams handoff then falls back to the manager email).
+   */
+  directoryTeamsUsername: string | null;
   isUnmapped: boolean;
   totalIssues: number;
   countsByEngine: Partial<Record<FunctionId, number>>;

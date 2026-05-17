@@ -25,10 +25,12 @@ export function PasteFromExcel({
       const fnKey = map.firstName;
       const lnKey = map.lastName;
       const emKey = map.email;
+      const tuKey = map.teamsUsername;
       const out: DirectoryRowInput[] = rows.map((r) => ({
         firstName: String(r[fnKey] ?? '').trim(),
         lastName: String(r[lnKey] ?? '').trim(),
         email: String(r[emKey] ?? '').trim(),
+        teamsUsername: tuKey ? String(r[tuKey] ?? '').trim() : '',
       }));
       onParsed(out);
     } catch {

@@ -233,8 +233,9 @@ services:
       SIDECAR_SHARED_SECRET: ${SIDECAR_SHARED_SECRET:?SIDECAR_SHARED_SECRET must be set to a 32+ char random secret in .deploy.env}
       OLLAMA_URL: http://ollama:11434
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
-      # Analytics chat models (router/agent are deliberately small for speed).
-      AI_AGENT_MODEL: ${AI_AGENT_MODEL:-llama3.2:3b}
+      # Analytics chat models. Agent = DeepSeek-R1 distill (reasoning model;
+      # CoT stripped before JSON parse). Router stays small for speed.
+      AI_AGENT_MODEL: ${AI_AGENT_MODEL:-deepseek-r1:8b}
       AI_ROUTER_MODEL: ${AI_ROUTER_MODEL:-llama3.2:3b}
       AI_EMBED_MODEL: ${AI_EMBED_MODEL:-nomic-embed-text}
       # AI Pilot rule generator (larger model — better at producing valid JSON

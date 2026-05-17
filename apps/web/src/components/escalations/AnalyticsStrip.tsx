@@ -1,152 +1,129 @@
 import { useMemo } from 'react';
 import type { ProcessEscalationManagerRow } from '@ses/domain';
-import { AlertTriangle, CheckCircle2, Clock, Flame, Mail, Users } from 'lucide-react';
 
 interface Props {
   rows: ProcessEscalationManagerRow[];
   /** Caller-supplied "now" in ms — lets the parent drive ticking via a state
-   *  update without this component calling the impure `Date.now()` in render. */
+   *  update without this component calling impure `Date.now()` in render. */
   now: number;
 }
 
+function slaBucket(now: number, row: ProcessEscalationManagerRow): 'breached' | 'due_soon' | 'ok' {
+  const isClosed = row.resolved || row.stage === 'RESOLVED' || Boolean(row.verifiedAt);
+  if (isClosed || !row.slaDueAt) return 'ok';
+  const t = new Date(row.slaDueAt).getTime();
+  if (t < now) return 'breached';
+  if (t < now + 48 * 3_600_000) return 'due_soon';
+  return 'ok';
+}
+
 /**
- * Analytics strip at the top of the Escalation Center. Derives all numbers
- * from already-loaded rows so it's free to render and always in sync.
+ * KPI row matching Claude Escalation Center mock (five metric cards).
  */
 export function AnalyticsStrip({ rows, now }: Props) {
-  const analytics = useMemo(() => {
-    const total = rows.length;
-    let openFindings = 0;
-    let resolvedManagers = 0;
+  const metrics = useMemo(() => {
+    let open = 0;
     let breached = 0;
-    let dueSoon = 0;
-    let missingEmail = 0;
-    const topOffender = { name: '', count: 0 };
+    let dueSoon48h = 0;
+    let verified = 0;
+
+    let resolvedRecent = 0;
+    const sevenMs = 7 * 24 * 3_600_000;
+    const recentCutoff = now - sevenMs;
 
     for (const row of rows) {
-      if (row.resolved) {
-        resolvedManagers += 1;
-        continue;
-      }
-      const open = row.totalIssues ?? 0;
-      openFindings += open;
-      if (open > topOffender.count) {
-        topOffender.name = row.managerName ?? 'Unknown';
-        topOffender.count = open;
-      }
-      // Mirror backend's ManagerDirectory fallback so we don't count managers
-      // already resolvable via Directory.
-      if (!row.resolvedEmail && !row.directoryEmail) missingEmail += 1;
-      if (row.slaDueAt) {
-        const t = new Date(row.slaDueAt).getTime();
-        if (t < now) breached += 1;
-        else if (t < now + 48 * 3_600_000) dueSoon += 1;
+      if (row.verifiedAt) verified += 1;
+      // A row is "closed" once it's resolved, sitting at RESOLVED stage, or
+      // verified — not just when the `resolved` boolean is set. Resolving in
+      // stages alone previously left OPEN stuck because only `resolved` was
+      // checked here.
+      const isClosed =
+        row.resolved || row.stage === 'RESOLVED' || Boolean(row.verifiedAt);
+      if (isClosed) {
+        const ts = row.lastContactAt ? new Date(row.lastContactAt).getTime() : null;
+        if (ts !== null && ts >= recentCutoff) resolvedRecent += 1;
+      } else open += 1;
+
+      const b = slaBucket(now, row);
+      if (!isClosed) {
+        if (b === 'breached') breached += 1;
+        else if (b === 'due_soon') dueSoon48h += 1;
       }
     }
 
-    return {
-      total,
-      openFindings,
-      resolvedManagers,
-      breached,
-      dueSoon,
-      missingEmail,
-      topOffender: topOffender.count > 0 ? topOffender : null,
-    };
-  }, [rows, now]);
+    return { open, breached, dueSoon48h, resolvedRecent, verified };
+  }, [now, rows]);
 
-  if (analytics.total === 0) return null;
-
-  const openManagers = analytics.total - analytics.resolvedManagers;
-  const resolvedPercent =
-    analytics.total > 0 ? Math.round((analytics.resolvedManagers / analytics.total) * 100) : 0;
+  if (rows.length === 0) return null;
 
   return (
-    <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-      <Tile
-        label="Managers"
-        value={analytics.total}
-        hint={`${openManagers} open`}
-        tone="gray"
-        Icon={Users}
+    <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+      <MetricTile label="Open" value={metrics.open} />
+      <MetricTile label="Breached SLA" value={metrics.breached} valueTone={metrics.breached > 0 ? 'danger' : 'neutral'} />
+      <MetricTile
+        label="Due soon · 48h"
+        value={metrics.dueSoon48h}
+        valueTone={metrics.dueSoon48h > 0 ? 'warn' : 'neutral'}
       />
-      <Tile
-        label="Resolved"
-        value={analytics.resolvedManagers}
-        hint={analytics.resolvedManagers > 0 ? `${resolvedPercent}% complete` : 'None resolved yet'}
-        tone="emerald"
-        Icon={CheckCircle2}
+      <MetricTile
+        label="Resolved · 7d"
+        value={metrics.resolvedRecent}
+        subtitle="By last activity date"
       />
-      <Tile
-        label="Open findings"
-        value={analytics.openFindings}
-        hint={analytics.topOffender ? `Top: ${analytics.topOffender.name} (${analytics.topOffender.count})` : 'None'}
-        tone="blue"
-        Icon={Flame}
-      />
-      <Tile
-        label="SLA breached"
-        value={analytics.breached}
-        hint={analytics.breached > 0 ? 'Action required now' : 'All within SLA'}
-        tone={analytics.breached > 0 ? 'red' : 'emerald'}
-        Icon={AlertTriangle}
-      />
-      <Tile
-        label="Due in 48h"
-        value={analytics.dueSoon}
-        hint={analytics.dueSoon > 0 ? 'Plan follow-ups' : 'Nothing imminent'}
-        tone={analytics.dueSoon > 0 ? 'amber' : 'gray'}
-        Icon={Clock}
-      />
-      <Tile
-        label="Missing email"
-        value={analytics.missingEmail}
-        hint={analytics.missingEmail > 0 ? 'Add to Directory' : 'All mapped'}
-        tone={analytics.missingEmail > 0 ? 'amber' : 'emerald'}
-        Icon={Mail}
+      <MetricTile
+        label="Verified"
+        value={metrics.verified}
+        valueTone={metrics.verified > 0 ? 'info' : 'neutral'}
+        className="col-span-2 sm:col-span-1"
       />
     </div>
   );
 }
 
-type Tone = 'gray' | 'blue' | 'amber' | 'red' | 'emerald';
-
-const TONE: Record<Tone, { bg: string; text: string; chip: string }> = {
-  gray:    { bg: 'bg-white dark:bg-gray-900',        text: 'text-gray-900 dark:text-white', chip: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300' },
-  blue:    { bg: 'bg-blue-50 dark:bg-blue-950/40',   text: 'text-blue-900 dark:text-blue-100', chip: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' },
-  amber:   { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-900 dark:text-amber-100', chip: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-200' },
-  red:     { bg: 'bg-red-50 dark:bg-red-950/40',     text: 'text-red-900 dark:text-red-100', chip: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200' },
-  emerald: { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-900 dark:text-emerald-100', chip: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200' },
-};
-
-function Tile({
+function MetricTile({
   label,
   value,
-  hint,
-  tone,
-  Icon,
+  subtitle,
+  caption,
+  captionTone,
+  valueTone = 'neutral',
+  className = '',
 }: {
   label: string;
   value: number;
-  hint: string;
-  tone: Tone;
-  Icon: typeof CheckCircle2;
+  subtitle?: string;
+  caption?: string;
+  captionTone?: 'bad';
+  valueTone?: 'neutral' | 'danger' | 'warn' | 'good' | 'info';
+  className?: string;
 }) {
-  const classes = TONE[tone];
+  const valueCls =
+    valueTone === 'danger'
+      ? 'text-danger-700 dark:text-red-300'
+      : valueTone === 'warn'
+        ? 'text-warning-700 dark:text-amber-300'
+        : valueTone === 'good'
+          ? 'text-success-700 dark:text-emerald-300'
+          : valueTone === 'info'
+            ? 'text-brand dark:text-brand'
+            : 'text-ink dark:text-white';
+
+  const capCls = captionTone === 'bad' ? 'bg-brand/15 text-brand dark:bg-brand/20 dark:text-brand' : '';
+
   return (
-    <div className={`rounded-xl border border-gray-200 p-3 shadow-sm dark:border-gray-800 ${classes.bg}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className={`text-[11px] font-semibold uppercase tracking-wide ${classes.text}`}>
-          {label}
-        </span>
-        <Icon size={14} className={classes.text} />
+    <div className={`rounded-xl border border-rule bg-white p-3 shadow-soft dark:border-gray-800 dark:bg-gray-900 ${className}`} aria-label={`${label} metric`}>
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-3">{label}</div>
+      <div className="mt-2 flex flex-wrap items-end gap-2">
+        <span className={`text-2xl font-bold tabular-nums tracking-tight ${valueCls}`}>{value}</span>
+        {caption ? (
+          <span
+            className={`mb-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${capCls || 'bg-gray-100 text-ink-2 dark:bg-gray-800 dark:text-gray-300'}`}
+          >
+            {caption}
+          </span>
+        ) : null}
       </div>
-      <div className="mt-1 flex items-end gap-2">
-        <span className={`text-2xl font-bold tabular-nums ${classes.text}`}>{value}</span>
-      </div>
-      <div className={`mt-1 inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-medium ${classes.chip}`}>
-        {hint}
-      </div>
+      {subtitle ? <div className="mt-2 text-[10px] leading-snug text-ink-3">{subtitle}</div> : null}
     </div>
   );
 }

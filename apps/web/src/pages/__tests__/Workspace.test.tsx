@@ -155,6 +155,7 @@ describe('Workspace', () => {
     uploadFile: vi.fn(),
     setActiveFile: vi.fn(),
     setWorkspaceTab: vi.fn(),
+    clearCurrentAuditResult: vi.fn(),
     deleteFile: vi.fn(),
     saveFileDraft: vi.fn(),
   };
@@ -170,7 +171,7 @@ describe('Workspace', () => {
   it('lists hydrated server files in the sidebar', () => {
     vi.mocked(useAppStore).mockImplementation((selector) => selector({ ...baseStore } as never));
     renderWorkspaceAt('/processes/p-ws/over-planning');
-    expect(screen.getByText('hydrated.xlsx')).toBeInTheDocument();
+    expect(screen.getAllByText('hydrated.xlsx').length).toBeGreaterThan(0);
   });
 
   it('does not expose a members-share trigger anywhere in the workspace', () => {

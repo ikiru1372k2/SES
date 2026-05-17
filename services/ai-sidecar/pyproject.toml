@@ -11,6 +11,9 @@ dependencies = [
   "duckdb==1.1.1",
   "openpyxl==3.1.5",
   "anthropic>=0.40.0",
+  # Optional analytics provider (AI_ANALYTICS_PROVIDER=gemini). Imported
+  # lazily in agent.py; local-only default never requires it at runtime.
+  "google-genai>=0.3.0",
 ]
 
 [tool.uv]

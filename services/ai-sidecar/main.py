@@ -32,6 +32,37 @@ _PUBLIC_PATHS = frozenset({"/health", "/analytics/health"})
 app = FastAPI(title="SES AI Service", version="1.0.0")
 
 
+@app.on_event("startup")
+async def _prewarm_analytics_model() -> None:
+    """Best-effort: load the analytics agent model into Ollama memory at
+    boot so the FIRST user question doesn't pay the ~30s cold-load. Fully
+    non-blocking and failure-tolerant — never delays or breaks startup.
+    Analytics-only: warms agent.AGENT_MODEL, leaves AI Pilot models alone.
+    Skipped when analytics runs via the cloud provider (no local model).
+    """
+    import asyncio
+
+    async def _warm() -> None:
+        try:
+            from agent import AGENT_MODEL, _USE_GEMINI  # type: ignore
+
+            if _USE_GEMINI:
+                return
+            client = ollama.Client(host=OLLAMA_URL)
+            await asyncio.to_thread(
+                client.chat,
+                model=AGENT_MODEL,
+                messages=[{"role": "user", "content": "ok"}],
+                keep_alive="30m",
+                options={"num_predict": 1},
+            )
+        except Exception:
+            # Cold first query is still correct; warm-up is an optimisation.
+            pass
+
+    asyncio.create_task(_warm())
+
+
 @app.middleware("http")
 async def _require_internal_token(request: Request, call_next):
     path = request.url.path.rstrip("/") or "/"

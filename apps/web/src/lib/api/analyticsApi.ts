@@ -186,3 +186,94 @@ export async function fetchChatHistory(
   if (!res.ok) throw await parseApiError(res, 'Failed to load chat history');
   return res.json() as Promise<ChatHistoryEntry[]>;
 }
+
+// ── Default (seed) charts ───────────────────────────────────────────────────
+// Deterministic charts computed live from uploaded audit data (no LLM).
+// Always shown at the top of the workbench so it's never empty.
+
+export interface DefaultChart {
+  id: string;
+  title: string;
+  question: string;
+  spec: ChartSpec;
+}
+
+export async function fetchDefaultCharts(
+  processCode: string,
+  functionId?: FunctionId,
+): Promise<DefaultChart[]> {
+  const res = await fetch(withFn(`${base(processCode)}/default-charts`, functionId), {
+    credentials: 'include',
+  });
+  if (!res.ok) throw await parseApiError(res, 'Failed to load default charts');
+  const json = (await res.json()) as { charts: DefaultChart[] };
+  return json.charts ?? [];
+}
+
+// ── Pinned workbench ────────────────────────────────────────────────────────
+// Charts a user pinned from chat answers, persisted per (process, user).
+
+export interface PinnedChart {
+  id: string;
+  title: string;
+  question: string | null;
+  functionId: FunctionId | string | null;
+  chartSpec: ChartSpec;
+  position: number;
+  createdAt: string;
+}
+
+export interface PinChartInput {
+  title: string;
+  question?: string | null;
+  functionId?: FunctionId | string | null;
+  chartSpec: ChartSpec;
+}
+
+export async function fetchPinnedCharts(processCode: string): Promise<PinnedChart[]> {
+  const res = await fetch(`${base(processCode)}/pinned-charts`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw await parseApiError(res, 'Failed to load pinned charts');
+  return res.json() as Promise<PinnedChart[]>;
+}
+
+export async function pinChart(
+  processCode: string,
+  input: PinChartInput,
+): Promise<PinnedChart> {
+  const res = await fetch(`${base(processCode)}/pinned-charts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      title: input.title,
+      question: input.question ?? undefined,
+      functionId: input.functionId ?? undefined,
+      chartSpec: input.chartSpec,
+    }),
+  });
+  if (!res.ok) throw await parseApiError(res, 'Failed to pin chart');
+  return res.json() as Promise<PinnedChart>;
+}
+
+export async function unpinChart(processCode: string, id: string): Promise<void> {
+  const res = await fetch(
+    `${base(processCode)}/pinned-charts/${encodeURIComponent(id)}`,
+    { method: 'DELETE', credentials: 'include' },
+  );
+  if (!res.ok) throw await parseApiError(res, 'Failed to unpin chart');
+}
+
+export async function reorderPinnedCharts(
+  processCode: string,
+  orderedIds: string[],
+): Promise<void> {
+  const res = await fetch(`${base(processCode)}/pinned-charts/reorder`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ orderedIds }),
+  });
+  if (!res.ok) throw await parseApiError(res, 'Failed to reorder pinned charts');
+}

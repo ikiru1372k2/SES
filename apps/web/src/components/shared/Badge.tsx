@@ -9,5 +9,5 @@ const toneClass = {
 };
 
 export function Badge({ children, tone = 'gray' }: { children: ReactNode; tone?: keyof typeof toneClass }) {
-  return <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${toneClass[tone]}`}>{children}</span>;
+  return <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium tracking-tight ring-1 ring-inset ring-black/[0.03] dark:ring-white/[0.04] ${toneClass[tone]}`}>{children}</span>;
 }

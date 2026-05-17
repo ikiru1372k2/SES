@@ -19,6 +19,12 @@ function makeService(): AuditsService {
   );
 }
 
+type ManagerMaps = { byId: Map<string, string>; byName: Map<string, string> };
+
+// Wrap a plain id→manager map as ManagerMaps for the apply() tests that only
+// exercise Project-ID matching (name fallback empty).
+const idOnly = (m: Map<string, string>): ManagerMaps => ({ byId: m, byName: new Map() });
+
 // Reach past `private` for targeted unit tests — enforced at compile, not runtime.
 type Private = {
   buildProjectIdToManagerMap: (
@@ -26,8 +32,8 @@ type Private = {
     process: { id: string; displayCode: string },
     auditFile: { id: string },
     src: unknown,
-  ) => Promise<Map<string, string>>;
-  applyProjectIdToManager: (issues: AuditIssue[], map: Map<string, string>) => number;
+  ) => Promise<ManagerMaps>;
+  applyProjectIdToManager: (issues: AuditIssue[], maps: ManagerMaps) => number;
   prepareIssuesForPersistence: (
     issues: AuditIssue[],
     processDisplayCode: string,
@@ -67,7 +73,7 @@ describe('applyProjectIdToManager', () => {
     const svc = makeService();
     const issues = [makeIssue({ projectNo: 'FR-001', projectManager: 'Unassigned' })];
     const map = new Map([['fr-001', 'Wagner, Anna']]);
-    const count = priv(svc).applyProjectIdToManager(issues, map);
+    const count = priv(svc).applyProjectIdToManager(issues, idOnly(map));
     assert.equal(count, 1);
     assert.equal(issues[0]!.projectManager, 'Wagner, Anna');
   });
@@ -76,7 +82,7 @@ describe('applyProjectIdToManager', () => {
     const svc = makeService();
     const issues = [makeIssue({ projectNo: '  FR-001 ', projectManager: '' })];
     const map = new Map([['fr-001', 'Wagner, Anna']]);
-    const count = priv(svc).applyProjectIdToManager(issues, map);
+    const count = priv(svc).applyProjectIdToManager(issues, idOnly(map));
     assert.equal(count, 1);
     assert.equal(issues[0]!.projectManager, 'Wagner, Anna');
   });
@@ -85,7 +91,7 @@ describe('applyProjectIdToManager', () => {
     const svc = makeService();
     const issues = [makeIssue({ projectNo: 'FR-001', projectManager: 'Smith, John' })];
     const map = new Map([['fr-001', 'Wagner, Anna']]);
-    const count = priv(svc).applyProjectIdToManager(issues, map);
+    const count = priv(svc).applyProjectIdToManager(issues, idOnly(map));
     assert.equal(count, 0);
     assert.equal(issues[0]!.projectManager, 'Smith, John');
   });
@@ -94,7 +100,7 @@ describe('applyProjectIdToManager', () => {
     const svc = makeService();
     const issues = [makeIssue({ projectNo: 'FR-001', projectManager: 'UNASSIGNED' })];
     const map = new Map([['fr-001', 'Wagner, Anna']]);
-    const count = priv(svc).applyProjectIdToManager(issues, map);
+    const count = priv(svc).applyProjectIdToManager(issues, idOnly(map));
     assert.equal(count, 1);
     assert.equal(issues[0]!.projectManager, 'Wagner, Anna');
   });
@@ -105,7 +111,7 @@ describe('applyProjectIdToManager', () => {
       makeIssue({ id: 'iss-1', projectNo: 'FR-999', projectManager: 'Unassigned' }),
     ];
     const map = new Map([['fr-001', 'Wagner, Anna']]);
-    const count = priv(svc).applyProjectIdToManager(issues, map);
+    const count = priv(svc).applyProjectIdToManager(issues, idOnly(map));
     assert.equal(count, 0);
     // Issue still exists — escalation pipeline handles unresolved downstream.
     assert.equal(issues.length, 1);
@@ -115,7 +121,7 @@ describe('applyProjectIdToManager', () => {
   it('returns 0 and is a no-op when the map is empty', () => {
     const svc = makeService();
     const issues = [makeIssue({ projectNo: 'FR-001', projectManager: 'Unassigned' })];
-    const count = priv(svc).applyProjectIdToManager(issues, new Map());
+    const count = priv(svc).applyProjectIdToManager(issues, idOnly(new Map()));
     assert.equal(count, 0);
     assert.equal(issues[0]!.projectManager, 'Unassigned');
   });
@@ -124,7 +130,7 @@ describe('applyProjectIdToManager', () => {
     const svc = makeService();
     const issues = [makeIssue({ projectNo: '', projectManager: 'Unassigned' })];
     const map = new Map([['fr-001', 'Wagner, Anna']]);
-    const count = priv(svc).applyProjectIdToManager(issues, map);
+    const count = priv(svc).applyProjectIdToManager(issues, idOnly(map));
     assert.equal(count, 0);
   });
 });
@@ -197,9 +203,9 @@ describe('buildProjectIdToManagerMap — uploaded_file', () => {
       { id: 'audit-file-1' },
       { type: 'uploaded_file', uploadId: 'map-file-1' },
     );
-    assert.equal(map.size, 2);
-    assert.equal(map.get('fr-001'), 'Wagner, Anna');
-    assert.equal(map.get('fr-002'), 'Smith, John');
+    assert.equal(map.byId.size, 2);
+    assert.equal(map.byId.get('fr-001'), 'Wagner, Anna');
+    assert.equal(map.byId.get('fr-002'), 'Smith, John');
   });
 
   it('accepts header synonyms "Project No." and "Manager"', async () => {
@@ -217,7 +223,7 @@ describe('buildProjectIdToManagerMap — uploaded_file', () => {
       { id: 'audit-file-1' },
       { type: 'uploaded_file', uploadId: 'map-file-1' },
     );
-    assert.equal(map.get('fr-001'), 'Wagner, Anna');
+    assert.equal(map.byId.get('fr-001'), 'Wagner, Anna');
   });
 
   it('returns an empty map when required headers are missing', async () => {
@@ -235,7 +241,7 @@ describe('buildProjectIdToManagerMap — uploaded_file', () => {
       { id: 'audit-file-1' },
       { type: 'uploaded_file', uploadId: 'map-file-1' },
     );
-    assert.equal(map.size, 0);
+    assert.equal(map.byId.size, 0);
   });
 
   it('rejects using the audit file as its own mapping source', async () => {
@@ -277,7 +283,7 @@ describe('buildProjectIdToManagerMap — uploaded_file', () => {
       { id: 'audit-file-1' },
       { type: 'uploaded_file' },
     );
-    assert.equal(map.size, 0);
+    assert.equal(map.byId.size, 0);
   });
 });
 
@@ -286,7 +292,7 @@ describe('buildProjectIdToManagerMap — uploaded_file', () => {
 describe('buildProjectIdToManagerMap — master_data_version', () => {
   function fakeTxWithMdRun(opts: {
     runExists: boolean;
-    issues?: Array<{ projectNo: string | null; projectManager: string | null }>;
+    issues?: Array<{ projectNo: string | null; projectName?: string | null; projectManager: string | null }>;
   }) {
     const { runExists, issues = [] } = opts;
     return {
@@ -314,9 +320,9 @@ describe('buildProjectIdToManagerMap — master_data_version', () => {
       { id: 'audit-file-1' },
       { type: 'master_data_version', masterDataVersionId: 'md-run-1' },
     );
-    assert.equal(map.size, 2);
-    assert.equal(map.get('fr-001'), 'Wagner, Anna');
-    assert.equal(map.get('fr-002'), 'Smith, John');
+    assert.equal(map.byId.size, 2);
+    assert.equal(map.byId.get('fr-001'), 'Wagner, Anna');
+    assert.equal(map.byId.get('fr-002'), 'Smith, John');
   });
 
   it('first occurrence wins when the MD run has duplicate Project IDs', async () => {
@@ -334,7 +340,7 @@ describe('buildProjectIdToManagerMap — master_data_version', () => {
       { id: 'audit-file-1' },
       { type: 'master_data_version', masterDataVersionId: 'md-run-1' },
     );
-    assert.equal(map.get('fr-001'), 'Wagner, Anna');
+    assert.equal(map.byId.get('fr-001'), 'Wagner, Anna');
   });
 
   it('rejects when the MD version does not belong to this process / is not completed', async () => {
@@ -361,6 +367,106 @@ describe('buildProjectIdToManagerMap — master_data_version', () => {
       { id: 'audit-file-1' },
       { type: 'master_data_version' },
     );
-    assert.equal(map.size, 0);
+    assert.equal(map.byId.size, 0);
+  });
+
+  it('builds an unambiguous Project NAME → Manager fallback map', async () => {
+    const svc = makeService();
+    const tx = fakeTxWithMdRun({
+      runExists: true,
+      issues: [
+        { projectNo: '90032403', projectName: 'SAP Finance Module', projectManager: 'Bakker, Joost' },
+        { projectNo: '90032403', projectName: 'SAP Finance Module', projectManager: 'Bakker, Joost' },
+        { projectNo: '90032402', projectName: 'ML Pipeline Automation', projectManager: 'De Vries, Lisa' },
+      ],
+    });
+    const map = await priv(svc).buildProjectIdToManagerMap(
+      tx,
+      { id: 'proc-1', displayCode: 'PRC-1' },
+      { id: 'audit-file-1' },
+      { type: 'master_data_version', masterDataVersionId: 'md-run-1' },
+    );
+    assert.equal(map.byName.get('sap finance module'), 'Bakker, Joost');
+    assert.equal(map.byName.get('ml pipeline automation'), 'De Vries, Lisa');
+  });
+
+  it('drops an AMBIGUOUS project name (same name → 2 managers) from the fallback', async () => {
+    const svc = makeService();
+    const tx = fakeTxWithMdRun({
+      runExists: true,
+      issues: [
+        { projectNo: 'A1', projectName: 'Shared Name', projectManager: 'Manager One' },
+        { projectNo: 'A2', projectName: 'Shared Name', projectManager: 'Manager Two' },
+      ],
+    });
+    const map = await priv(svc).buildProjectIdToManagerMap(
+      tx,
+      { id: 'proc-1', displayCode: 'PRC-1' },
+      { id: 'audit-file-1' },
+      { type: 'master_data_version', masterDataVersionId: 'md-run-1' },
+    );
+    assert.equal(map.byName.has('shared name'), false);
+  });
+});
+
+// ─── applyProjectIdToManager — Project NAME fallback ─────────────────────
+// Mirrors the real sample data: ICR/Function-Rate Project IDs do not match
+// Master Data's, but project names do. ID match is preferred; name is the
+// fallback and only resolves unambiguous names.
+
+describe('applyProjectIdToManager — name fallback', () => {
+  it('resolves via Project NAME when the Project ID has no match', () => {
+    const svc = makeService();
+    const issues = [
+      makeIssue({ projectNo: '211920320', projectName: 'SAP Finance Module', projectManager: 'Unassigned' }),
+    ];
+    const maps: ManagerMaps = {
+      byId: new Map([['90032403', 'Bakker, Joost']]),
+      byName: new Map([['sap finance module', 'Bakker, Joost']]),
+    };
+    const count = priv(svc).applyProjectIdToManager(issues, maps);
+    assert.equal(count, 1);
+    assert.equal(issues[0]!.projectManager, 'Bakker, Joost');
+  });
+
+  it('prefers Project ID over Project NAME when both match', () => {
+    const svc = makeService();
+    const issues = [
+      makeIssue({ projectNo: 'ID-1', projectName: 'Shared', projectManager: 'Unassigned' }),
+    ];
+    const maps: ManagerMaps = {
+      byId: new Map([['id-1', 'By Id']]),
+      byName: new Map([['shared', 'By Name']]),
+    };
+    priv(svc).applyProjectIdToManager(issues, maps);
+    assert.equal(issues[0]!.projectManager, 'By Id');
+  });
+
+  it('normalizes name casing/whitespace on the fallback lookup', () => {
+    const svc = makeService();
+    const issues = [
+      makeIssue({ projectNo: 'no-match', projectName: '  SAP   Finance  Module ', projectManager: '' }),
+    ];
+    const maps: ManagerMaps = {
+      byId: new Map(),
+      byName: new Map([['sap finance module', 'Bakker, Joost']]),
+    };
+    const count = priv(svc).applyProjectIdToManager(issues, maps);
+    assert.equal(count, 1);
+    assert.equal(issues[0]!.projectManager, 'Bakker, Joost');
+  });
+
+  it('stays Unassigned when neither ID nor name matches', () => {
+    const svc = makeService();
+    const issues = [
+      makeIssue({ projectNo: 'x', projectName: 'Nope', projectManager: 'Unassigned' }),
+    ];
+    const maps: ManagerMaps = {
+      byId: new Map([['id-1', 'A']]),
+      byName: new Map([['something else', 'B']]),
+    };
+    const count = priv(svc).applyProjectIdToManager(issues, maps);
+    assert.equal(count, 0);
+    assert.equal(issues[0]!.projectManager, 'Unassigned');
   });
 });

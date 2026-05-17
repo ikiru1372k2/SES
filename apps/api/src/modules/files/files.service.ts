@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../../repositories/types';
 import type { FunctionId, SessionUser } from '@ses/domain';
-import { DEFAULT_FUNCTION_ID } from '@ses/domain';
+import { DEFAULT_FUNCTION_ID, parseWorkbookBuffer } from '@ses/domain';
 import { PrismaService } from '../../common/prisma.service';
 import { ActivityLogService } from '../../common/activity-log.service';
 import { ProcessAccessService } from '../../common/process-access.service';
@@ -166,9 +166,39 @@ export class FilesService {
       throw new BadRequestException('pageSize must be between 1 and 500');
     }
     const file = await this.getFileOrThrow(fileIdOrCode, user);
-    const sheet = file.sheets.find((item: any) => item.id === sheetIdOrCode || item.displayCode === sheetIdOrCode);
+    // Match by id or displayCode, and also by sheet name: the client falls
+    // back to `sheet.name` when the serialized sheet has no displayCode, so
+    // matching only on id/code 404'd the preview for those callers.
+    const sheet = file.sheets.find(
+      (item: any) =>
+        item.id === sheetIdOrCode ||
+        item.displayCode === sheetIdOrCode ||
+        item.sheetName === sheetIdOrCode,
+    );
     if (!sheet) throw new NotFoundException(`Sheet ${sheetIdOrCode} not found`);
-    const rows = (sheet.rows as unknown[][]) ?? [];
+    let rows = (sheet.rows as unknown[][]) ?? [];
+
+    // Fallback: DB-persisted sheet rows can be empty for seeded/imported
+    // files that never ran the parse-and-persist step. The original .xlsx
+    // still lives in object storage, so reconstruct rows on demand by
+    // fetching the workbook from MinIO/S3 and parsing it.
+    if (rows.length === 0) {
+      const buffer = await this.filesRepository.getWorkbookBuffer(
+        file as { id: string; uploadedObjectId?: string | null },
+      );
+      if (buffer) {
+        try {
+          const parsed = await parseWorkbookBuffer(buffer, file.name);
+          const parsedRows = parsed.rawData?.[sheet.sheetName];
+          if (Array.isArray(parsedRows) && parsedRows.length > 0) {
+            rows = parsedRows as unknown[][];
+          }
+        } catch {
+          // Corrupt/unsupported workbook — leave rows empty so the client
+          // shows the normal "no preview rows" state rather than 500ing.
+        }
+      }
+    }
     const headerRowIndex = sheet.headerRowIx ?? 0;
     const headers = ((sheet.originalHeaders as string[] | null) ?? rows[headerRowIndex]?.map((cell) => String(cell ?? '')) ?? []);
     const populatedRows = rows

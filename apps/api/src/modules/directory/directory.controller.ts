@@ -51,7 +51,7 @@ export class DirectoryController {
   @Post('managers')
   createManager(
     @CurrentUser() user: SessionUser,
-    @Body() body: { code: string; name: string; email: string; active?: boolean },
+    @Body() body: { code: string; name: string; email: string; teamsUsername?: string; active?: boolean },
   ) {
     return this.directory.createManager(user, body);
   }
@@ -115,6 +115,7 @@ export class DirectoryController {
       firstName?: string;
       lastName?: string;
       email?: string;
+      teamsUsername?: string;
       active?: boolean;
       applyEmailChange?: boolean;
     },

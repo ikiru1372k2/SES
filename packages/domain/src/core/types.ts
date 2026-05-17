@@ -6,7 +6,7 @@ export type { ProjectStatusesV2, EngineProjectStatus, EngineSubStatus, ProjectSt
 
 export type SheetStatus = 'valid' | 'duplicate' | 'invalid';
 export type Severity = 'High' | 'Medium' | 'Low';
-export type WorkspaceTab = 'preview' | 'results' | 'notifications' | 'tracking' | 'versions' | 'analytics';
+export type WorkspaceTab = 'preview' | 'results' | 'notifications' | 'tracking' | 'versions';
 export type IssueCategory =
   | 'Overplanning'
   | 'Missing Planning'

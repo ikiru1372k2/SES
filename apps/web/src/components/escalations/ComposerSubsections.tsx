@@ -20,7 +20,7 @@ export function ProjectLinksSection({
 }) {
   if (uniqueProjectIds.length === 0) return null;
   return (
-    <div className="rounded border border-gray-200 dark:border-gray-700">
+    <div className="overflow-hidden rounded-xl border border-gray-200 shadow-soft dark:border-gray-800">
       <button
         type="button"
         onClick={() => setProjectLinksOpen((v) => !v)}
@@ -51,7 +51,7 @@ export function ProjectLinksSection({
                 value={projectLinks[pid] ?? ''}
                 onChange={(e) => setProjectLinks((prev) => ({ ...prev, [pid]: e.target.value }))}
                 placeholder="https://bcs.example.com/project/..."
-                className="w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-900"
+                className="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
               />
             </div>
           ))}
@@ -84,7 +84,7 @@ export function FindingsByEngineSection({
           if (n === 0) return null;
           const open = !removedEngines.has(fid);
           return (
-            <details key={fid} open={open} className="rounded border border-gray-200 dark:border-gray-700">
+            <details key={fid} open={open} className="overflow-hidden rounded-xl border border-gray-200 shadow-soft dark:border-gray-800">
               <summary className="cursor-pointer px-2 py-1 text-xs font-medium">
                 {fid} ({n})
                 {!readOnly ? (

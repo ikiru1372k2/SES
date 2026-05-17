@@ -1,14 +1,28 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Put,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { isFunctionId, type FunctionId, type SessionUser } from '@ses/domain';
 import { AuthGuard } from '../auth/auth.guard';
 import { CurrentUser } from '../../common/current-user';
 import { AnalyticsService } from './analytics.service';
+import { PinnedChartsService } from './pinned-charts.service';
 import {
   AnomaliesQueryDto,
   ChatAnalyticsDto,
   ChatHistoryQueryDto,
+  PinChartDto,
+  ReorderPinnedChartsDto,
 } from './dto/analytics.dto';
 
 function asFunctionId(v: string | undefined): FunctionId | undefined {
@@ -18,7 +32,10 @@ function asFunctionId(v: string | undefined): FunctionId | undefined {
 @Controller('analytics')
 @UseGuards(AuthGuard)
 export class AnalyticsController {
-  constructor(private readonly analytics: AnalyticsService) {}
+  constructor(
+    private readonly analytics: AnalyticsService,
+    private readonly pinnedCharts: PinnedChartsService,
+  ) {}
 
   @Get('health')
   async health() {
@@ -90,6 +107,64 @@ export class AnalyticsController {
     @CurrentUser() user: SessionUser,
   ) {
     return this.analytics.chatHistory(processCode, user, asFunctionId(q.functionId));
+  }
+
+  // Deterministic seed charts for the workbench (no LLM). Always available,
+  // computed live from uploaded audit data across all functions.
+  @Get('processes/:processCode/default-charts')
+  async defaultCharts(
+    @Param('processCode') processCode: string,
+    @Query() q: ChatHistoryQueryDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.analytics.defaultCharts(processCode, user, asFunctionId(q.functionId));
+  }
+
+  // Pinned workbench: per (process, user) set of charts pinned from chat
+  // answers. Scoped by the authenticated user — never shared.
+  @Get('processes/:processCode/pinned-charts')
+  async listPinnedCharts(
+    @Param('processCode') processCode: string,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.pinnedCharts.list(user.id, processCode);
+  }
+
+  @Post('processes/:processCode/pinned-charts')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  async pinChart(
+    @Param('processCode') processCode: string,
+    @Body() body: PinChartDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.pinnedCharts.pin({
+      userId: user.id,
+      processCode,
+      functionId: asFunctionId(body.functionId) ?? null,
+      title: body.title,
+      question: body.question ?? null,
+      chartSpec: body.chartSpec,
+    });
+  }
+
+  @Delete('processes/:processCode/pinned-charts/:id')
+  async unpinChart(
+    @Param('processCode') processCode: string,
+    @Param('id') id: string,
+    @CurrentUser() user: SessionUser,
+  ) {
+    await this.pinnedCharts.unpin(user.id, processCode, id);
+    return { ok: true };
+  }
+
+  @Put('processes/:processCode/pinned-charts/reorder')
+  async reorderPinnedCharts(
+    @Param('processCode') processCode: string,
+    @Body() body: ReorderPinnedChartsDto,
+    @CurrentUser() user: SessionUser,
+  ) {
+    await this.pinnedCharts.reorder(user.id, processCode, body.orderedIds);
+    return { ok: true };
   }
 
   // F10: export runs several heavy Prisma aggregations + xlsx build. Cap it

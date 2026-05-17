@@ -5,6 +5,7 @@ import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { ChatCacheService } from './chat-cache.service';
 import { ChatAuditService } from './chat-audit.service';
+import { PinnedChartsService } from './pinned-charts.service';
 import { AnalyticsRetentionCron } from './analytics-retention.cron';
 
 @Module({
@@ -19,7 +20,13 @@ import { AnalyticsRetentionCron } from './analytics-retention.cron';
   ],
   controllers: [AnalyticsController],
   // F11: AnalyticsRetentionCron enforces ai_chat_audit retention.
-  providers: [AnalyticsService, ChatCacheService, ChatAuditService, AnalyticsRetentionCron],
+  providers: [
+    AnalyticsService,
+    ChatCacheService,
+    ChatAuditService,
+    PinnedChartsService,
+    AnalyticsRetentionCron,
+  ],
   exports: [AnalyticsService, ChatCacheService],
 })
 export class AnalyticsModule {}

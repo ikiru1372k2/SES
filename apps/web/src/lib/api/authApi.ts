@@ -5,7 +5,9 @@ export type SignupPayload = {
   email: string;
   displayName: string;
   password: string;
-  role: 'admin' | 'auditor';
+  // Public signup is always provisioned as `auditor`; the server ignores
+  // any value sent here (audit U-04 / G-2). Kept optional for callers.
+  role?: 'auditor';
 };
 
 export type LoginPayload = {

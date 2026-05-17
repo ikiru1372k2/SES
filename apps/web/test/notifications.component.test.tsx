@@ -106,6 +106,6 @@ test('audit schedule renders overdue and upcoming buckets', () => {
 
   expect(screen.getByText('Overdue')).toBeInTheDocument();
   expect(screen.getByText('Due this week')).toBeInTheDocument();
-  expect(screen.getByText('Upcoming')).toBeInTheDocument();
+  expect(screen.getByText('On track')).toBeInTheDocument();
   expect(screen.getByText('Overdue Audit')).toBeInTheDocument();
 });

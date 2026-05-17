@@ -7,6 +7,7 @@ type FormValues = {
   code: string;
   name: string;
   email: string;
+  teamsUsername: string;
   active: boolean;
 };
 
@@ -31,7 +32,7 @@ export function AddManagerForm({
   items: DirectoryEntry[];
   onCreated: (entry: DirectoryEntry) => void;
 }) {
-  const [values, setValues] = useState<FormValues>({ code: '', name: '', email: '', active: true });
+  const [values, setValues] = useState<FormValues>({ code: '', name: '', email: '', teamsUsername: '', active: true });
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const codeRef = useRef<HTMLInputElement>(null);
@@ -56,7 +57,7 @@ export function AddManagerForm({
   );
 
   function resetForm() {
-    setValues({ code: '', name: '', email: '', active: true });
+    setValues({ code: '', name: '', email: '', teamsUsername: '', active: true });
     setErrors({});
   }
 
@@ -124,11 +125,13 @@ export function AddManagerForm({
     abortRef.current?.abort();
     abortRef.current = new AbortController();
     try {
+      const teamsUsername = normalizedValues.teamsUsername.trim();
       const created = await createManager(
         {
           code: normalizedValues.code,
           name: normalizedValues.name,
           email: normalizedValues.email,
+          ...(teamsUsername ? { teamsUsername } : {}),
           active: normalizedValues.active,
         },
         abortRef.current.signal,
@@ -165,7 +168,7 @@ export function AddManagerForm({
         </p>
       </div>
       <form className="space-y-3" onSubmit={onSave}>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
           <label className="text-sm">
             <span className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">Code</span>
             <input
@@ -225,6 +228,25 @@ export function AddManagerForm({
                 {errors.email}
               </span>
             ) : null}
+          </label>
+
+          <label className="text-sm">
+            <span className="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
+              Teams username
+            </span>
+            <input
+              value={values.teamsUsername}
+              onChange={(event) => setValues((prev) => ({ ...prev, teamsUsername: event.target.value }))}
+              onBlur={() =>
+                setValues((prev) => ({ ...prev, teamsUsername: prev.teamsUsername.trim() }))
+              }
+              maxLength={254}
+              placeholder="Teams sign-in / UPN (optional)"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
+            />
+            <span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+              Used for the Teams deep link. Falls back to email if blank.
+            </span>
           </label>
 
           <label className="flex items-end gap-2 pb-2 text-sm">

@@ -1,4 +1,4 @@
-import { LogOut, Bug, Users, FileText } from 'lucide-react';
+import { ChevronDown, LogOut, Bug, Users, FileText } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentUser, type SessionUserInfo } from '../auth/authContext';
@@ -30,8 +30,10 @@ function getInitials(user: SessionUserInfo | null): string {
 
 export function AvatarMenu({
   onBeforeNavigate,
+  pill = false,
 }: {
   onBeforeNavigate?: ((e: React.MouseEvent<HTMLAnchorElement>, to: string) => void) | undefined;
+  pill?: boolean;
 }) {
   const user = useCurrentUser();
   const navigate = useNavigate();
@@ -67,9 +69,22 @@ export function AvatarMenu({
         aria-expanded={open}
         aria-label={user ? `Account menu for ${user.displayName || user.email}` : 'Account menu'}
         onClick={() => setOpen((v) => !v)}
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white ring-1 ring-brand-hover/40 hover:bg-brand-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900"
+        className={
+          pill
+            ? 'flex items-center gap-1.5 rounded-full border border-rule bg-white py-0.5 pl-0.5 pr-2 hover:bg-surface-app focus:outline-none focus-visible:ring-2 focus-visible:ring-brand dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800'
+            : 'flex h-10 w-10 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white ring-1 ring-brand-hover/40 hover:bg-brand-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900'
+        }
       >
-        {initials}
+        {pill ? (
+          <>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white">
+              {initials}
+            </span>
+            <ChevronDown size={14} className="shrink-0 text-ink-3" aria-hidden />
+          </>
+        ) : (
+          initials
+        )}
       </button>
       {open ? (
         <div

@@ -11,4 +11,130 @@ body,
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+@layer base {
+  /* Conservative premium transition for interactive elements. Only paints
+     color/bg/border/shadow/transform — never width/height/all — so data-driven
+     width changes (e.g. severity bars) are not double-animated. Component-level
+     `transition-*` utilities still win via specificity/order. */
+  a,
+  button,
+  [role='tab'],
+  input,
+  select,
+  textarea {
+    transition-property: color, background-color, border-color, box-shadow, transform;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Polished thin scrollbars (light + dark). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(100, 116, 139, 0.35);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(100, 116, 139, 0.55);
+  }
+  .dark * {
+    scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+  }
+  .dark *::-webkit-scrollbar-thumb {
+    background-color: rgba(148, 163, 184, 0.3);
+  }
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(148, 163, 184, 0.5);
+  }
+
+  /* Focus-visible fallback for non-Button elements. Component focus styles
+     (e.g. Button's focus-visible ring) still win. */
+  :focus-visible {
+    outline: 2px solid theme(colors.brand.ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Standard premium card surface. Backs the shared Card primitive and lets
+     hand-rolled card sites align with a one-class swap. */
+  .surface-card {
+    @apply rounded-xl border border-gray-200 bg-white shadow-soft transition-shadow dark:border-gray-800 dark:bg-gray-900;
+  }
+  .surface-card-interactive {
+    @apply surface-card hover:border-gray-300 hover:shadow-soft-md dark:hover:border-gray-700;
+  }
+  .surface-muted {
+    @apply rounded-xl border border-gray-200 bg-gray-50/60 dark:border-gray-800 dark:bg-gray-900/40;
+  }
+  .section-title {
+    @apply text-lg font-semibold tracking-tight text-gray-950 dark:text-white;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400;
+  }
+
+  /* Chip — small status/count pill (12px, 4×10 padding). Tone variants
+     reuse the semantic palette already used by Badge. */
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold leading-none tracking-tight ring-1 ring-inset ring-black/[0.03] dark:ring-white/[0.05];
+  }
+  .chip-plain {
+    @apply bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300;
+  }
+  .chip-brand {
+    @apply bg-brand/10 text-brand;
+  }
+  .chip-red {
+    @apply bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300;
+  }
+  .chip-amber {
+    @apply bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300;
+  }
+  .chip-green {
+    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300;
+  }
+  .chip-info {
+    @apply bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300;
+  }
+
+  /* Kbd — keyboard-shortcut hint chip used in the bulk-action legend. */
+  .kbd {
+    @apply inline-flex min-w-[1.25rem] items-center justify-center rounded-md border border-gray-300 bg-white px-1.5 py-0.5 font-mono text-[10px] font-medium text-gray-600 shadow-[0_1px_0_rgba(16,24,40,0.05)] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300;
+  }
+
+  /* Metric card — analytics strip tile (uppercase label, big value). */
+  .metric-card {
+    @apply rounded-xl border border-gray-200 bg-white p-4 shadow-soft transition-shadow hover:shadow-soft-md dark:border-gray-800 dark:bg-gray-900;
+  }
+  .metric-label {
+    @apply text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400;
+  }
+  .metric-value {
+    @apply mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-gray-950 dark:text-white;
+  }
+
+  /* Table chrome — sticky polished header + zebra/hover rows. */
+  .table-head {
+    @apply sticky top-0 z-10 bg-gray-50/95 text-[11px] font-semibold uppercase tracking-wide text-gray-500 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80 dark:bg-gray-900/95 dark:text-gray-400 dark:supports-[backdrop-filter]:bg-gray-900/80;
+  }
+  .table-row {
+    @apply border-t border-gray-100 transition-colors even:bg-gray-50/60 hover:bg-gray-50 dark:border-gray-800 dark:even:bg-gray-900/40 dark:hover:bg-gray-900/60;
+  }
 }

@@ -55,6 +55,7 @@ function baseRow(p: Partial<ProcessEscalationManagerRow> & Pick<ProcessEscalatio
   return {
     resolvedEmail: 'mgr@example.com',
     directoryEmail: null,
+    directoryTeamsUsername: null,
     isUnmapped: false,
     totalIssues: 1,
     countsByEngine: { 'over-planning': 1 },
@@ -145,12 +146,7 @@ describe('EscalationCenter', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Escalation Center' })).toBeInTheDocument();
-    // Two distinct places surface "Open findings" now: the AnalyticsStrip tile
-    // and the EscalationSummaryBar. Pick the summary-bar element specifically
-    // (the one inside a `text-gray-500` label) and assert its "4".
-    const openFindingsLabels = screen.getAllByText('Open findings');
-    const summaryBarLabel = openFindingsLabels.find((el) => el.tagName === 'DIV')!;
-    expect(within(summaryBarLabel.parentElement!).getByText('4')).toBeInTheDocument();
+    expect(within(screen.getByLabelText('Open metric')).getByText('2')).toBeInTheDocument();
     expect(screen.getByText(/aren't in the directory/i)).toBeInTheDocument();
   });
 

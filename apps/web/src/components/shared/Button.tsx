@@ -5,12 +5,14 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md';
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: 'bg-brand text-white hover:bg-brand-hover disabled:opacity-40',
+  primary:
+    'bg-brand text-white shadow-soft hover:bg-brand-hover hover:shadow-soft-md active:bg-brand-hover disabled:opacity-40 disabled:shadow-none',
   secondary:
-    'border border-gray-300 bg-white text-gray-900 hover:border-brand hover:text-brand hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800',
+    'border border-gray-300 bg-white text-gray-900 shadow-soft hover:border-brand hover:text-brand hover:bg-gray-50 hover:shadow-soft-md disabled:opacity-40 disabled:shadow-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800',
   ghost:
     'text-gray-700 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-200 dark:hover:bg-gray-800',
-  danger: 'bg-red-600 text-white hover:bg-red-700 disabled:opacity-40',
+  danger:
+    'bg-red-600 text-white shadow-soft hover:bg-red-700 hover:shadow-soft-md active:bg-red-700 disabled:opacity-40 disabled:shadow-none',
 };
 
 // min-h keeps the hit target ≥ 36px (sm) / 40px (md). Icon-only callers
@@ -48,7 +50,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed dark:focus-visible:ring-offset-gray-900 ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+      className={`inline-flex select-none items-center justify-center gap-2 rounded-lg font-medium transition-all duration-150 ease-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-white active:scale-[0.98] disabled:cursor-not-allowed disabled:active:scale-100 dark:focus-visible:ring-offset-gray-900 ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
       {...props}
     >
       {loading ? (

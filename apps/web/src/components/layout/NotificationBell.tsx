@@ -36,14 +36,15 @@ export function NotificationBell() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="relative rounded-lg border border-gray-200 p-2 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-        aria-label="Notifications"
+        className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg text-ink-3 transition-colors hover:bg-surface-app dark:text-gray-300 dark:hover:bg-gray-800"
+        aria-label={unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'}
       >
-        <Bell size={16} />
+        <Bell size={18} strokeWidth={1.75} />
         {unread > 0 ? (
-          <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
-            {unread}
-          </span>
+          <span
+            className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-white bg-red-500 dark:border-gray-950"
+            aria-hidden
+          />
         ) : null}
       </button>
       {open ? (

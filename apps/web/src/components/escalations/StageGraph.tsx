@@ -398,7 +398,7 @@ function StageCommentThread({
   });
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+    <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-soft dark:border-gray-800 dark:bg-gray-900">
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-rose-500 to-red-600 text-white">
@@ -425,14 +425,14 @@ function StageCommentThread({
       <ul className="mt-3 space-y-2 text-sm">
         {q.isLoading ? <li className="text-xs text-gray-500">Loading…</li> : null}
         {q.data && q.data.length === 0 ? (
-          <li className="rounded border border-dashed border-gray-200 px-2 py-3 text-center text-xs text-gray-500 dark:border-gray-800">
+          <li className="rounded-lg border border-dashed border-gray-300 px-2 py-4 text-center text-xs text-gray-500 dark:border-gray-700">
             No notes yet — add the first one below.
           </li>
         ) : null}
         {q.data?.map((c) => (
           <li
             key={c.id}
-            className="rounded border border-gray-100 bg-gray-50 px-2 py-1 dark:border-gray-800 dark:bg-gray-900/60"
+            className="rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-1.5 dark:border-gray-800 dark:bg-gray-900/60"
           >
             <div className="text-[11px] text-gray-500">
               {c.authorName} · {new Date(c.createdAt).toLocaleString()}
@@ -454,12 +454,12 @@ function StageCommentThread({
           onChange={(e) => setBody(e.target.value)}
           rows={2}
           placeholder={`Add a note for ${stageLabel}…`}
-          className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-900"
+          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"
         />
         <button
           type="submit"
           disabled={addMut.isPending || !body.trim()}
-          className="rounded bg-brand px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+          className="rounded-lg bg-brand px-3 py-1 text-xs font-medium text-white shadow-soft transition-all ease-soft hover:bg-brand-hover hover:shadow-soft-md active:scale-[0.98] disabled:opacity-50 disabled:shadow-none"
         >
           Post
         </button>

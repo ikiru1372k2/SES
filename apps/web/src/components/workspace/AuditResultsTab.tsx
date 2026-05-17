@@ -1,13 +1,14 @@
-import { CheckCircle2, ChevronRight, Circle, Settings, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Circle, Send, Settings, X } from 'lucide-react';
 import { AiBadge } from '../ai-pilot/AiBadge';
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { MappingSourceInput } from '../../lib/api/auditsApi';
 import { MappingSourcePanel } from './MappingSourcePanel';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import toast from 'react-hot-toast';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   getFunctionLabel,
+  getFunctionPolicySummary,
   isFunctionId,
   MD_COLUMNS,
   MD_PROJECT_PRODUCT_NOT_ASSIGNED_RULE_CODE,
@@ -17,28 +18,25 @@ import {
 import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { escalationCenterPath } from '../../lib/processRoutes';
 import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/domain/auditPolicy';
-import { auditIssueKey, exportIssuesCsv } from '../../lib/domain/auditEngine';
+import { exportIssuesCsv } from '../../lib/domain/auditEngine';
+import { getSelectedSheetNames } from '../../lib/workbook/auditResultFilter';
 import { openAuditReport } from '../../lib/reportExporter';
 import { severityTone } from '../../lib/domain/severity';
 import type {
-  AcknowledgmentStatus,
   AuditPolicy,
   AuditProcess,
   AuditIssue,
   IssueCategory,
-  IssueComment,
-  IssueCorrection,
   WorkbookFile,
 } from '../../lib/domain/types';
-import { selectIssueComments, selectIssueCorrection } from '../../store/selectors';
 import { useAppStore } from '../../store/useAppStore';
 import { Badge } from '../shared/Badge';
-import { Button } from '../shared/Button';
 import { EmptyState } from '../shared/EmptyState';
-import { MetricCard } from '../shared/MetricCard';
-import { StatusBadge } from '../shared/StatusBadge';
 
-type SortKey = keyof Pick<AuditIssue, 'severity' | 'projectNo' | 'projectName' | 'projectManager' | 'email' | 'sheetName' | 'projectState' | 'effort' | 'reason'>;
+// Issues are grouped by Project ID (projectNo) — the stable primary key.
+// Project name can change between runs; projectNo cannot. Only project-level
+// sorts are meaningful on grouped rows.
+type SortKey = 'projectNo' | 'projectName' | 'severity';
 
 const categoryOptions: IssueCategory[] = [
   'Overplanning',
@@ -47,22 +45,100 @@ const categoryOptions: IssueCategory[] = [
   'Needs Review',
   'Other',
 ];
-const ALL_ISSUE_HEADERS: Array<{ key: SortKey; label: string }> = [
+
+// Sortable + non-sortable headers for the grouped table. A leading empty
+// header carries the expand chevron; trailing empty header carries the action.
+const PROJECT_HEADERS: Array<{ key: SortKey | null; label: string }> = [
+  { key: 'projectNo', label: 'Project ID' },
+  { key: 'projectName', label: 'Project Name' },
+  { key: null, label: 'Project Manager' },
+  { key: null, label: 'Issue' },
   { key: 'severity', label: 'Severity' },
-  { key: 'projectNo', label: 'Project No' },
-  { key: 'projectName', label: 'Project' },
-  { key: 'projectManager', label: 'Manager' },
-  { key: 'email', label: 'Email' },
-  { key: 'sheetName', label: 'Sheet' },
-  { key: 'projectState', label: 'State' },
-  { key: 'effort', label: 'Effort' },
-  { key: 'reason', label: 'Issue' },
+  { key: null, label: 'Sheet' },
+  { key: null, label: '' },
 ];
 
-// Master Data findings have no effort hours — every issue is effort: 0, so hide the column.
-function visibleIssueHeaders(functionId: string | undefined): Array<{ key: SortKey; label: string }> {
-  if (functionId === 'master-data') return ALL_ISSUE_HEADERS.filter((h) => h.key !== 'effort');
-  return ALL_ISSUE_HEADERS;
+const SEVERITY_RANK: Record<AuditIssue['severity'], number> = { High: 0, Medium: 1, Low: 2 };
+
+interface ProjectGroup {
+  projectNo: string;
+  projectName: string;
+  managers: { name: string; email: string }[];
+  issues: AuditIssue[];
+  topSeverity: AuditIssue['severity'];
+  sheets: string[];
+  topReason: string;
+}
+
+/**
+ * Group filtered issues by projectNo (primary key). projectName is display-
+ * only (first non-empty seen) since it can vary across a project's issues.
+ * Managers are unioned (distinct name+email) so escalation can CC everyone.
+ */
+function groupByProject(filtered: AuditIssue[], sort: SortKey): ProjectGroup[] {
+  const map = new Map<string, ProjectGroup>();
+  const mgrSeen = new Map<string, Set<string>>();
+  const sheetSeen = new Map<string, Set<string>>();
+  const reasonCount = new Map<string, Map<string, number>>();
+
+  for (const issue of filtered) {
+    const key = issue.projectNo || '(no project id)';
+    let group = map.get(key);
+    if (!group) {
+      group = {
+        projectNo: key,
+        projectName: issue.projectName || '',
+        managers: [],
+        issues: [],
+        topSeverity: issue.severity,
+        sheets: [],
+        topReason: '',
+      };
+      map.set(key, group);
+      mgrSeen.set(key, new Set());
+      sheetSeen.set(key, new Set());
+      reasonCount.set(key, new Map());
+    }
+    if (!group.projectName && issue.projectName) group.projectName = issue.projectName;
+    group.issues.push(issue);
+    if ((SEVERITY_RANK[issue.severity] ?? 9) < (SEVERITY_RANK[group.topSeverity] ?? 9)) {
+      group.topSeverity = issue.severity;
+    }
+    const mgrKey = `${issue.projectManager ?? ''} ${issue.email ?? ''}`;
+    const mgrSet = mgrSeen.get(key)!;
+    if ((issue.projectManager || issue.email) && !mgrSet.has(mgrKey)) {
+      mgrSet.add(mgrKey);
+      group.managers.push({ name: issue.projectManager ?? '', email: issue.email ?? '' });
+    }
+    const sheetSet = sheetSeen.get(key)!;
+    if (issue.sheetName && !sheetSet.has(issue.sheetName)) {
+      sheetSet.add(issue.sheetName);
+      group.sheets.push(issue.sheetName);
+    }
+    const reason = (issue.reason ?? issue.ruleName ?? issue.auditStatus ?? '').trim();
+    if (reason) {
+      const rc = reasonCount.get(key)!;
+      rc.set(reason, (rc.get(reason) ?? 0) + 1);
+    }
+  }
+
+  for (const [key, group] of map) {
+    let best = '';
+    let bestN = -1;
+    for (const [reason, n] of reasonCount.get(key)!) {
+      if (n > bestN) {
+        bestN = n;
+        best = reason;
+      }
+    }
+    group.topReason = best;
+  }
+
+  return [...map.values()].sort((a, b) => {
+    if (sort === 'severity') return (SEVERITY_RANK[a.topSeverity] ?? 9) - (SEVERITY_RANK[b.topSeverity] ?? 9);
+    if (sort === 'projectName') return a.projectName.localeCompare(b.projectName);
+    return a.projectNo.localeCompare(b.projectNo);
+  });
 }
 
 // Map a master-data rule code to the source column's user-facing label.
@@ -152,19 +228,22 @@ export function AuditResultsTab({
     return null;
   }, [liveResult, file, process.latestAuditResult, process.versions]);
   const runAudit = useAppStore((state) => state.runAudit);
-  const addIssueComment = useAppStore((state) => state.addIssueComment);
-  const deleteIssueComment = useAppStore((state) => state.deleteIssueComment);
-  const saveIssueCorrection = useAppStore((state) => state.saveIssueCorrection);
-  const clearIssueCorrection = useAppStore((state) => state.clearIssueCorrection);
-  const setIssueAcknowledgment = useAppStore((state) => state.setIssueAcknowledgment);
   const [severity, setSeverity] = useState('');
   const [sheet, setSheet] = useState('');
   const [status, setStatus] = useState('');
   const [category, setCategory] = useState('');
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<SortKey>('severity');
-  const [expanded, setExpanded] = useState('');
+  const [sort, setSort] = useState<SortKey>('projectNo');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const navigate = useNavigate();
+  const toggleProject = (projectNo: string) =>
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectNo)) next.delete(projectNo);
+      else next.add(projectNo);
+      return next;
+    });
   // Mapping-file candidates: sibling files sharing this functionId.
   const overPlanningFiles = useMemo(
     () => process.files.filter((f) => f.functionId === file?.functionId),
@@ -210,7 +289,9 @@ export function AuditResultsTab({
     setCategory('');
     setStatus('');
     setSearch('');
-    setExpanded(target.id);
+    // Force-expand the parent project group so the targeted issue's row
+    // mounts and attachHighlightRef can scroll/flash it.
+    setExpandedProjects((prev) => new Set(prev).add(target.projectNo || '(no project id)'));
     /* eslint-enable react-hooks/set-state-in-effect */
     const next = new URLSearchParams(searchParams);
     next.delete('issue');
@@ -287,6 +368,8 @@ export function AuditResultsTab({
     }));
   }, [result]);
 
+  const selectedSheetNames = useMemo(() => (file ? getSelectedSheetNames(file) : new Set<string>()), [file]);
+
   // Debounce the filter pipeline so typing doesn't thrash the issue list.
   const debouncedSearch = useDebouncedValue(search, 200);
   const filtered = useMemo(() => {
@@ -294,7 +377,14 @@ export function AuditResultsTab({
     const masterData = isFunctionId(file?.functionId) && file!.functionId === 'master-data';
     return searchIndex
       .filter(({ issue }) => !severity || issue.severity === severity)
-      .filter(({ issue }) => !sheet || issue.sheetName === sheet)
+      .filter(({ issue }) => {
+        if (sheet) return issue.sheetName === sheet;
+        // Match master: with no explicit sheet filter and no sheet
+        // selection, show ALL issues rather than hiding everything.
+        // Only scope to selected sheets when the user actually selected some.
+        if (selectedSheetNames.size === 0) return true;
+        return selectedSheetNames.has(issue.sheetName);
+      })
       .filter(({ issue }) => {
         if (!status) return true;
         // Master-data uses semantic values; other engines use exact rule-code match.
@@ -312,14 +402,14 @@ export function AuditResultsTab({
       .filter(({ blob }) => !query || blob.includes(query))
       .map(({ issue }) => issue)
       .sort((a, b) => String(a[sort] ?? '').localeCompare(String(b[sort] ?? '')));
-  }, [searchIndex, severity, sheet, status, category, debouncedSearch, sort, file]);
+  }, [searchIndex, severity, sheet, status, category, debouncedSearch, sort, file, selectedSheetNames]);
 
   const sheets = result ? [...new Set(result.issues.map((issue) => issue.sheetName))] : [];
   const hasSelected = Boolean(file?.sheets.some((item) => item.status === 'valid' && item.isSelected));
   const functionId = isFunctionId(file?.functionId) ? file!.functionId : undefined;
   const functionLabel = functionId ? getFunctionLabel(functionId) : 'Audit';
   const isMasterData = functionId === 'master-data';
-  const issueHeaders = useMemo(() => visibleIssueHeaders(functionId), [functionId]);
+  const projectGroups = useMemo(() => groupByProject(filtered, sort), [filtered, sort]);
 
   // Master-data swaps category dropdown for column-name dropdown.
   const categoryFilterOptions = useMemo<Array<{ value: string; label: string }>>(() => {
@@ -346,24 +436,22 @@ export function AuditResultsTab({
   }, [result, isMasterData]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-semibold text-gray-950 dark:text-white">Audit Results</h2>
-            {functionId ? <Badge tone="blue">{functionLabel}</Badge> : null}
-            {policyChanged && !isMasterData ? <Badge tone="amber">Policy changed - re-run audit</Badge> : null}
-          </div>
-          <p className="mt-1 text-sm text-gray-500">
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold tracking-tight text-gray-950 dark:text-white">Audit Results</h2>
+          {functionId ? <Badge tone="blue">{functionLabel}</Badge> : null}
+          {policyChanged && !isMasterData ? <Badge tone="amber">Policy changed - re-run audit</Badge> : null}
+          <span className="text-sm text-gray-500">
             {result
-              ? `${result.issues.length} issue${result.issues.length === 1 ? '' : 's'} found across ${result.sheets.length} audited sheet${result.sheets.length === 1 ? '' : 's'}.`
+              ? `· ${result.issues.length} issue${result.issues.length === 1 ? '' : 's'} across ${result.sheets.length} sheet${result.sheets.length === 1 ? '' : 's'}`
               : isMasterData
-                ? 'Master Data audit flags rows where required fields are blank, null, "not assigned", or set to a placeholder, plus "Others" products that need manual review.'
-                : policySummary(process.auditPolicy)}
-          </p>
+                ? '· flags blank, null, "not assigned" or placeholder required fields'
+                : `· ${(functionId && getFunctionPolicySummary(functionId)) ?? policySummary(process.auditPolicy)}`}
+          </span>
         </div>
         {!isMasterData ? (
-          <button onClick={() => setSettingsOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">
+          <button onClick={() => setSettingsOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium shadow-soft transition-all ease-soft hover:border-brand hover:text-brand hover:shadow-soft-md active:scale-[0.98] dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-gray-800">
             <Settings size={16} />
             QGC Settings
           </button>
@@ -402,7 +490,7 @@ export function AuditResultsTab({
                 }}
                 disabled={!hasSelected || !mappingSourceOk || !canEdit}
                 title={editTooltip}
-                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-soft transition-all ease-soft hover:bg-brand-hover hover:shadow-soft-md active:scale-[0.98] disabled:opacity-40 disabled:shadow-none disabled:active:scale-100"
               >
                 Run Audit
               </button>
@@ -411,52 +499,6 @@ export function AuditResultsTab({
         </EmptyState>
       ) : (
         <>
-          {(() => {
-            const isAiCode = (c: string | undefined | null) => !!c && c.startsWith('ai_');
-            const engineIssues = result.issues.filter(
-              (i) => !isAiCode(i.ruleCode ?? i.ruleId),
-            );
-            const aiIssues = result.issues.filter((i) =>
-              isAiCode(i.ruleCode ?? i.ruleId),
-            );
-            const distinctRowKeys = (issues: typeof result.issues) => {
-              const set = new Set<string>();
-              for (const i of issues) {
-                if (i.rowIndex == null) continue;
-                set.add(`${i.sheetName}::${i.rowIndex}`);
-              }
-              return set.size;
-            };
-            const engineFlagged = Math.min(
-              distinctRowKeys(engineIssues),
-              result.scannedRows,
-            );
-            const hasAi = aiIssues.length > 0;
-            return (
-              <div
-                className={`grid gap-3 ${hasAi ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}
-              >
-                <MetricCard label="Scanned Rows" value={result.scannedRows} />
-                <MetricCard label="Flagged Rows" value={engineFlagged} />
-                <MetricCard label="Issues" value={engineIssues.length} />
-                <MetricCard label="Sheets Audited" value={result.sheets.length} />
-                {hasAi ? (
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-900 dark:bg-rose-950">
-                    <div className="flex items-center gap-1.5">
-                      <AiBadge />
-                      <div className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-200">
-                        AI Issues
-                      </div>
-                    </div>
-                    <div className="mt-2 text-2xl font-bold text-rose-900 dark:text-rose-100">
-                      {aiIssues.length}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            );
-          })()}
-
           {result.issues.length > 0 ? (
             <EscalationCenterCta
               processId={process.id}
@@ -472,7 +514,7 @@ export function AuditResultsTab({
           ) : null}
 
           {staleReason ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 shadow-soft dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
               <div>
                 <div className="font-semibold">Stale audit result</div>
                 <div className="mt-1">{staleReason}</div>
@@ -489,7 +531,7 @@ export function AuditResultsTab({
                   }}
                   disabled={!hasSelected || !mappingSourceOk || !canEdit}
                   title={editTooltip}
-                  className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+                  className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white shadow-soft transition-all ease-soft hover:bg-amber-700 hover:shadow-soft-md active:scale-[0.98] disabled:opacity-40 disabled:shadow-none disabled:active:scale-100"
                 >
                   Re-run audit
                 </button>
@@ -497,138 +539,149 @@ export function AuditResultsTab({
             </div>
           ) : null}
 
-          {policyChanged ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+          {policyChanged ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-soft dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
             <div className="font-semibold">Policy used</div>
             <div className="mt-1 text-gray-600 dark:text-gray-300">{policySummary(result.policySnapshot ?? process.auditPolicy)}</div>
             <div className="mt-2">Settings were changed after this audit. Re-run audit to apply the latest QGC policy.</div>
           </div> : null}
 
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-700"><tr><th scope="col" className="p-3">Sheet</th><th scope="col">Status</th><th scope="col">Rows</th><th scope="col">Flagged</th></tr></thead>
-              <tbody>
-                {file?.sheets.map((item) => {
-                  const audited = result.sheets.find((sheetResult) => sheetResult.sheetName === item.name);
-                  return <tr key={item.name} className="border-t border-gray-100 even:bg-gray-50/60 dark:border-gray-700 dark:even:bg-gray-900/40"><td className="p-3">{item.name}</td><td><StatusBadge value={item.status === 'valid' ? 'Valid' : item.status === 'duplicate' ? 'Duplicate' : 'Invalid'} /></td><td>{item.rowCount}</td><td>{audited?.flaggedCount ?? '-'}</td></tr>;
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+          <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-soft dark:border-gray-800 dark:bg-gray-900">
             <div className="flex flex-wrap gap-2">
-              <select value={sheet} onChange={(event) => setSheet(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">Sheet</option>{sheets.map((item) => <option key={item}>{item}</option>)}</select>
-              <select value={severity} onChange={(event) => setSeverity(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">Severity</option><option>High</option><option>Medium</option><option>Low</option></select>
-              <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">{isMasterData ? 'All columns' : 'All categories'}</option>{categoryFilterOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select>
-              <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"><option value="">{isMasterData ? 'All rules' : 'Rule status'}</option>{ruleFilterOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select>
-              <input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search..." className="min-w-52 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+              <select value={sheet} onChange={(event) => setSheet(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-soft outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"><option value="">Sheet</option>{sheets.map((item) => <option key={item}>{item}</option>)}</select>
+              <select value={severity} onChange={(event) => setSeverity(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-soft outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"><option value="">Severity</option><option>High</option><option>Medium</option><option>Low</option></select>
+              <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-soft outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"><option value="">{isMasterData ? 'All columns' : 'All categories'}</option>{categoryFilterOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select>
+              <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-soft outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900"><option value="">{isMasterData ? 'All rules' : 'Rule status'}</option>{ruleFilterOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select>
+              <input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter findings…" className="min-w-52 flex-1 rounded-lg border border-rule bg-white px-3 py-2 text-sm shadow-soft outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-900" />
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-sm dark:border-gray-700">
-              <span className="text-gray-500">{filtered.length} of {result.issues.length} issues shown</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-sm dark:border-gray-800">
+              <span className="text-ink-3 tabular-nums">{filtered.length} results</span>
+              <button type="button" onClick={() => { setSearch(''); setSheet(''); setSeverity(''); setCategory(''); setStatus(''); }} className="text-xs font-medium text-brand hover:underline">Clear</button>
+              <span className="sr-only"> of {result.issues.length} total</span>
               <div className="flex gap-2">
-                <button onClick={() => openAuditReport(process, result)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">PDF Report</button>
-                <button onClick={() => exportIssuesCsv('audit-issues.csv', filtered)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50 dark:border-gray-700">Export CSV</button>
+                <button onClick={() => openAuditReport(process, result)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-soft transition-all ease-soft hover:border-brand hover:text-brand hover:shadow-soft-md active:scale-[0.98] dark:border-gray-700 dark:bg-gray-900">PDF Report</button>
+                <button onClick={() => exportIssuesCsv('audit-issues.csv', filtered)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-soft transition-all ease-soft hover:border-brand hover:text-brand hover:shadow-soft-md active:scale-[0.98] dark:border-gray-700 dark:bg-gray-900">Export CSV</button>
               </div>
             </div>
           </div>
 
-          <div className="overflow-auto rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+          <div className="max-h-[max(420px,calc(100vh-320px))] min-h-[16rem] overflow-auto rounded-xl border border-gray-200 bg-white shadow-soft dark:border-gray-800 dark:bg-gray-900">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-700">
-                <tr>{issueHeaders.map(({ key, label }) => <th key={key} scope="col" onClick={() => setSort(key)} className="cursor-pointer whitespace-nowrap p-3 font-semibold">{label}</th>)}</tr>
+              <thead className="sticky top-0 z-10 border-b border-rule bg-surface-app dark:border-gray-800 dark:bg-gray-950">
+                <tr>
+                  <th scope="col" className="w-8 px-2 py-2.5" aria-hidden />
+                  {PROJECT_HEADERS.map(({ key, label }, i) =>
+                    key ? (
+                      <th
+                        key={i}
+                        scope="col"
+                        onClick={() => setSort(key)}
+                        className="cursor-pointer select-none whitespace-nowrap px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3 transition-colors hover:text-ink"
+                      >
+                        {label}
+                        {sort === key ? <span className="ml-1 text-brand">▾</span> : null}
+                      </th>
+                    ) : (
+                      <th key={i} scope="col" className="whitespace-nowrap px-3.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">
+                        {label}
+                      </th>
+                    ),
+                  )}
+                </tr>
               </thead>
               <tbody>
-                {filtered.map((issue) => (
-                  <Fragment key={issue.id}>
-                    <tr
-                      ref={highlightedRowId === issue.id ? attachHighlightRef : null}
-                      onClick={() => setExpanded(expanded === issue.id ? '' : issue.id)}
-                      className={`group cursor-pointer border-t border-gray-100 align-top even:bg-gray-50/60 hover:bg-gray-100 dark:border-gray-700 dark:even:bg-gray-900/40 dark:hover:bg-gray-700 ${flashRowId === issue.id ? 'bg-amber-100 dark:bg-amber-900/40 ring-2 ring-amber-500 ring-inset' : ''}`}
-                    >
-                      <td className="p-3"><div className="flex items-center gap-2"><ChevronRight size={15} className={`transition ${expanded === issue.id ? 'rotate-90' : ''}`} /><Badge tone={severityTone[issue.severity]}>{issue.severity}</Badge></div></td>
-                      <td className="p-3">{issue.projectNo}</td>
-                      <td className="p-3">{issue.projectName}</td>
-                      <td className="p-3">{issue.projectManager}</td>
-                      <td className="p-3 text-xs text-gray-600 dark:text-gray-300">{issue.email?.trim() ? issue.email : '—'}</td>
-                      <td className="p-3">{issue.sheetName}</td>
-                      <td className="p-3">{issue.projectState}</td>
-                      {!isMasterData ? <td className="p-3">{issue.effort}</td> : null}
-                      <td className="max-w-lg p-3">
-                        <div className="flex flex-wrap items-center gap-1">
-                          <Badge tone={issue.category === 'Needs Review' ? 'amber' : issue.category === 'Data Quality' ? 'blue' : 'gray'}>{issue.ruleName ?? issue.auditStatus}</Badge>
-                          {issue.ruleCode?.startsWith('ai_') ? <AiBadge tooltip="Authored via AI Pilot" /> : null}
-                          {issue.category === 'Needs Review' ? <Badge tone="amber">Needs review</Badge> : null}
-                        </div>
-                        <div className="mt-1 text-gray-700 dark:text-gray-200">{issue.reason ?? issue.notes}</div>
-                        <div className="mt-1 hidden text-xs text-gray-400 group-hover:block">Click for details, notes, and corrections</div>
-                      </td>
-                    </tr>
-                    {expanded === issue.id ? (
-                      <tr className="border-t border-gray-100 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-                        <td colSpan={isMasterData ? 8 : 9} className="p-4">
-                          <div className="grid gap-3 text-sm md:grid-cols-4">
-                            <Detail label="Why flagged?" value={issue.reason ?? issue.notes} />
-                            <Detail label="Category" value={issue.category ?? 'Audit rule'} />
-                            <Detail label="Threshold" value={issue.thresholdLabel ?? '-'} />
-                            <Detail label="Recommended action" value={issue.recommendedAction ?? 'Review this project with the owner.'} />
-                          </div>
-                          <IssueComments
-                            comments={selectIssueComments(process, issue)}
-                            onAdd={(body) => addIssueComment(process.id, auditIssueKey(issue), body)}
-                            onDelete={(commentId) => deleteIssueComment(process.id, auditIssueKey(issue), commentId)}
-                            canEdit={canEdit}
-                            readOnlyReason={editTooltip}
-                          />
-                          <div className="mt-4">
-                            <div className="mb-2 text-xs font-semibold text-gray-500">Auditor decision</div>
-                            <div className="flex flex-wrap gap-2">
-                              {(['needs_review', 'acknowledged', 'corrected'] as AcknowledgmentStatus[]).map((statusOption) => {
-                                const current = process.acknowledgments?.[auditIssueKey(issue)]?.status ?? 'needs_review';
-                                const label = statusOption === 'needs_review' ? 'Needs review' : statusOption === 'acknowledged' ? 'Acknowledged' : 'Corrected';
-                                const active = current === statusOption;
-                                return (
-                                  <button
-                                    key={statusOption}
-                                    type="button"
-                                    disabled={!canEdit}
-                                    title={editTooltip}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      setIssueAcknowledgment(process.id, auditIssueKey(issue), statusOption);
-                                    }}
-                                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
-                                      active
-                                        ? 'border-brand bg-brand-subtle text-brand'
-                                        : 'border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300'
-                                    }`}
-                                  >
-                                    {label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                          <IssueCorrectionEditor
-                            issue={issue}
-                            correction={selectIssueCorrection(process, issue)}
-                            onSave={(correction) => saveIssueCorrection(process.id, auditIssueKey(issue), correction)}
-                            onClear={() => clearIssueCorrection(process.id, auditIssueKey(issue))}
-                            canEdit={canEdit}
-                            readOnlyReason={editTooltip}
+                {projectGroups.map((group) => {
+                  const open = expandedProjects.has(group.projectNo);
+                  const mgrNames = group.managers.map((m) => m.name).filter(Boolean);
+                  const mgrLabel =
+                    mgrNames.length === 0
+                      ? '—'
+                      : mgrNames.length <= 3
+                        ? mgrNames.join(', ')
+                        : `${mgrNames.slice(0, 3).join(', ')} +${mgrNames.length - 3} more`;
+                  return (
+                    <Fragment key={group.projectNo}>
+                      <tr
+                        onClick={() => toggleProject(group.projectNo)}
+                        className="cursor-pointer border-t border-gray-100 align-top transition-colors even:bg-gray-50/60 hover:bg-gray-50 dark:border-gray-800 dark:even:bg-gray-900/40 dark:hover:bg-gray-900/60"
+                      >
+                        <td className="px-2 py-3">
+                          <ChevronDown
+                            size={15}
+                            className={`shrink-0 text-ink-3 transition-transform duration-150 ease-soft ${open ? '' : '-rotate-90'}`}
+                            aria-hidden
                           />
                         </td>
+                        <td className="whitespace-nowrap px-3.5 py-3 font-semibold text-ink dark:text-white">{group.projectNo}</td>
+                        <td className="px-3.5 py-3">{group.projectName || '—'}</td>
+                        <td className="px-3.5 py-3" title={mgrNames.join(', ')}>{mgrLabel}</td>
+                        <td className="px-3.5 py-3">
+                          <span className="font-medium text-ink dark:text-gray-200">{group.issues.length}</span> issue{group.issues.length === 1 ? '' : 's'}
+                          {group.topReason ? <span className="ml-1 text-ink-3"> · {group.topReason}</span> : null}
+                        </td>
+                        <td className="px-3.5 py-3"><Badge tone={severityTone[group.topSeverity]}>{group.topSeverity}</Badge></td>
+                        <td className="px-3.5 py-3 text-ink-3" title={group.sheets.join(', ')}>
+                          {group.sheets.slice(0, 2).join(', ')}{group.sheets.length > 2 ? ` +${group.sheets.length - 2}` : ''}
+                        </td>
+                        <td className="px-3.5 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void navigate(escalationCenterPath(process.displayCode ?? process.id, { project: group.projectNo }));
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white shadow-soft transition-all ease-soft hover:bg-brand-hover hover:shadow-soft-md active:scale-[0.98]"
+                          >
+                            <Send size={12} aria-hidden /> Escalate
+                          </button>
+                        </td>
                       </tr>
-                    ) : null}
-                  </Fragment>
-                ))}
+                      {open
+                        ? group.issues.map((issue) => (
+                            <tr
+                              key={issue.id}
+                              ref={highlightedRowId === issue.id ? attachHighlightRef : null}
+                              className={`border-t border-gray-100/70 bg-gray-50/40 align-top text-xs transition-colors dark:border-gray-800/70 dark:bg-gray-900/30 ${flashRowId === issue.id ? 'bg-amber-100 dark:bg-amber-900/40 ring-2 ring-amber-500 ring-inset' : ''}`}
+                            >
+                              <td className="px-2 py-2.5" aria-hidden />
+                              <td className="px-3.5 py-2.5 text-ink-3" colSpan={2}>
+                                <Badge tone={severityTone[issue.severity]}>{issue.severity}</Badge>
+                                <span className="ml-2 text-ink-3">{issue.sheetName}</span>
+                              </td>
+                              <td className="px-3.5 py-2.5 text-ink-3">
+                                {issue.projectManager || '—'}
+                                {issue.email?.trim() ? <span className="ml-1 text-ink-3">· {issue.email}</span> : null}
+                              </td>
+                              <td className="px-3.5 py-2.5" colSpan={2}>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <Badge tone={issue.category === 'Needs Review' ? 'amber' : issue.category === 'Data Quality' ? 'blue' : 'gray'}>{issue.ruleName ?? issue.auditStatus}</Badge>
+                                  {issue.ruleCode?.startsWith('ai_') ? <AiBadge tooltip="Authored via AI Pilot" /> : null}
+                                </div>
+                                <div className="mt-1 text-ink-2 dark:text-gray-300">{issue.reason ?? issue.notes}</div>
+                              </td>
+                              <td className="px-3.5 py-2.5" colSpan={2} aria-hidden />
+                            </tr>
+                          ))
+                        : null}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
-            {!filtered.length ? <div className="p-5 text-sm text-gray-500">No issues match your filters.</div> : null}
+            {!filtered.length ? <div className="p-8 text-center text-sm text-gray-500">No issues match your filters.</div> : null}
           </div>
         </>
       )}
 
-      {settingsOpen ? <QgcSettingsDrawer process={process} file={file} mappingSource={mappingSource} onClose={() => setSettingsOpen(false)} /> : null}
+      {settingsOpen ? (
+        <QgcSettingsDrawer
+          process={process}
+          file={file}
+          mappingSource={mappingSource}
+          onMappingSourceChange={onMappingSourceChange}
+          overPlanningFiles={overPlanningFiles}
+          onClose={() => setSettingsOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -638,109 +691,19 @@ function Step({ done, children }: { done: boolean; children: React.ReactNode }) 
   return <div className="flex items-center gap-2"><Icon size={16} className={done ? 'text-green-600' : 'text-gray-400'} />{children}</div>;
 }
 
-function IssueCorrectionEditor({ issue, correction, onSave, onClear, canEdit = true, readOnlyReason }: { issue: AuditIssue; correction?: IssueCorrection | undefined; onSave: (correction: Omit<IssueCorrection, 'issueKey' | 'processId' | 'updatedAt'>) => void; onClear: () => void; canEdit?: boolean; readOnlyReason?: string | undefined }) {
-  const [effort, setEffort] = useState(String(correction?.effort ?? issue.effort));
-  const [projectState, setProjectState] = useState(correction?.projectState ?? issue.projectState);
-  const [projectManager, setProjectManager] = useState(correction?.projectManager ?? issue.projectManager);
-  const [note, setNote] = useState(correction?.note ?? '');
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!canEdit) return;
-    onSave({ effort: Number(effort) || 0, projectState: projectState.trim(), projectManager: projectManager.trim(), note });
-  }
-
-  return (
-    <section className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700" title={canEdit ? undefined : readOnlyReason}>
-      <div className="flex items-center justify-between gap-3">
-        <h4 className="font-semibold">Inline correction</h4>
-        {correction ? <span className="text-xs text-gray-500">Updated {new Date(correction.updatedAt).toLocaleString()}</span> : null}
-      </div>
-      <form onSubmit={submit} className="mt-3 grid gap-3 md:grid-cols-4">
-        <label className="text-xs text-gray-500">Effort<input value={effort} disabled={!canEdit} onChange={(event) => setEffort(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900" /></label>
-        <label className="text-xs text-gray-500">State<input value={projectState} disabled={!canEdit} onChange={(event) => setProjectState(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900" /></label>
-        <label className="text-xs text-gray-500">Manager<input value={projectManager} disabled={!canEdit} onChange={(event) => setProjectManager(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900" /></label>
-        <label className="text-xs text-gray-500">Note<input value={note} disabled={!canEdit} onChange={(event) => setNote(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900" /></label>
-        <div className="flex gap-2 md:col-span-4">
-          <Button type="submit" size="sm" disabled={!canEdit} title={canEdit ? undefined : readOnlyReason}>Save correction</Button>
-          {correction ? <Button variant="secondary" size="sm" onClick={onClear} disabled={!canEdit} title={canEdit ? undefined : readOnlyReason}>Clear correction</Button> : null}
-        </div>
-      </form>
-    </section>
-  );
-}
-
-function IssueComments({ comments, onAdd, onDelete, canEdit = true, readOnlyReason }: { comments: IssueComment[]; onAdd: (body: string) => void; onDelete: (commentId: string) => void; canEdit?: boolean; readOnlyReason?: string | undefined }) {
-  const [body, setBody] = useState('');
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!canEdit) return;
-    onAdd(body);
-    setBody('');
-  }
-
-  return (
-    <section className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
-      <div className="flex items-center justify-between gap-3">
-        <h4 className="font-semibold">Audit trail</h4>
-        <span className="text-xs text-gray-500">{comments.length} comment{comments.length === 1 ? '' : 's'}</span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {comments.map((comment) => (
-          <div key={comment.id} className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold text-gray-500">{comment.author} - {new Date(comment.createdAt).toLocaleString()}</div>
-                <p className="mt-1 text-sm text-gray-900 dark:text-gray-100">{comment.body}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onDelete(comment.id)}
-                disabled={!canEdit}
-                title={canEdit ? undefined : readOnlyReason}
-                className="text-xs text-gray-400 hover:text-red-600 disabled:cursor-not-allowed disabled:text-gray-300 disabled:hover:text-gray-300"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        ))}
-        {!comments.length ? <div className="text-sm text-gray-500">No notes yet. Capture PM feedback, approval context, or follow-up details here.</div> : null}
-      </div>
-      <form onSubmit={submit} className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <input
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          placeholder={canEdit ? 'Add audit note...' : 'Read-only — comments disabled'}
-          disabled={!canEdit}
-          title={canEdit ? undefined : readOnlyReason}
-          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400 dark:border-gray-700 dark:bg-gray-900"
-        />
-        <Button type="submit" size="sm" disabled={!canEdit || !body.trim()} title={canEdit ? undefined : readOnlyReason}>Add note</Button>
-      </form>
-    </section>
-  );
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</div>
-      <div className="mt-1 text-gray-900 dark:text-gray-100">{value}</div>
-    </div>
-  );
-}
-
 function QgcSettingsDrawer({
   process,
   file,
   mappingSource,
+  onMappingSourceChange,
+  overPlanningFiles,
   onClose,
 }: {
   process: AuditProcess;
   file?: WorkbookFile | undefined;
   mappingSource?: MappingSourceInput | undefined;
+  onMappingSourceChange?: ((src: MappingSourceInput | undefined) => void) | undefined;
+  overPlanningFiles: WorkbookFile[];
   onClose: () => void;
 }) {
   const updateAuditPolicy = useAppStore((state) => state.updateAuditPolicy);
@@ -800,11 +763,11 @@ function QgcSettingsDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-      <form onSubmit={save} className="h-full w-full max-w-md overflow-y-auto border-l border-gray-200 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-900">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/30 backdrop-blur-sm">
+      <form onSubmit={save} className="h-full w-full max-w-md overflow-y-auto border-l border-gray-200 bg-white p-5 shadow-soft-lg dark:border-gray-800 dark:bg-gray-900">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="text-lg font-semibold">QGC Settings</h3>
+            <h3 className="text-lg font-semibold tracking-tight">QGC Settings</h3>
             <p className="mt-1 text-sm text-gray-500">Configure thresholds for this process. Re-run audit after saving.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 hover:bg-gray-100 dark:hover:bg-gray-800"><X size={18} /></button>
@@ -870,7 +833,7 @@ function QgcSettingsDrawer({
                 type="text"
                 value={draft.opportunities?.brazilExpectedBu ?? 'Brazil'}
                 onChange={(event) => setOpp('brazilExpectedBu', event.target.value)}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800"
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-800"
               />
             </label>
           </SettingsSection>
@@ -878,10 +841,33 @@ function QgcSettingsDrawer({
           <p className="mt-4 text-sm text-gray-500">No configurable thresholds for this function.</p>
         )}
 
-        <div className="sticky bottom-0 mt-6 flex gap-2 border-t border-gray-200 bg-white pt-4 dark:border-gray-700 dark:bg-gray-900">
-          <button type="submit" className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">{file ? 'Save & Re-run Audit' : 'Save Settings'}</button>
-          <button type="button" onClick={reset} className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Reset Defaults</button>
-          <button type="button" onClick={onClose} className="ml-auto rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800">Cancel</button>
+        {/* Manager mapping — for functions whose sheets have no manager
+            column (Function Rate / Internal Cost Rate / Over-Planning),
+            resolve managers by reference to Master Data. Surfaced here so
+            it is reachable AFTER a first audit (the empty-state picker is
+            not), and "Save & Re-run Audit" below carries it through. */}
+        {file && process.displayCode && MAPPING_ENABLED_FUNCTIONS.has(file.functionId ?? '') ? (
+          <SettingsSection title="Manager mapping (from Master Data)">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              This function has no manager column. Pick a Master Data source
+              to resolve manager &amp; email by Project ID, then Save &amp;
+              Re-run.
+            </p>
+            <MappingSourcePanel
+              processId={process.id}
+              processDisplayCode={process.displayCode}
+              auditFileId={file.id}
+              overPlanningFiles={overPlanningFiles}
+              value={mappingSource}
+              onChange={onMappingSourceChange ?? (() => {})}
+            />
+          </SettingsSection>
+        ) : null}
+
+        <div className="sticky bottom-0 mt-6 flex gap-2 border-t border-gray-200 bg-white pt-4 dark:border-gray-800 dark:bg-gray-900">
+          <button type="submit" className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white shadow-soft transition-all ease-soft hover:bg-brand-hover hover:shadow-soft-md active:scale-[0.98]">{file ? 'Save & Re-run Audit' : 'Save Settings'}</button>
+          <button type="button" onClick={reset} className="rounded-lg border border-gray-300 px-4 py-2 text-sm shadow-soft transition-all ease-soft hover:bg-gray-50 hover:shadow-soft-md active:scale-[0.98] dark:border-gray-700 dark:hover:bg-gray-800">Reset Defaults</button>
+          <button type="button" onClick={onClose} className="ml-auto rounded-lg border border-gray-300 px-4 py-2 text-sm shadow-soft transition-all ease-soft hover:bg-gray-50 hover:shadow-soft-md active:scale-[0.98] dark:border-gray-700 dark:hover:bg-gray-800">Cancel</button>
         </div>
       </form>
     </div>
@@ -890,8 +876,8 @@ function QgcSettingsDrawer({
 
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mt-5 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-      <h4 className="font-semibold">{title}</h4>
+    <section className="mt-5 rounded-xl border border-gray-200 bg-gray-50/40 p-4 dark:border-gray-800 dark:bg-gray-900/40">
+      <h4 className="font-semibold tracking-tight">{title}</h4>
       <div className="mt-3 space-y-3">{children}</div>
     </section>
   );
@@ -902,7 +888,7 @@ function NumberField({ label, value, suffix, onChange }: { label: string; value:
     <label className="block text-sm">
       <span className="font-medium text-gray-700 dark:text-gray-200">{label}</span>
       <div className="mt-1 flex items-center gap-2">
-        <input type="number" value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 dark:border-gray-700 dark:bg-gray-800" />
+        <input type="number" value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none transition-all ease-soft focus:border-brand focus:ring-2 focus:ring-brand/20 dark:border-gray-700 dark:bg-gray-800" />
         {suffix ? <span className="text-xs text-gray-500">{suffix}</span> : null}
       </div>
     </label>
@@ -925,9 +911,9 @@ function EscalationCenterCta({
 }) {
   const href = escalationCenterPath(processDisplayCode ?? processId);
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/5 p-4 text-sm">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/5 p-4 text-sm shadow-soft">
       <div>
-        <div className="font-semibold text-gray-900 dark:text-white">
+        <div className="font-semibold tracking-tight text-gray-900 dark:text-white">
           {managerCount} manager{managerCount === 1 ? '' : 's'} to notify
         </div>
         <div className="mt-1 text-xs text-gray-600 dark:text-gray-300">
@@ -936,7 +922,7 @@ function EscalationCenterCta({
       </div>
       <a
         href={href}
-        className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white hover:bg-brand-hover"
+        className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white shadow-soft transition-all ease-soft hover:bg-brand-hover hover:shadow-soft-md active:scale-[0.98]"
       >
         Open Escalation Center →
       </a>

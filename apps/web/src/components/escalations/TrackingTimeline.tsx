@@ -216,9 +216,9 @@ export function TrackingTimeline({
 
   if (!events.length) {
     return (
-      <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center dark:border-gray-800">
+      <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center shadow-soft dark:border-gray-700">
         <Clock size={20} className="mx-auto mb-2 text-gray-400" />
-        <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{emptyLabel}</p>
+        <p className="text-sm font-medium tracking-tight text-gray-700 dark:text-gray-200">{emptyLabel}</p>
         <p className="mt-1 text-xs text-gray-500">
           Notifications, stage transitions and SLA events will appear here as the ladder progresses.
         </p>
@@ -231,7 +231,7 @@ export function TrackingTimeline({
       {grouped.map((group) => (
         <section key={group.bucket} aria-label={group.bucket}>
           <div className="sticky top-0 z-10 -mx-1 mb-2 flex items-center gap-2 bg-gradient-to-b from-white via-white/95 to-white/0 px-1 py-1 dark:from-gray-950 dark:via-gray-950/95 dark:to-gray-950/0">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            <span className="eyebrow">
               {group.bucket}
             </span>
             <span className="h-px flex-1 bg-gray-200 dark:bg-gray-800" />
@@ -255,7 +255,7 @@ export function TrackingTimeline({
                   >
                     <event.Icon size={13} className={tone.icon} />
                   </span>
-                  <article className="group rounded-lg border border-gray-100 bg-white px-3.5 py-2.5 shadow-sm transition hover:border-gray-200 hover:shadow dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
+                  <article className="group rounded-xl border border-gray-100 bg-white px-3.5 py-2.5 shadow-soft transition-all ease-soft hover:border-gray-200 hover:shadow-soft-md dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700">
                     <header className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                         <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${tone.chip}`}>

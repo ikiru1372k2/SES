@@ -11,6 +11,7 @@ function row(p: Partial<ProcessEscalationManagerRow> = {}): ProcessEscalationMan
     managerName: 'Kumar, Arjun',
     resolvedEmail: 'arjun.kumar@demo.com',
     directoryEmail: null,
+    directoryTeamsUsername: null,
     isUnmapped: false,
     totalIssues: 3,
     countsByEngine: { 'master-data': 3 },

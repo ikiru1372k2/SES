@@ -118,6 +118,7 @@ export class DirectoryService {
     firstName: string;
     lastName: string;
     email: string;
+    teamsUsername?: string | null;
     normalizedKey: string;
     aliases: unknown;
     active: boolean;
@@ -131,6 +132,7 @@ export class DirectoryService {
       firstName: row.firstName,
       lastName: row.lastName,
       email: row.email,
+      teamsUsername: row.teamsUsername ?? null,
       normalizedKey: row.normalizedKey,
       aliases: parseAliases(row.aliases),
       active: row.active,
@@ -217,6 +219,7 @@ export class DirectoryService {
       for (const v of validated) {
         if (v.issues.length) continue;
         const email = sanitizeHeader(v.input.email).toLowerCase();
+        const teamsUsername = sanitizeHeader(v.input.teamsUsername ?? '').trim() || null;
         const nk = normalizeManagerKey(v.input.firstName, v.input.lastName);
         const existing = await tx.managerDirectory.findFirst({
           where: { tenantId, email },
@@ -231,6 +234,7 @@ export class DirectoryService {
             data: {
               firstName: v.input.firstName,
               lastName: v.input.lastName,
+              teamsUsername: teamsUsername ?? undefined,
               normalizedKey: nk,
               source: 'upload',
               updatedAt: new Date(),
@@ -247,6 +251,7 @@ export class DirectoryService {
             firstName: v.input.firstName,
             lastName: v.input.lastName,
             email,
+            teamsUsername,
             normalizedKey: nk,
             aliases: [],
             active: true,
@@ -386,6 +391,7 @@ export class DirectoryService {
       throw new BadRequestException({ issues: v?.issues ?? ['invalid'] });
     }
     const email = sanitizeHeader(v.input.email).toLowerCase();
+    const teamsUsername = sanitizeHeader(v.input.teamsUsername ?? '').trim() || null;
     const nk = normalizeManagerKey(v.input.firstName, v.input.lastName);
     const created = await this.prisma.$transaction(async (tx) => {
       const dup = await tx.managerDirectory.findFirst({ where: { tenantId, email } });
@@ -398,6 +404,7 @@ export class DirectoryService {
           firstName: v.input.firstName,
           lastName: v.input.lastName,
           email,
+          teamsUsername,
           normalizedKey: nk,
           aliases: [],
           active: true,
@@ -416,7 +423,7 @@ export class DirectoryService {
 
   async createManager(
     user: SessionUser,
-    payload: { code: string; name: string; email: string; active?: boolean },
+    payload: { code: string; name: string; email: string; teamsUsername?: string; active?: boolean },
   ) {
     this.requireAdmin(user);
     this.requireManagerDirectoryEnabled(user);
@@ -424,6 +431,7 @@ export class DirectoryService {
     const code = sanitizeHeader(payload.code).trim().toUpperCase();
     const name = sanitizeHeader(payload.name).trim();
     const email = sanitizeHeader(payload.email).trim().toLowerCase();
+    const teamsUsername = sanitizeHeader(payload.teamsUsername ?? '').trim() || null;
 
     if (!/^[A-Z0-9_-]{2,16}$/.test(code)) {
       throw new BadRequestException({ field: 'code', message: 'Code must match ^[A-Z0-9_-]{2,16}$.' });
@@ -460,6 +468,7 @@ export class DirectoryService {
             firstName,
             lastName,
             email,
+            teamsUsername,
             normalizedKey: nk,
             aliases: [],
             active: payload.active ?? true,
@@ -747,6 +756,7 @@ export class DirectoryService {
       firstName?: string;
       lastName?: string;
       email?: string;
+      teamsUsername?: string;
       active?: boolean;
       applyEmailChange?: boolean;
     },
@@ -798,6 +808,10 @@ export class DirectoryService {
           firstName: body.firstName ?? undefined,
           lastName: body.lastName ?? undefined,
           email: body.email !== undefined ? nextEmail : undefined,
+          teamsUsername:
+            body.teamsUsername !== undefined
+              ? sanitizeHeader(body.teamsUsername).trim() || null
+              : undefined,
           normalizedKey: nk,
           active: body.active ?? undefined,
         },

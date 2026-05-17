@@ -150,6 +150,16 @@ type PersistedAuditIssue = AuditIssue & {
   issueKey: string;
 };
 
+/**
+ * Manager lookup built from a mapping source (Master Data version or an
+ * uploaded file). `byId` is keyed on normalized Project ID; `byName` is
+ * keyed on normalized Project Name and only contains names that map to a
+ * single distinct manager (ambiguous names are dropped). Project ID is the
+ * preferred key; name is a fallback for data where IDs don't align across
+ * functions.
+ */
+type ManagerMaps = { byId: Map<string, string>; byName: Map<string, string> };
+
 @Injectable()
 export class AuditsService {
   constructor(
@@ -675,12 +685,35 @@ export class AuditsService {
     process: { id: string; displayCode: string },
     auditFile: { id: string },
     src: MappingSourceDto,
-  ): Promise<Map<string, string>> {
-    const map = new Map<string, string>();
+  ): Promise<ManagerMaps> {
+    const byId = new Map<string, string>();
+    // Name → managers seen. A name is only a usable fallback key when it maps
+    // to exactly ONE distinct manager in the source (guards against the
+    // sample data where a project name could otherwise be ambiguous).
+    const nameToManagers = new Map<string, Set<string>>();
     const normKey = (v: unknown) => String(v ?? '').trim().toLowerCase();
+    const normName = (v: unknown) =>
+      String(v ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+    const addName = (name: string, pm: string) => {
+      const k = normName(name);
+      if (!k || !pm) return;
+      const set = nameToManagers.get(k) ?? new Set<string>();
+      set.add(pm);
+      nameToManagers.set(k, set);
+    };
+    const finish = (): ManagerMaps => {
+      const byName = new Map<string, string>();
+      for (const [name, mgrs] of nameToManagers) {
+        if (mgrs.size === 1) byName.set(name, [...mgrs][0]!);
+      }
+      return { byId, byName };
+    };
 
     if (src.type === 'uploaded_file') {
-      if (!src.uploadId) return map;
+      if (!src.uploadId) return finish();
       // audit file cannot also be its own mapping source.
       if (src.uploadId === auditFile.id) {
         throw new BadRequestException('Mapping file must differ from the audit file');
@@ -693,7 +726,7 @@ export class AuditsService {
       }
       const sheet = await (tx as any).workbookSheet.findFirst({ where: { fileId: mf.id } });
       const rows: unknown[][] = (sheet?.rows as unknown[][]) ?? [];
-      if (rows.length < 2) return map;
+      if (rows.length < 2) return finish();
       const headerRow = (rows[0] ?? []).map((c) => String(c ?? '').toLowerCase().trim());
       const idCol = headerRow.findIndex((h) =>
         ['project id', 'project no', 'project no.', 'project number', 'projectno'].includes(h),
@@ -701,17 +734,21 @@ export class AuditsService {
       const pmCol = headerRow.findIndex((h) =>
         ['project manager', 'manager', 'projectmanager'].includes(h),
       );
-      if (idCol < 0 || pmCol < 0) return map;
+      const nameCol = headerRow.findIndex((h) =>
+        ['project name', 'projectname', 'project'].includes(h),
+      );
+      if (idCol < 0 || pmCol < 0) return finish();
       for (const row of rows.slice(1)) {
         const id = normKey((row as unknown[])[idCol]);
         const pm = String((row as unknown[])[pmCol] ?? '').trim();
-        if (id && pm && !map.has(id)) map.set(id, pm);
+        if (id && pm && !byId.has(id)) byId.set(id, pm);
+        if (nameCol >= 0) addName(String((row as unknown[])[nameCol] ?? ''), pm);
       }
-      return map;
+      return finish();
     }
 
     if (src.type === 'master_data_version') {
-      if (!src.masterDataVersionId) return map;
+      if (!src.masterDataVersionId) return finish();
       const run = await (tx as any).auditRun.findFirst({
         where: {
           id: src.masterDataVersionId,
@@ -727,30 +764,40 @@ export class AuditsService {
       }
       const issues = await (tx as any).auditIssue.findMany({
         where: { auditRunId: run.id },
-        select: { projectNo: true, projectManager: true },
+        select: { projectNo: true, projectName: true, projectManager: true },
       });
       for (const issue of issues) {
         const id = normKey(issue.projectNo);
         const pm = String(issue.projectManager ?? '').trim();
         // First occurrence wins — MD runs typically have multiple issues per project.
-        if (id && pm && !map.has(id)) map.set(id, pm);
+        if (id && pm && !byId.has(id)) byId.set(id, pm);
+        addName(issue.projectName, pm);
       }
     }
 
-    return map;
+    return finish();
   }
 
-  // Populate projectManager from Project ID map; never overwrites a populated
-  // name so this pre-pass stays additive and safe to re-run.
-  private applyProjectIdToManager(issues: AuditIssue[], map: Map<string, string>): number {
-    if (map.size === 0) return 0;
+  // Populate projectManager from the mapping source: match by Project ID
+  // first (preserves prior behaviour), then fall back to Project Name when
+  // the ID has no match. Never overwrites an already-populated name, so this
+  // pre-pass stays additive and safe to re-run. The name map only contains
+  // unambiguous names (see buildProjectIdToManagerMap), so the fallback can't
+  // mis-assign when a name maps to multiple managers in the source.
+  private applyProjectIdToManager(issues: AuditIssue[], maps: ManagerMaps): number {
+    if (maps.byId.size === 0 && maps.byName.size === 0) return 0;
     let count = 0;
     for (const issue of issues) {
       const current = (issue.projectManager ?? '').trim();
       if (current && current.toLowerCase() !== 'unassigned') continue;
-      const key = String(issue.projectNo ?? '').trim().toLowerCase();
-      if (!key) continue;
-      const pm = map.get(key);
+      const idKey = String(issue.projectNo ?? '').trim().toLowerCase();
+      const nameKey = String(issue.projectName ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+      const pm =
+        (idKey ? maps.byId.get(idKey) : undefined) ??
+        (nameKey ? maps.byName.get(nameKey) : undefined);
       if (pm) {
         issue.projectManager = pm;
         count += 1;

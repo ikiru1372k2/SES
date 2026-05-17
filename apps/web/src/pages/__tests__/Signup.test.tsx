@@ -64,6 +64,12 @@ describe('Signup', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/do not match/i);
   });
 
+  it('does not expose a role selector on the public form (audit U-04 / G-2)', () => {
+    renderSignup();
+    expect(screen.queryByLabelText(/role/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /admin/i })).not.toBeInTheDocument();
+  });
+
   it('calls signupOnApi with the entered values when the form is valid', async () => {
     signupOnApi.mockResolvedValue({ user: { displayName: 'Test User', email: 'test@example.com' } });
     renderSignup();
