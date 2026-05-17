@@ -19,7 +19,7 @@ import { useKeyboardShortcut } from '../../hooks/useKeyboardShortcut';
 import { escalationCenterPath } from '../../lib/processRoutes';
 import { createDefaultAuditPolicy, isPolicyChanged, policySummary } from '../../lib/domain/auditPolicy';
 import { exportIssuesCsv } from '../../lib/domain/auditEngine';
-import { getSelectedSheetNames } from '../../lib/workbook/auditResultFilter';
+import { getSelectedSheetNames, isAiCode } from '../../lib/workbook/auditResultFilter';
 import { openAuditReport } from '../../lib/reportExporter';
 import { severityTone } from '../../lib/domain/severity';
 import type {
@@ -68,6 +68,14 @@ interface ProjectGroup {
   topSeverity: AuditIssue['severity'];
   sheets: string[];
   topReason: string;
+  /** True when any issue in the group was authored by an AI rule (ai_…). */
+  hasAiIssue: boolean;
+}
+
+/** A finding is AI-authored when its rule code/id carries the `ai_` prefix.
+ *  Uses the same predicate as the "AI Issues" metric so they cannot diverge. */
+function isAiIssue(issue: AuditIssue): boolean {
+  return isAiCode(issue.ruleCode ?? issue.ruleId);
 }
 
 /**
@@ -93,6 +101,7 @@ function groupByProject(filtered: AuditIssue[], sort: SortKey): ProjectGroup[] {
         topSeverity: issue.severity,
         sheets: [],
         topReason: '',
+        hasAiIssue: false,
       };
       map.set(key, group);
       mgrSeen.set(key, new Set());
@@ -101,6 +110,7 @@ function groupByProject(filtered: AuditIssue[], sort: SortKey): ProjectGroup[] {
     }
     if (!group.projectName && issue.projectName) group.projectName = issue.projectName;
     group.issues.push(issue);
+    if (isAiIssue(issue)) group.hasAiIssue = true;
     if ((SEVERITY_RANK[issue.severity] ?? 9) < (SEVERITY_RANK[group.topSeverity] ?? 9)) {
       group.topSeverity = issue.severity;
     }
@@ -615,8 +625,13 @@ export function AuditResultsTab({
                         <td className="px-3.5 py-3">{group.projectName || '—'}</td>
                         <td className="px-3.5 py-3" title={mgrNames.join(', ')}>{mgrLabel}</td>
                         <td className="px-3.5 py-3">
-                          <span className="font-medium text-ink dark:text-gray-200">{group.issues.length}</span> issue{group.issues.length === 1 ? '' : 's'}
-                          {group.topReason ? <span className="ml-1 text-ink-3"> · {group.topReason}</span> : null}
+                          <span className="inline-flex flex-wrap items-center gap-1.5">
+                            <span>
+                              <span className="font-medium text-ink dark:text-gray-200">{group.issues.length}</span> issue{group.issues.length === 1 ? '' : 's'}
+                              {group.topReason ? <span className="ml-1 text-ink-3"> · {group.topReason}</span> : null}
+                            </span>
+                            {group.hasAiIssue ? <AiBadge tooltip="Includes AI-detected findings" /> : null}
+                          </span>
                         </td>
                         <td className="px-3.5 py-3"><Badge tone={severityTone[group.topSeverity]}>{group.topSeverity}</Badge></td>
                         <td className="px-3.5 py-3 text-ink-3" title={group.sheets.join(', ')}>
@@ -654,7 +669,7 @@ export function AuditResultsTab({
                               <td className="px-3.5 py-2.5" colSpan={2}>
                                 <div className="flex flex-wrap items-center gap-1">
                                   <Badge tone={issue.category === 'Needs Review' ? 'amber' : issue.category === 'Data Quality' ? 'blue' : 'gray'}>{issue.ruleName ?? issue.auditStatus}</Badge>
-                                  {issue.ruleCode?.startsWith('ai_') ? <AiBadge tooltip="Authored via AI Pilot" /> : null}
+                                  {isAiIssue(issue) ? <AiBadge tooltip="Authored via AI Pilot" /> : null}
                                 </div>
                                 <div className="mt-1 text-ink-2 dark:text-gray-300">{issue.reason ?? issue.notes}</div>
                               </td>

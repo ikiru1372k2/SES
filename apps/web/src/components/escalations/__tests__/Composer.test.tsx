@@ -58,6 +58,7 @@ function row(p: Partial<ProcessEscalationManagerRow> = {}): ProcessEscalationMan
     stage: 'ESCALATED_L1',
     resolved: false,
     lastContactAt: null,
+    lastActivityAt: null,
     slaDueAt: null,
     trackingId: 'trk-1',
     trackingDisplayCode: 'TRK-1',

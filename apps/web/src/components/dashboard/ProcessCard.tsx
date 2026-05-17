@@ -1,5 +1,6 @@
 import { ChevronRight, Edit2, GitCompare, MoreHorizontal, Share2, Trash2, X } from 'lucide-react';
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { daysUntilDue } from '../../lib/domain/scheduleHelpers';
@@ -56,6 +57,9 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
   const [editOpen, setEditOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuPanelRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
   const accessGate = useEffectiveAccess(process.serverBacked ? process.displayCode ?? process.id : null);
   const canManageMembers = process.serverBacked ? accessGate.isOwner : false;
   const latest = selectLatestAuditResult(process);
@@ -70,13 +74,32 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
     process.description?.trim() ||
     `${fileCount} file${fileCount === 1 ? '' : 's'} · ${latest ? 'audited' : 'not audited yet'}`;
 
+  useLayoutEffect(() => {
+    if (!menuOpen) return;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+  }, [menuOpen]);
+
   useEffect(() => {
     if (!menuOpen) return;
     function onDoc(ev: MouseEvent) {
-      if (!menuRef.current?.contains(ev.target as Node)) setMenuOpen(false);
+      const target = ev.target as Node;
+      if (menuRef.current?.contains(target) || menuPanelRef.current?.contains(target)) return;
+      setMenuOpen(false);
+    }
+    function onDismiss() {
+      setMenuOpen(false);
     }
     document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    window.addEventListener('resize', onDismiss);
+    window.addEventListener('scroll', onDismiss, true);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('resize', onDismiss);
+      window.removeEventListener('scroll', onDismiss, true);
+    };
   }, [menuOpen]);
 
   async function runDelete() {
@@ -161,6 +184,7 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
           ) : null}
           <div className="relative" ref={menuRef}>
             <button
+              ref={triggerRef}
               type="button"
               title="Process actions"
               aria-label="Process actions"
@@ -171,8 +195,13 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
             >
               <MoreHorizontal size={18} />
             </button>
-            {menuOpen ? (
-              <div className="absolute right-0 top-8 z-20 w-44 rounded-xl border border-rule bg-white p-1 text-sm shadow-soft-lg dark:border-gray-800 dark:bg-gray-900">
+            {menuOpen
+              ? createPortal(
+              <div
+                ref={menuPanelRef}
+                style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
+                className="z-50 w-44 rounded-xl border border-rule bg-white p-1 text-sm shadow-soft-lg dark:border-gray-800 dark:bg-gray-900"
+              >
                 <Link
                   to="/compare"
                   onClick={() => setMenuOpen(false)}
@@ -200,8 +229,10 @@ export function ProcessCard({ process }: { process: AuditProcess }) {
                   <Trash2 size={14} />
                   Delete process
                 </button>
-              </div>
-            ) : null}
+              </div>,
+                  document.body,
+                )
+              : null}
           </div>
         </div>
       </div>

@@ -40,7 +40,12 @@ export function AnalyticsStrip({ rows, now }: Props) {
       const isClosed =
         row.resolved || row.stage === 'RESOLVED' || Boolean(row.verifiedAt);
       if (isClosed) {
-        const ts = row.lastContactAt ? new Date(row.lastContactAt).getTime() : null;
+        // Resolution date: prefer verifiedAt, then the tracking entry's last
+        // activity (set by the resolve transition), then lastContactAt as a
+        // final fallback. `lastContactAt` alone misses managers resolved
+        // without ever being contacted, which left this stuck at 0.
+        const resolvedTsRaw = row.verifiedAt ?? row.lastActivityAt ?? row.lastContactAt;
+        const ts = resolvedTsRaw ? new Date(resolvedTsRaw).getTime() : null;
         if (ts !== null && ts >= recentCutoff) resolvedRecent += 1;
       } else open += 1;
 

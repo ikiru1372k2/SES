@@ -8,7 +8,9 @@ export type AuditMetrics = {
   aiIssues: number;
 };
 
-function isAiCode(code: string | undefined | null): boolean {
+/** A rule code/id authored by AI Pilot carries the `ai_` prefix. Shared so
+ *  the per-row AI badge and the "AI Issues" metric stay in lockstep. */
+export function isAiCode(code: string | undefined | null): boolean {
   return !!code && code.startsWith('ai_');
 }
 

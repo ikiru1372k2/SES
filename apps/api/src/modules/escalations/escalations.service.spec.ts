@@ -74,6 +74,7 @@ describe('EscalationsService directory enrichment', () => {
           escalationLevel: 0,
           resolved: false,
           lastContactAt: null,
+          updatedAt: null,
           slaDueAt: null,
           verifiedAt: null,
           verifiedBy: null,
