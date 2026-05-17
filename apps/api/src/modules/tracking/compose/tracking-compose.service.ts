@@ -16,6 +16,7 @@ import {
   createId,
   escalationLevelLabel,
   getFunctionLabel,
+  managerKey,
   substitute,
   type EngineFindingLine,
   type EscalationStage as DomainEscalationStage,
@@ -383,7 +384,7 @@ export class TrackingComposeService {
       managerEmail: string | null;
       escalationLevel: number;
       stage: string;
-      process: { id: string; displayCode: string; name: string; slaInitialHours: number };
+      process: { id: string; displayCode: string; name: string; slaInitialHours: number; tenantId: string };
       composeDraft: unknown;
     },
     user: SessionUser,
@@ -414,7 +415,19 @@ export class TrackingComposeService {
     const row = esc.rows.find((r) => r.trackingId === entry.id);
     // Level-wise escalation: how many distinct uploads have flagged this
     // manager for each issue. Derived from immutable audit-run history.
-    const levelResolver = await this.escalationLevels.resolverForProcess(entry.processId);
+    const levelResolver = await this.escalationLevels.resolverForProcess(
+      entry.processId,
+      entry.process.tenantId,
+    );
+    // Identify the manager the same way the level history does: the
+    // effective email (issue/tracking email, else directory), else the
+    // missing-email name bucket. Using row.managerKey directly would drift
+    // for functions whose email is resolved per-run (over-planning,
+    // function-rate, internal-cost-rate) and never match a repeat.
+    const levelManagerKey = managerKey(
+      row?.managerName ?? entry.managerName,
+      row?.resolvedEmail ?? row?.directoryEmail ?? entry.managerEmail ?? null,
+    );
     const managerEmail = row?.resolvedEmail ?? row?.directoryEmail ?? entry.managerEmail ?? null;
     const teamsUsername = row?.directoryTeamsUsername?.trim() || null;
     const lines: EngineFindingLine[] = [];
@@ -487,7 +500,7 @@ export class TrackingComposeService {
             ? (iss!.missingMonths as unknown[]).map((m) => String(m).trim()).filter(Boolean).join(', ')
             : null;
           const projectLink = f.projectNo ? projectLinks.get(f.projectNo) ?? null : null;
-          const occurrenceLevel = levelResolver.levelFor(row.managerKey, f.issueKey);
+          const occurrenceLevel = levelResolver.levelFor(levelManagerKey, f.issueKey);
           lines.push({
             engineKey: engineId,
             engineLabel: getFunctionLabel(engineId as FunctionId),
