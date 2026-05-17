@@ -65,6 +65,11 @@ export function Composer({
   const confirm = useConfirm();
   const trackingRef = row.trackingId ?? row.trackingDisplayCode;
   const managerEmail = effectiveManagerEmail(row);
+  // Authoritative Teams recipient: the Manager Directory `teamsUsername`
+  // surfaced on the escalation row. Whitespace-only counts as missing
+  // (matches the backend's `?.trim() || null`). Email is NEVER used as the
+  // Teams "To".
+  const teamsUsername = row.directoryTeamsUsername?.trim() || null;
 
   const [viewMode, setViewMode] = useState<'preview' | 'edit'>('preview');
   const [templateId, setTemplateId] = useState<string | undefined>();
@@ -220,13 +225,17 @@ export function Composer({
       const win = handoffWindowRef.current;
       handoffWindowRef.current = null;
       if (result.channel === 'teams') {
-        // Teams: just update the window location to the deep-link.
+        // Teams: just update the window location to the deep-link. Use the
+        // directory Teams username (not result.to, which is the email
+        // fallback); omit `users` entirely when there is none so Teams opens
+        // with an empty To rather than an unresolvable email.
         if (win && !win.closed) {
           const msg = `${result.subject}\n\n${result.body}`;
-          const url =
-            `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(result.to)}` +
-            `&message=${encodeURIComponent(msg.length > 4000 ? msg.slice(0, 4000) : msg)}`;
-          win.location.href = url;
+          const capped = msg.length > 4000 ? msg.slice(0, 4000) : msg;
+          const params = new URLSearchParams();
+          if (teamsUsername) params.set('users', teamsUsername);
+          params.set('message', capped);
+          win.location.href = `https://teams.microsoft.com/l/chat/0/0?${params.toString()}`;
         }
         toast.success('Recorded — Teams opening…');
       } else {
@@ -558,6 +567,12 @@ export function Composer({
         teamsGateReason=""
         teamsCount={teamsCount}
         onTeams={() => {
+          if (!teamsUsername) {
+            toast(
+              'No Teams username in Manager Directory for this recipient — opening Teams with the message only; the To field will be empty.',
+              { icon: '⚠️' },
+            );
+          }
           const win = openBlankWindow();
           if (!win) { toast.error('Allow popups before recording a Teams send.'); return; }
           fillLoadingWindow(win);
