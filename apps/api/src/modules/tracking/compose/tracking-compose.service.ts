@@ -34,6 +34,7 @@ import { OutboundDeliveryService, type EscalationSendChannel } from '../../outbo
 import {
   DEFAULT_BODY_TEMPLATE,
   DEFAULT_SUBJECT_TEMPLATE,
+  endOfDay,
   escapeHtml,
   firstName,
   formatDueDate,
@@ -214,8 +215,12 @@ export class TrackingComposeService {
     }
 
     const slaHours = entry.process.slaInitialHours ?? 120;
-    const slaDueAt = new Date(Date.now() + slaHours * 60 * 60 * 1000);
     const deadlineAt = body.deadlineAt ? new Date(body.deadlineAt) : null;
+    // The Compose "Due date" the user picked is the source of truth for the
+    // Escalation Center SLA. Map the picked calendar day to end-of-day; only
+    // fall back to the process-wide slaInitialHours window when no date was set.
+    const slaDueAt =
+      endOfDay(body.deadlineAt) ?? new Date(Date.now() + slaHours * 60 * 60 * 1000);
     const authorNote = (body.authorNote ?? '').slice(0, 2000);
 
     const nextStage: EscalationStage =
@@ -554,7 +559,13 @@ export class TrackingComposeService {
     const slaDeadline = row?.slaDueAt
       ? new Date(row.slaDueAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
       : '';
-    const dueDate = formatDueDate(overrides.deadlineAt ?? draft.deadlineAt ?? null);
+    const pickedDeadline = overrides.deadlineAt ?? draft.deadlineAt ?? null;
+    const dueDate = formatDueDate(pickedDeadline);
+    // {{dueDate}} must reflect the date the user picked. slaDeadline (derived
+    // from the possibly-stale slaDueAt) is only a last resort for the case
+    // where no Compose Due date was ever set — never substitute it when the
+    // user did pick a date.
+    const dueDateSlot = pickedDeadline != null ? dueDate : dueDate || slaDeadline || '';
     const auditorName = latestRun?.ranBy?.displayName ?? user.displayName;
 
     const textSlots: Record<string, string> = {
@@ -565,7 +576,7 @@ export class TrackingComposeService {
       findingsCount: String(lines.length),
       findingsMaxLevel,
       slaDeadline,
-      dueDate: dueDate || slaDeadline || '',
+      dueDate: dueDateSlot,
       auditRunDate,
       auditorName,
     };
@@ -578,7 +589,7 @@ export class TrackingComposeService {
       findingsCount: String(lines.length),
       findingsMaxLevel: escapeHtml(findingsMaxLevel),
       slaDeadline: escapeHtml(slaDeadline),
-      dueDate: escapeHtml(dueDate || slaDeadline || ''),
+      dueDate: escapeHtml(dueDateSlot),
       auditRunDate: escapeHtml(auditRunDate),
       auditorName: escapeHtml(auditorName),
     };

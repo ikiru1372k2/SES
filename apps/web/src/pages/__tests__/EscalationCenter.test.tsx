@@ -63,6 +63,7 @@ function baseRow(p: Partial<ProcessEscalationManagerRow> & Pick<ProcessEscalatio
     stage: 'open',
     resolved: false,
     lastContactAt: null,
+    lastActivityAt: null,
     slaDueAt: null,
     trackingId: 'trk-1',
     trackingDisplayCode: 'TRK-1',

@@ -36,6 +36,13 @@ export interface ProcessEscalationManagerRow {
   stage: string | null;
   resolved: boolean;
   lastContactAt: string | null;
+  /**
+   * Tracking entry's `updatedAt` (ISO). Used as the resolution/last-activity
+   * timestamp for the "Resolved · 7d" KPI — `lastContactAt` is only set when a
+   * message is actually sent, so it's null for managers resolved without ever
+   * being contacted.
+   */
+  lastActivityAt: string | null;
   slaDueAt: string | null;
   trackingId: string | null;
   trackingDisplayCode: string | null;

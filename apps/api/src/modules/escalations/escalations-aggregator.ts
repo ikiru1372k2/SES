@@ -26,6 +26,7 @@ export type AggregatorTrackingRow = {
   stage: string;
   resolved: boolean;
   lastContactAt: Date | null;
+  updatedAt: Date | null;
   slaDueAt: Date | null;
   id: string;
   displayCode: string;
@@ -161,6 +162,7 @@ export function aggregateEscalations(
       stage: tr?.stage ?? null,
       resolved,
       lastContactAt: tr?.lastContactAt?.toISOString() ?? null,
+      lastActivityAt: tr?.updatedAt?.toISOString() ?? null,
       slaDueAt: tr?.slaDueAt?.toISOString() ?? null,
       trackingId: tr?.id ?? null,
       trackingDisplayCode: tr?.displayCode ?? null,

@@ -60,10 +60,16 @@ require_cmd() {
 # Choose the docker compose invocation. Compose v2 (docker compose) is
 # preferred; fall back to docker-compose v1 if that's what's installed.
 compose() {
+  # docker-compose.prod.yml uses `${VAR:?}` fail-closed guards, so Compose
+  # needs .deploy.env to even *parse* the file — including for `stop`,
+  # `down`, `logs`, `ps`. Always pass --env-file when it exists so every
+  # subcommand works, not just `up` (which used to pass it explicitly).
+  local env_args=()
+  [[ -f "$LOCAL_ENV_FILE" ]] && env_args=(--env-file "$LOCAL_ENV_FILE")
   if docker compose version >/dev/null 2>&1; then
-    docker compose "$@"
+    docker compose "${env_args[@]}" "$@"
   elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose "$@"
+    docker-compose "${env_args[@]}" "$@"
   else
     fail "Neither 'docker compose' nor 'docker-compose' is available."
   fi
@@ -83,14 +89,62 @@ generate_secret() {
 
 # Write a .deploy.env the compose files can read. We materialise a file
 # instead of exporting so the values don't leak into unrelated shell state.
+#
+# IDEMPOTENT: if a valid .deploy.env already exists (every required prod
+# secret present and non-empty), it is left untouched — re-running
+# `./deploy.sh local` must never rotate live DB/Redis/object-storage
+# credentials out from under running data. We only (re)generate when a
+# required secret is missing, so the first run still bootstraps cleanly.
+#
+# docker-compose.prod.yml fails closed on each of these; keep this list in
+# sync with the `:?` guards there.
+PROD_REQUIRED_SECRETS=(
+  SES_AUTH_SECRET_DOCKER POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
+  REDIS_PASSWORD OBJECT_STORAGE_ACCESS_KEY OBJECT_STORAGE_SECRET_KEY
+  SIDECAR_SHARED_SECRET
+)
+
+# True if $LOCAL_ENV_FILE exists and every required secret is set to a
+# non-empty value in it.
+env_file_complete() {
+  [[ -f "$LOCAL_ENV_FILE" ]] || return 1
+  local k v
+  for k in "${PROD_REQUIRED_SECRETS[@]}"; do
+    v=$(grep -E "^${k}=" "$LOCAL_ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)
+    [[ -n "$v" ]] || return 1
+  done
+  return 0
+}
+
 write_env_file() {
+  if env_file_complete; then
+    chmod 600 "$LOCAL_ENV_FILE"
+    ok ".deploy.env present with all required secrets — leaving it untouched."
+    return
+  fi
+
+  if [[ -f "$LOCAL_ENV_FILE" ]]; then
+    warn ".deploy.env exists but is missing required prod secrets — regenerating the missing ones."
+  fi
+
   local secret="${SES_AUTH_SECRET_DOCKER:-}"
   if [[ -z "$secret" || ${#secret} -lt 32 ]]; then
     secret="$(generate_secret)"
     warn "SES_AUTH_SECRET_DOCKER was empty or too short; generated a fresh 64-char hex secret."
   fi
+
+  umask 077
   cat >"$LOCAL_ENV_FILE" <<EOF
+# SES production deploy env. chmod 600, gitignored. NEVER commit.
+# Rotate via DEPLOYMENT.md §4. (Auto-bootstrapped by deploy.sh.)
 SES_AUTH_SECRET_DOCKER=${secret}
+POSTGRES_USER=${POSTGRES_USER:-ses_prod}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-$(generate_secret)}
+POSTGRES_DB=${POSTGRES_DB:-ses}
+REDIS_PASSWORD=${REDIS_PASSWORD:-$(generate_secret)}
+OBJECT_STORAGE_ACCESS_KEY=${OBJECT_STORAGE_ACCESS_KEY:-$(generate_secret)}
+OBJECT_STORAGE_SECRET_KEY=${OBJECT_STORAGE_SECRET_KEY:-$(generate_secret)}
+SIDECAR_SHARED_SECRET=${SIDECAR_SHARED_SECRET:-$(generate_secret)}
 SES_BASE_URL=${SES_BASE_URL:-http://localhost:3210}
 SES_CORS_ORIGINS=${SES_CORS_ORIGINS:-http://localhost:3210,http://127.0.0.1:3210}
 SES_COOKIE_SECURE=${SES_COOKIE_SECURE:-false}
@@ -101,6 +155,7 @@ SES_TEAMS_INCOMING_WEBHOOK_URL=${SES_TEAMS_INCOMING_WEBHOOK_URL:-}
 CLOUDFLARED_TOKEN=${CLOUDFLARED_TOKEN:-}
 EOF
   chmod 600 "$LOCAL_ENV_FILE"
+  ok "Wrote $LOCAL_ENV_FILE with generated prod secrets."
 }
 
 # --- Commands --------------------------------------------------------------
@@ -175,7 +230,7 @@ cmd_local() {
     log "CLOUDFLARED_TOKEN detected — bringing up the cloudflared tunnel container too."
   fi
   log "Building and starting the prod stack (docker-compose.prod.yml)…"
-  compose --env-file "$LOCAL_ENV_FILE" "${profile_args[@]}" -f "$PROD_COMPOSE" up --build -d
+  compose "${profile_args[@]}" -f "$PROD_COMPOSE" up --build -d
 
   log "Waiting for Ollama to become healthy (needed before model pull)…"
   local attempts=0
@@ -232,8 +287,7 @@ cmd_demo() {
   require_cmd docker "Install Docker first."
   write_env_file
   log "Building and starting the demo overlay (seeded users + dev login)…"
-  compose --env-file "$LOCAL_ENV_FILE" \
-    -f "$PROD_COMPOSE" -f "$DEMO_COMPOSE" up --build -d
+  compose -f "$PROD_COMPOSE" -f "$DEMO_COMPOSE" up --build -d
   log "Waiting for Ollama to become healthy…"
   local attempts=0
   until docker inspect -f '{{.State.Health.Status}}' ses-ollama-prod 2>/dev/null | grep -q '^healthy$'; do

@@ -15,6 +15,7 @@ function row(p: Partial<ProcessEscalationManagerRow> & Pick<ProcessEscalationMan
     stage: null,
     resolved: false,
     lastContactAt: null,
+    lastActivityAt: null,
     slaDueAt: null,
     trackingId: null,
     trackingDisplayCode: null,

@@ -73,6 +73,37 @@ export function formatDueDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+/**
+ * Map a Compose "Due date" (a calendar day, no time) to the SLA instant:
+ * the very end of that day, 23:59:59.999. UTC is used to stay consistent with
+ * the UTC date helpers in Composer.tsx (addBusinessDays/toDateInputValue) and
+ * formatDueDate above. Accepts a `yyyy-mm-dd` value or a full ISO string;
+ * either way the result is end-of-day (UTC) of that calendar date. Returns
+ * null when the input is missing or unparseable.
+ */
+export function endOfDay(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (m) {
+    const iso = `${m[1]}-${m[2]}-${m[3]}T23:59:59.999Z`;
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(
+    Date.UTC(
+      parsed.getUTCFullYear(),
+      parsed.getUTCMonth(),
+      parsed.getUTCDate(),
+      23,
+      59,
+      59,
+      999,
+    ),
+  );
+}
+
 export function wrapEmailHtml(innerHtml: string): string {
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1f2937;line-height:1.55;">${innerHtml}</div>`;
 }
