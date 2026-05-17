@@ -18,7 +18,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@ses/domain": "file:../../packages/domain",
-    "@tanstack/react-query": "^5.90.2",
+    "@tanstack/react-query": "^5.100.10",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^1.8.0",
     "react": "^18.2.0",
